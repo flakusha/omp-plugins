@@ -1,0 +1,20 @@
+{
+  "name": "omp-plugins",
+  "owner": {
+    "name": "omp-plugins"
+  },
+  "metadata": {
+    "description": "oh-my-pi integration bundle: rtk/lean-ctx bash rewrite, engram memory persistence + retrieval, GPG/SSH hard-stop guards, native tool re-route hook, and the loop-lore world-timeline skill.",
+    "version": "1.0.0",
+    "pluginRoot": "./plugins"
+  },
+  "plugins": [
+    {
+      "name": "oh-my-pi-integration",
+      "description": "rtk/lean-ctx bash rewrite + engram memory + GPG/SSH guards + lean-ctx native-tool re-route hook + loop-lore skill",
+      "version": "1.0.0",
+      "category": "development",
+      "source": "./oh-my-pi-integration"
+    }
+  ]
+}
