@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { formatLintNote, lintablePath } from "../lint-feedback";
+import { formatLintNote, lintablePath } from "../util/lint-feedback";
 
 describe("lintablePath", () => {
   test("accepts repo TS files", () => {

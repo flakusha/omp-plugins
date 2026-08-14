@@ -248,6 +248,13 @@ do_replace_dir() {
     mv "$dst" "$dst.bak"
   fi
   cp -R "$src" "$dst"
+  # Ship only runtime files: omp walks the package tree and tries to load any
+  # *.ts it finds (hooks/pre, extensions top-level). Dev-only unit tests
+  # (`__tests__/`) and leftover `.bak`/`.original` files must never ship —
+  # loading a test as a hook/extension fails ("Cannot use describe outside of
+  # the test runner") and a stray `.bak` pollutes the profile.
+  find "$dst" -type d -name "__tests__" -prune -exec rm -rf {} + 2>/dev/null || true
+  find "$dst" -type f \( -name "*.bak" -o -name "*.original" \) -delete 2>/dev/null || true
   chmod -R u+w "$dst"
   echo "  + $rel/ ($action)"
 }
@@ -406,7 +413,7 @@ echo "==> agent profile payloads"
 sync_file "$REPO_ROOT/AGENTS.md" "$AGENT_DIR/AGENTS.md" "${RLOB}agent/AGENTS.md"
 sync_file "$REPO_ROOT/agent/config.yml" "$AGENT_DIR/config.yml" "${RLOB}agent/config.yml"
 sync_file "$PLUGIN_SRC/extensions/index.ts" "$AGENT_DIR/extensions/index.ts" "${RLOB}agent/extensions/index.ts"
-sync_file "$PLUGIN_SRC/extensions/lint-feedback.ts" "$AGENT_DIR/extensions/lint-feedback.ts" "${RLOB}agent/extensions/lint-feedback.ts"
+sync_file "$PLUGIN_SRC/extensions/util/lint-feedback.ts" "$AGENT_DIR/extensions/util/lint-feedback.ts" "${RLOB}agent/extensions/util/lint-feedback.ts"
 sync_file "$PLUGIN_SRC/extensions/guards/gpg-guard.ts" "$AGENT_DIR/extensions/guards/gpg-guard.ts" "${RLOB}agent/extensions/guards/gpg-guard.ts"
 sync_file "$PLUGIN_SRC/extensions/guards/ssh-guard.ts" "$AGENT_DIR/extensions/guards/ssh-guard.ts" "${RLOB}agent/extensions/guards/ssh-guard.ts"
 sync_file "$PLUGIN_SRC/extensions/guards/git-destructive-guard.ts" "$AGENT_DIR/extensions/guards/git-destructive-guard.ts" "${RLOB}agent/extensions/guards/git-destructive-guard.ts"

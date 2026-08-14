@@ -30,7 +30,7 @@ import { isToolCallEventType } from "@oh-my-pi/pi-coding-agent/extensibility/ext
 import { GIT_DESTRUCTIVE_NOTICE, isDestructiveGitCommand } from "./guards/git-destructive-guard";
 import { GPG_BLOCK_REASON, gpgSignHardStop, isGpgTamperCommand } from "./guards/gpg-guard";
 import { isSshTamperCommand, SSH_BLOCK_REASON, sshSockHardStop } from "./guards/ssh-guard";
-import { formatLintNote, lintablePath } from "./lint-feedback";
+import { formatLintNote, lintablePath } from "./util/lint-feedback";
 
 const DISABLE = () => typeof process !== "undefined" && process.env?.PI_INTEGRATION_DISABLE === "1";
 
