@@ -23,6 +23,7 @@
  * async (background) tool calls are never rewritten.
  */
 
+import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import type { ExtensionAPI, ExtensionContext, ToolResultEvent } from "@oh-my-pi/pi-coding-agent";
 import { isToolCallEventType } from "@oh-my-pi/pi-coding-agent/extensibility/extensions";
@@ -34,29 +35,84 @@ import { formatLintNote, lintablePath } from "./lint-feedback";
 const DISABLE = () => typeof process !== "undefined" && process.env?.PI_INTEGRATION_DISABLE === "1";
 
 /**
- * rtk subcommands that duplicate/subsume common shell read-only calls. Prepending
- * `rtk` to an already-simple command yields compact, token-trimmed output.
+ * Read-only rtk subcommands whose filtering semantics are known-safe to route
+ * through the `rtk` binary (output trimming that does not drop data the agent
+ * needs). This curated set is the AUTHORITY for what we will ever route via
+ * `rtk`; the installed rtk binary's actual subcommand list is discovered at
+ * runtime (below) so routing stays in sync without emitting `rtk <missing>`.
  */
-const RTK_SUBCOMMANDS = new Set([
-  "read",
-  "ls",
-  "tree",
-  "git",
-  "find",
-  "grep",
-  "rg",
-  "wc",
-  "diff",
-  "log",
-  "env",
-  "json",
-  "summary",
-  "deps",
-  "docker",
-  "kubectl",
-  "test",
-  "psql",
-]);
+const RTK_SAFE_SUBCOMMANDS: Record<string, true> = {
+  read: true,
+  ls: true,
+  tree: true,
+  git: true,
+  find: true,
+  grep: true,
+  rg: true,
+  wc: true,
+  diff: true,
+  log: true,
+  env: true,
+  json: true,
+  summary: true,
+  deps: true,
+  docker: true,
+  kubectl: true,
+  test: true,
+  psql: true,
+};
+
+/**
+ * Parse the subcommand names from `rtk --help` output. rtk prints a Commands
+ * block of `  <name>  <description>` lines; flags (`  -h, --help`) and other
+ * indented option lines do not start with a lowercase letter and are skipped.
+ */
+export function parseRtkSubcommands(helpText: string): Set<string> {
+  const names = new Set<string>();
+  for (const line of helpText.split("\n")) {
+    const m = /^ {2}([a-z][a-z0-9-]*)[\t ]{2,}/.exec(line);
+    if (m) names.add(m[1]);
+  }
+  return names;
+}
+
+/**
+ * Pure routing decision: should `cmd`'s binary be rewritten through `rtk`?
+ * - Only binaries in the curated SAFE set are ever routed.
+ * - If the installed rtk was not discoverable, we never emit `rtk <missing>`
+ *   (the generic lean-ctx branch compresses instead).
+ * - If rtk is present but its subcommand list could not be enumerated, fall
+ *   back to trust the curated SAFE set.
+ * - Otherwise route only when the installed rtk actually exposes `bin`.
+ */
+export function routeRtk(bin: string, discovered: Set<string>, rtkAvailable: boolean): boolean {
+  if (!RTK_SAFE_SUBCOMMANDS[bin]) return false;
+  if (!rtkAvailable) return false;
+  if (discovered.size === 0) return true; // enumerable-rtk unavailable → trust curated set
+  return discovered.has(bin);
+}
+
+type RtkInfo = { available: boolean; subcommands: Set<string> };
+
+/** Lazily discover the installed rtk once per process (cheap `--help`). */
+let _rtkInfo: RtkInfo | null = null;
+function rtkInfo(): RtkInfo {
+  if (_rtkInfo) return _rtkInfo;
+  _rtkInfo = loadRtkInfo();
+  return _rtkInfo;
+}
+
+function loadRtkInfo(): RtkInfo {
+  try {
+    const res = spawnSync("rtk", ["--help"], { encoding: "utf8", timeout: 5000 });
+    if (res.error || res.status !== 0 || !res.stdout) {
+      return { available: false, subcommands: new Set() };
+    }
+    return { available: true, subcommands: parseRtkSubcommands(res.stdout) };
+  } catch {
+    return { available: false, subcommands: new Set() };
+  }
+}
 
 /**
  * Shell constructs that break naive command rewriting: separators, pipelines,
@@ -95,14 +151,17 @@ export function rewriteCommand(
 
   const bin = firstToken(cmd);
 
-  // 1) rtk output-trimming: exact rtk subcommand names on simple calls.
-  if (RTK_SUBCOMMANDS.has(bin)) {
-    // `rtk read|ls|git|find|grep|wc|diff|log|... <args>` — same argv shape.
+  // 1) rtk output-trimming: route through the installed rtk binary.
+  //    `routeRtk` gates on the curated SAFE set AND the discovered subcommand
+  //    list, so we never emit `rtk <missing>` on a machine without the binary
+  //    (falls through to lean-ctx, which still compresses).
+  const { available, subcommands } = rtkInfo();
+  if (routeRtk(bin, subcommands, available)) {
     return `rtk ${cmd}`;
   }
 
   // 2) lean-ctx compression for any other simple command (git, npm, etc.).
-  //    Only when lean-ctx is present; `rtk` lacks a generic passthrough.
+  //    Only when lean-ctx is present; rtk lacks a generic compressed form.
   if (leanCtxAvailable()) {
     return `lean-ctx -c ${JSON.stringify(cmd)}`;
   }
