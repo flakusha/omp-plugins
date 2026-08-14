@@ -3,10 +3,13 @@
 # profile root.
 #
 # Usage:
-#   ./scripts/install.sh [--target DIR] [--force] [--dry-run] [--no-plugin]
+#   ./scripts/install.sh [--target DIR] [--force] [--dry-run] [--no-plugin] [--live]
 #
 #   --target DIR   Where to install. Default: /tmp/omp-test.
 #                  Equivalent to setting PREFIX=DIR.
+#                  TARGET is a host root that owns an .omp profile; if TARGET
+#                  itself is a .omp root (e.g. ~/.omp) the bundle is laid down
+#                  directly under it without nesting a second .omp.
 #   --force        Overwrite locally-modified or untracked files too
 #                  (previous copy kept as <dst>.bak). Default: update only
 #                  installer-owned files, keep anything else with a notice.
@@ -14,15 +17,18 @@
 #                  touching the filesystem.
 #   --no-plugin    Skip registering the plugin package (agent-dir payloads
 #                  and rules only).
+#   --live         Allow updating a live omp profile under $HOME directly
+#                  (e.g. --target ~/.omp or --target "$HOME"). Refused by
+#                  default to protect the live profile.
 #
 # Laydown (relative to TARGET):
+#   TARGET/.omp/agent/AGENTS.md                      omp-specific global agent rules
 #   TARGET/.omp/agent/config.yml                       agent config scaffold
 #   TARGET/.omp/agent/extensions/index.ts              integration extension
 #   TARGET/.omp/agent/extensions/guards/{gpg,ssh}-guard.ts
 #   TARGET/.omp/agent/hooks/pre/lean-ctx-native-reroute.ts
 #   TARGET/.omp/agent/hooks/pre/harness-evasion-guard.ts
-#   TARGET/.omp/agent/skills/loop-lore-world-timeline/SKILL.md
-#   TARGET/.omp/rules/*.md                                 universal project rules
+#   TARGET/.omp/agent/rules/*.md                           universal project rules
 #   TARGET/.omp/plugins/node_modules/oh-my-pi-integration/   plugin package
 #   TARGET/.omp/plugins/omp-plugins.lock.json                enablement state
 #   TARGET/.omp/plugins/oh-my-pi-integration.manifest        ownership ledger
@@ -54,6 +60,7 @@ TARGET="${PREFIX:-/tmp/omp-test}"
 FORCE=0
 DRY_RUN=0
 NO_PLUGIN=0
+LIVE=0
 
 # ---- arg parsing ----
 while [[ $# -gt 0 ]]; do
@@ -62,6 +69,7 @@ while [[ $# -gt 0 ]]; do
     --force)  FORCE=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     --no-plugin) NO_PLUGIN=1; shift ;;
+    --live)   LIVE=1; shift ;;
     -h|--help)
       sed -n '2,58p' "${BASH_SOURCE[0]}"
       exit 0 ;;
@@ -70,9 +78,20 @@ while [[ $# -gt 0 ]]; do
 done
 
 TARGET="$(realpath -m "$TARGET")"
-AGENT_DIR="$TARGET/.omp/agent"
-RULES_DIR="$TARGET/.omp/rules"
-PLUGIN_DIR="$TARGET/.omp/plugins"
+
+# TARGET is a "host root" that owns an omp profile. When TARGET itself is a
+# profile root (basename ".omp", e.g. ~/.omp), lay the bundle down directly
+# under it instead of nesting a second ".omp" (so rules land at ~/.omp/agent).
+if [[ "$(basename "$TARGET")" == ".omp" ]]; then
+  OMP_ROOT="$TARGET"
+  RLOB=""                    # rel-prefix: profile root matches TARGET
+else
+  OMP_ROOT="$TARGET/.omp"
+  RLOB=".omp/"               # rel-prefix: profile root is TARGET/.omp
+fi
+AGENT_DIR="$OMP_ROOT/agent"
+RULES_DIR="$AGENT_DIR/rules"   # global project rules live under agent/rules
+PLUGIN_DIR="$OMP_ROOT/plugins"
 PKG_NAME="oh-my-pi-integration"
 PLUGIN_SRC="$REPO_ROOT/plugins/$PKG_NAME"
 MANIFEST="$PLUGIN_DIR/$PKG_NAME.manifest"
@@ -83,11 +102,16 @@ echo "    target : $TARGET"
 echo "    source : $REPO_ROOT"
 
 # ---- guard: refuse to run inside a real user home / profile root ----
-if [[ "$TARGET" == "$HOME" || "$TARGET" == "$HOME/.omp" || "$TARGET" == "$HOME/.omp/"* ]] \
-   && [[ "$TARGET" != "$HOME/.omp-test/"* ]]; then
+# Unblocked only by an explicit --live (deliberate direct update of ~/.omp).
+if ( [[ "$TARGET" == "$HOME" || "$TARGET" == "$HOME/.omp" || "$TARGET" == "$HOME/.omp/"* ]] \
+     && [[ "$TARGET" != "$HOME/.omp-test/"* ]] ) && [[ "$LIVE" -eq 0 ]]; then
   echo "ERROR: refusing to install over your live omp profile ($TARGET)." >&2
-  echo "       Use an isolated target, e.g.  --target /tmp/omp-test" >&2
+  echo "       Pass --live to update your live profile directly, or use an" >&2
+  echo "       isolated target, e.g.  --target /tmp/omp-test" >&2
   exit 3
+fi
+if [[ "$LIVE" -eq 1 ]] && ( [[ "$TARGET" == "$HOME" || "$TARGET" == "$HOME/.omp"* ]] ); then
+  echo "    [live] updating your live profile under $HOME/.omp"
 fi
 
 # refuse nonsense / system roots outright
@@ -379,31 +403,29 @@ manifest_load
 
 # ---- 1) agent-dir payloads (discovered directly by omp) ----
 echo "==> agent profile payloads"
-sync_file "$REPO_ROOT/agent/config.yml" "$AGENT_DIR/config.yml" ".omp/agent/config.yml"
-sync_file "$PLUGIN_SRC/extensions/index.ts" "$AGENT_DIR/extensions/index.ts" ".omp/agent/extensions/index.ts"
-sync_file "$PLUGIN_SRC/extensions/lint-feedback.ts" "$AGENT_DIR/extensions/lint-feedback.ts" ".omp/agent/extensions/lint-feedback.ts"
-sync_file "$PLUGIN_SRC/extensions/guards/gpg-guard.ts" "$AGENT_DIR/extensions/guards/gpg-guard.ts" ".omp/agent/extensions/guards/gpg-guard.ts"
-sync_file "$PLUGIN_SRC/extensions/guards/ssh-guard.ts" "$AGENT_DIR/extensions/guards/ssh-guard.ts" ".omp/agent/extensions/guards/ssh-guard.ts"
-sync_file "$PLUGIN_SRC/extensions/guards/git-destructive-guard.ts" "$AGENT_DIR/extensions/guards/git-destructive-guard.ts" ".omp/agent/extensions/guards/git-destructive-guard.ts"
-sync_file "$PLUGIN_SRC/hooks/pre/lean-ctx-native-reroute.ts" "$AGENT_DIR/hooks/pre/lean-ctx-native-reroute.ts" ".omp/agent/hooks/pre/lean-ctx-native-reroute.ts"
-sync_file "$PLUGIN_SRC/hooks/pre/harness-evasion-guard.ts" "$AGENT_DIR/hooks/pre/harness-evasion-guard.ts" ".omp/agent/hooks/pre/harness-evasion-guard.ts"
-sync_file "$PLUGIN_SRC/skills/loop-lore-world-timeline/SKILL.md" \
-                                                             "$AGENT_DIR/skills/loop-lore-world-timeline/SKILL.md" \
-                                                             ".omp/agent/skills/loop-lore-world-timeline/SKILL.md"
+sync_file "$REPO_ROOT/AGENTS.md" "$AGENT_DIR/AGENTS.md" "${RLOB}agent/AGENTS.md"
+sync_file "$REPO_ROOT/agent/config.yml" "$AGENT_DIR/config.yml" "${RLOB}agent/config.yml"
+sync_file "$PLUGIN_SRC/extensions/index.ts" "$AGENT_DIR/extensions/index.ts" "${RLOB}agent/extensions/index.ts"
+sync_file "$PLUGIN_SRC/extensions/lint-feedback.ts" "$AGENT_DIR/extensions/lint-feedback.ts" "${RLOB}agent/extensions/lint-feedback.ts"
+sync_file "$PLUGIN_SRC/extensions/guards/gpg-guard.ts" "$AGENT_DIR/extensions/guards/gpg-guard.ts" "${RLOB}agent/extensions/guards/gpg-guard.ts"
+sync_file "$PLUGIN_SRC/extensions/guards/ssh-guard.ts" "$AGENT_DIR/extensions/guards/ssh-guard.ts" "${RLOB}agent/extensions/guards/ssh-guard.ts"
+sync_file "$PLUGIN_SRC/extensions/guards/git-destructive-guard.ts" "$AGENT_DIR/extensions/guards/git-destructive-guard.ts" "${RLOB}agent/extensions/guards/git-destructive-guard.ts"
+sync_file "$PLUGIN_SRC/hooks/pre/lean-ctx-native-reroute.ts" "$AGENT_DIR/hooks/pre/lean-ctx-native-reroute.ts" "${RLOB}agent/hooks/pre/lean-ctx-native-reroute.ts"
+sync_file "$PLUGIN_SRC/hooks/pre/harness-evasion-guard.ts" "$AGENT_DIR/hooks/pre/harness-evasion-guard.ts" "${RLOB}agent/hooks/pre/harness-evasion-guard.ts"
 
-# ---- 1b) universal project rules (loaded by omp from .omp/rules/) ----
+# ---- 1b) universal project rules (loaded by omp from .omp/agent/rules/) ----
 if [[ -d "$PLUGIN_SRC/rules" ]]; then
   echo "==> universal project rules"
   for rule in "$PLUGIN_SRC"/rules/*.md; do
     [[ -e "$rule" ]] || continue
-    sync_file "$rule" "$RULES_DIR/$(basename "$rule")" ".omp/rules/$(basename "$rule")"
+    sync_file "$rule" "$RULES_DIR/$(basename "$rule")" "${RLOB}agent/rules/$(basename "$rule")"
   done
 fi
 
 # ---- 2) plugin-package registration (marketplace / `omp plugin` discovery) ----
 if [[ "$NO_PLUGIN" -eq 0 ]]; then
   echo "==> plugin package registration"
-  sync_dir "$PLUGIN_SRC" "$PLUGIN_DIR/node_modules/$PKG_NAME" ".omp/plugins/node_modules/$PKG_NAME"
+  sync_dir "$PLUGIN_SRC" "$PLUGIN_DIR/node_modules/$PKG_NAME" "${RLOB}plugins/node_modules/$PKG_NAME"
 
   if [[ -e "$LOCK" && "$FORCE" -eq 0 ]]; then
     warn "existing plugin lockfile kept: $LOCK (use --force to re-enable)"

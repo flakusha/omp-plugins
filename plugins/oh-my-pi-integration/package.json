@@ -1,7 +1,7 @@
 {
   "name": "oh-my-pi-integration",
   "version": "1.0.0",
-  "description": "omp integration plugin: rtk/lean-ctx bash rewrite, engram memory auto-save + retrieval, GPG/SSH hard-stop guards, native tool re-route hook, and the loop-lore world-timeline skill.",
+  "description": "omp integration plugin: rtk/lean-ctx bash rewrite, engram memory auto-save + retrieval, GPG/SSH hard-stop guards, and a native tool re-route hook.",
   "license": "MIT",
   "type": "module",
   "omp": {

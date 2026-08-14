@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Installable oh-my-pi (omp) plugin bundle — extensions, hooks, skills, and agent config scaffold.",
+  "description": "Installable oh-my-pi (omp) plugin bundle — extensions, hooks, rules, and agent config scaffold.",
   "workspaces": [
     "plugins/*"
   ],

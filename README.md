@@ -10,8 +10,8 @@ project skill — all loadable into any omp profile.
 |---|---|---|
 | Integration extension — rtk/lean-ctx bash rewrite, engram memory auto-save + turn-start retrieval, GPG/SSH hard-stop guards | `plugins/oh-my-pi-integration/extensions/index.ts` (+ `guards/`) | `package.json` → `omp.extensions` |
 | Native-tool → lean-ctx re-route hook | `plugins/oh-my-pi-integration/hooks/pre/lean-ctx-native-reroute.ts` | `agent/hooks/pre/` |
-| Universal project rules — harness behavior (no unsourced framework claims, no premature completion), tool-routing discipline, strict review standards, docs-and-planning audit, parallel-safe tests, config merge precedence, safe-command guards | `plugins/oh-my-pi-integration/rules/` | `agent/…/.omp/rules/` |
-| Loop-Lore world-timeline skill | `plugins/oh-my-pi-integration/skills/loop-lore-world-timeline/SKILL.md` | `agent/skills/` |
+| Universal project rules — harness behavior (no unsourced framework claims, no premature completion), tool-routing discipline, strict review standards, docs-and-planning audit, parallel-safe tests, config merge precedence, safe-command guards | `plugins/oh-my-pi-integration/rules/` | `agent/…/.omp/agent/rules/` |
+| omp-specific global agent rules (lean-ctx tool-call corrections) | `AGENTS.md` | `agent/AGENTS.md` |
 | Agent config scaffold (no credentials) | `agent/config.yml` | `agent/config.yml` |
 
 The bundle also ships a `.omp-plugin/marketplace.json` catalog so the contained
@@ -63,14 +63,20 @@ bash scripts/install.sh --target /tmp/omp-test
 # overwrite an existing install; or preview without writing
 bash scripts/install.sh --force
 bash scripts/install.sh --dry-run
+
+# update your live profile directly (e.g. AGENTS.md, rules, extensions)
+bash scripts/install.sh --target "$HOME/.omp" --live
 ```
 
-The installer lays the payloads into `TARGET/.omp/agent/` (`config.yml`,
-`extensions/`, `hooks/pre/`, `skills/`) and registers the plugin package under
-`TARGET/.omp/plugins/`. It writes only bundle-owned files and never touches
-databases, sessions, caches, or memories. It refuses to run against your live
-home profile (use an isolated target, e.g. `/tmp/omp-test`), then point a
-scratch profile at it with `omp --profile test`.
+The installer lays the payloads into `TARGET/.omp/agent/` (`AGENTS.md`,
+`config.yml`, `extensions/`, `hooks/pre/`, `rules/`) and registers the plugin
+package under `TARGET/.omp/plugins/`. When `TARGET` is itself a profile root
+(e.g. `~/.omp`), the bundle is laid down directly under it without nesting a
+second `.omp`. It writes only bundle-owned files and never touches databases,
+sessions, caches, or memories. It refuses to run against your live home
+profile unless you pass `--live` (use an isolated target such as
+`/tmp/omp-test` by default), then point a scratch profile at it with
+`omp --profile test`.
 
 Re-runs are safe and manifest-driven: an ownership ledger records every file
 the installer wrote. On re-run, installer-owned files are updated in place
@@ -123,9 +129,10 @@ repository.
 
 ```
 ├── .omp-plugin/marketplace.json   catalog for `omp plugin install`
+├── AGENTS.md                      omp-specific global agent rules (installed to <target>.omp/agent/AGENTS.md)
 ├── agent/config.yml               agent config scaffold (credential-free)
-├── plugins/oh-my-pi-integration/  the plugin package (extensions/hooks/rules/skills/manifest)
-│   └── rules/                      universal project rules (installed to <target>.omp/rules/)
+├── plugins/oh-my-pi-integration/  the plugin package (extensions/hooks/rules)
+│   └── rules/                      universal project rules (installed to <target>.omp/agent/rules/)
 ├── scripts/install.sh             installer for an isolated omp profile
 ├── biome.json                     lint/format config
 ├── tsconfig.json                  TS config (moduleResolution: bundler)
