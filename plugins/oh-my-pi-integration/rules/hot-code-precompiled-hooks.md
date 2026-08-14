@@ -1,7 +1,7 @@
 ---
 name: hot-code-precompiled-hooks
 description: "Related to TODO — for hot code parts, analyze them for future pre-compiled hooks (native addons, precompiled binaries, SQLite triggers, precompiled regexes, caches), and record the analysis with its rationale — if the overhead is too big, pre-compilation may not be possible and that must be stated"
-condition: ["hot (path|loop|code|section)|per-(request|turn|item)|inner loop|high-frequency", "perf|performance|overhead|profiling|benchmark|native (addon|module)|N-API|precompil|pre-compil|JIT|compile", "regex|SQLite trigger|materialized|cache"]
+condition: ["(?=[\\s\\S]*hot (path|loop|code|section)|per-(request|turn|item)|inner loop|high-frequency)(?=[\\s\\S]*perf|performance|overhead|profiling|benchmark|native (addon|module)|N-API|precompil|pre-compil|JIT|compile)(?=[\\s\\S]*regex|SQLite trigger|materialized|cache)"]
 scope: ["text", "thinking"]
 ---
 

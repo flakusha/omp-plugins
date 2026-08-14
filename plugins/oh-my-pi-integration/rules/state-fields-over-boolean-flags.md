@@ -1,7 +1,7 @@
 ---
 name: state-fields-over-boolean-flags
 description: "For data structures with boolean fields, consider a state-machine field when the booleans encode mutually-exclusive states or combinations — one state field beats N boolean flags that must be added and kept in sync on every transition; keep genuinely binary booleans as-is. Deliberate number vs string representation: strings read cleaner, numbers index faster"
-condition: ["boolean|bool flag|flags?", "is[A-Z]|has[A-Z]", "is(Active|Enabled|Paused|Archived|Locked|Closed|Open|Done|Valid|Failed|Pending|Paid|Refunded)", "state machine|enum(eration)?|state field", "mutually exclusive", "combination(s)?.*(state|flag|boolean)", "status field"]
+condition: ["(?=[\\s\\S]*boolean|bool flag|flags?)(?=[\\s\\S]*is[A-Z]|has[A-Z])(?=[\\s\\S]*is(Active|Enabled|Paused|Archived|Locked|Closed|Open|Done|Valid|Failed|Pending|Paid|Refunded))(?=[\\s\\S]*state machine|enum(eration)?|state field)(?=[\\s\\S]*mutually exclusive)(?=[\\s\\S]*combination(s)?.*(state|flag|boolean))(?=[\\s\\S]*status field)"]
 scope: ["text", "thinking"]
 ---
 

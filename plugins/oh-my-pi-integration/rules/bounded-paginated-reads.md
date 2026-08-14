@@ -1,7 +1,7 @@
 ---
 name: bounded-paginated-reads
 description: "For reads that can return large/many results — read in bounded, batched chunks with pagination, check 'timeout remaining' between small batches, and prefer parallel small SELECTs where reads are independent"
-condition: ["pagination|paginate|page\\b|batch|limit\\b|offset|next (page|cursor)|many (rows|results|records)", "SELECT|query|read (from|the) (db|database)|fetch (all|many|rows)", "timeout (remaining|left)|deadline (remaining|left)|parallel (SELECT|query|read)|small (read|batch|query)"]
+condition: ["(?=[\\s\\S]*pagination|paginate|page\\b|batch|limit\\b|offset|next (page|cursor)|many (rows|results|records))(?=[\\s\\S]*SELECT|query|read (from|the) (db|database)|fetch (all|many|rows))(?=[\\s\\S]*timeout (remaining|left)|deadline (remaining|left)|parallel (SELECT|query|read)|small (read|batch|query))"]
 scope: ["text", "thinking"]
 ---
 

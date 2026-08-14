@@ -1,7 +1,7 @@
 ---
 name: plan-docs-cross-staleness
 description: "When modifying files in one planning/documentation area, check the other for stale cross-references"
-condition: ["\\.plan/.*\\.md", "docs/.*\\.md", "planning/.*\\.md", "documentation/.*\\.md"]
+condition: ["(?=[\\s\\S]*\\.plan/.*\\.md)(?=[\\s\\S]*docs/.*\\.md)(?=[\\s\\S]*planning/.*\\.md)(?=[\\s\\S]*documentation/.*\\.md)"]
 scope: ["tool:write(**/*.md)", "tool:edit(**/*.md)"]
 ---
 

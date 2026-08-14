@@ -1,7 +1,7 @@
 ---
 name: no-unsourced-framework-claims
 description: "Never assert framework/library capabilities or limitations without reading actual source or docs"
-condition: ["doesn't support", "doesn't have a built-in", "can't just", "plugins are created with.*baked in", "no way to", "does not support"]
+condition: ["(?=[\\s\\S]*doesn't support)(?=[\\s\\S]*doesn't have a built-in)(?=[\\s\\S]*can't just)(?=[\\s\\S]*plugins are created with.*baked in)(?=[\\s\\S]*no way to)(?=[\\s\\S]*does not support)"]
 scope: "text"
 ---
 

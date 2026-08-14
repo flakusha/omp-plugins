@@ -1,7 +1,7 @@
 ---
 name: api-idempotency
 description: "For APIs that may be called multiple times and modify DB state — idempotency is required: fast cached response for repeated idempotency keys, insert-if-absent DB pattern, safe overwrite OR fast-fail with success/failure handling, and treat empty/partial/broken responses as distinct from communication/query errors"
-condition: ["idempoten|repeat|duplicate (request|call|submission)|called multiple times|at (least )?once|replay", "api|endpoint|mutat(ing|ion)|modif(y|ies) (db|database|state)|create|submit|apply|save", "cache|cached|overwrite|insert if (not )?exists|upsert|on conflict", "empty (response|result)|partial (response|result|write)|broken response|malformed (response|result)"]
+condition: ["(?=[\\s\\S]*idempoten|repeat|duplicate (request|call|submission)|called multiple times|at (least )?once|replay)(?=[\\s\\S]*api|endpoint|mutat(ing|ion)|modif(y|ies) (db|database|state)|create|submit|apply|save)(?=[\\s\\S]*cache|cached|overwrite|insert if (not )?exists|upsert|on conflict)(?=[\\s\\S]*empty (response|result)|partial (response|result|write)|broken response|malformed (response|result))"]
 scope: ["text", "thinking"]
 ---
 

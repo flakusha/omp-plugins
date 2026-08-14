@@ -1,7 +1,7 @@
 ---
 name: sql-injection-free
 description: "For DB access implementations — confirm DB injections are not possible: parameterized/prepared statements for all queries with user-derived values, allowlisted dynamic identifiers, and tests on the injection surface"
-condition: ["\\bsql\\b|query|select|insert|update|delete|where|join|order by", "injection|sql injection|concat(enat)?(e|ion)? sql|string (built|append) (query|sql)", "db|database|orm|query builder|prepared|parameterized|raw sql"]
+condition: ["(?=[\\s\\S]*\\bsql\\b|query|select|insert|update|delete|where|join|order by)(?=[\\s\\S]*injection|sql injection|concat(enat)?(e|ion)? sql|string (built|append) (query|sql))(?=[\\s\\S]*db|database|orm|query builder|prepared|parameterized|raw sql)"]
 scope: ["text", "thinking"]
 ---
 

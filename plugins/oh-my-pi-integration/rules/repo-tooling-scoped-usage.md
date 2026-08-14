@@ -1,7 +1,7 @@
 ---
 name: repo-tooling-scoped-usage
 description: "Discover and use the repository's scoped tooling (package.json scripts, Makefile, justfile, hooks, CI) instead of ad-hoc or unscoped commands; run the repo's pre-commit and post-changes gates"
-condition: ["node_modules/\\.bin/", "bun exec", "npx [a-z-]+ ", "skipping (lint|tests?|typecheck|format|verify)", "without running (lint|tests?|typecheck|verify)", "I'll just run", "run (tsc|eslint|biome|prettier|vitest|jest|pytest|cargo test|go test) ", "no (tests?|lint|verify) (exist|found)", "make (test|lint|check)"]
+condition: ["(?=[\\s\\S]*node_modules/\\.bin/)(?=[\\s\\S]*bun exec)(?=[\\s\\S]*npx [a-z-]+ )(?=[\\s\\S]*skipping (lint|tests?|typecheck|format|verify))(?=[\\s\\S]*without running (lint|tests?|typecheck|verify))(?=[\\s\\S]*I'll just run)(?=[\\s\\S]*run (tsc|eslint|biome|prettier|vitest|jest|pytest|cargo test|go test) )(?=[\\s\\S]*no (tests?|lint|verify) (exist|found))(?=[\\s\\S]*make (test|lint|check))"]
 scope: ["tool:bash", "text"]
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: avoid-inline-style-script
 description: "In HTML, use inline style attributes and <style>/<script> blocks only when deadly necessary (e.g. framework init snippets) — external assets cache, keep CSP clean, and separate concerns; check the project's asset pipeline and CSP conventions first"
-condition: ["inline (style|script|css|js)", "<style>|<script|</script>", "style=\\s*\"|style=\\s*'", "onclick=|onload=|onerror=", "CSP|content-security-policy", "external (style|script|css|js)", "style attribute"]
+condition: ["(?=[\\s\\S]*inline (style|script|css|js))(?=[\\s\\S]*<style>|<script|</script>)(?=[\\s\\S]*style=\\s*\"|style=\\s*')(?=[\\s\\S]*onclick=|onload=|onerror=)(?=[\\s\\S]*CSP|content-security-policy)(?=[\\s\\S]*external (style|script|css|js))(?=[\\s\\S]*style attribute)"]
 scope: ["text", "thinking"]
 ---
 

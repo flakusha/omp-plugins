@@ -1,7 +1,7 @@
 ---
 name: premature-task-complete
 description: "Never declare task complete before all mandatory steps are verified done"
-condition: ["^Done[.:!]", "^Complete[.:!]", "^All \\w+ saved", "\\bmerged?\\b.*\\binto\\b.*\\b\\w+\\b"]
+condition: ["(?=[\\s\\S]*^Done[.:!])(?=[\\s\\S]*^Complete[.:!])(?=[\\s\\S]*^All \\w+ saved)(?=[\\s\\S]*\\bmerged?\\b.*\\binto\\b.*\\b\\w+\\b)"]
 scope: "text"
 ---
 

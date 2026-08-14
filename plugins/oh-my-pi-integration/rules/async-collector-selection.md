@@ -1,7 +1,7 @@
 ---
 name: async-collector-selection
 description: "When logic affords calling a promise/async collector, handle multiple independent async operations simultaneously — pick the collector by semantics (Promise.all fallible, Promise.allSettled resolvable/retryable, Promise.race priority), handle errors per collector (race losers need handlers or they leak unhandled rejections), clear memory and drop non-required data, retry only under performance/time constraints"
-condition: ["Promise\\.all|Promise\\.allSettled|Promise\\.race|allSettled", "gather|asyncio|FIRST_COMPLETED|errgroup", "async.*(parallel|simultaneous|concurrent)|concurrent.*(promise|async)", "collector|promise.*collect", "fallible|resolvable|retryable|retry", "handle.*(multiple|several).*promise|parallel.*promise|unhandled rejection"]
+condition: ["(?=[\\s\\S]*Promise\\.all|Promise\\.allSettled|Promise\\.race|allSettled)(?=[\\s\\S]*gather|asyncio|FIRST_COMPLETED|errgroup)(?=[\\s\\S]*async.*(parallel|simultaneous|concurrent)|concurrent.*(promise|async))(?=[\\s\\S]*collector|promise.*collect)(?=[\\s\\S]*fallible|resolvable|retryable|retry)(?=[\\s\\S]*handle.*(multiple|several).*promise|parallel.*promise|unhandled rejection)"]
 scope: ["text", "thinking"]
 ---
 

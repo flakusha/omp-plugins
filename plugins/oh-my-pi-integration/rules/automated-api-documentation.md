@@ -1,7 +1,7 @@
 ---
 name: automated-api-documentation
 description: "For the project's API — consider API documentation to be automatically generated and provided (e.g. JSDoc/TSDoc converted to VitePress pages); if automated documentation is possible, consider and propose it — no need to enforce if the user is against it"
-condition: ["api\\b|endpoint|route|function|module|public (interface|surface)|sdk|library", "documentation|docs|jsdoc|typedoc|vitepress|readme|api (reference|guide)", "generate|auto-?generate|build (docs|documentation)|doc (comment|block)|api docs"]
+condition: ["(?=[\\s\\S]*api\\b|endpoint|route|function|module|public (interface|surface)|sdk|library)(?=[\\s\\S]*documentation|docs|jsdoc|typedoc|vitepress|readme|api (reference|guide))(?=[\\s\\S]*generate|auto-?generate|build (docs|documentation)|doc (comment|block)|api docs)"]
 scope: ["text", "thinking"]
 ---
 

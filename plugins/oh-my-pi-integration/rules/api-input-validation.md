@@ -1,7 +1,7 @@
 ---
 name: api-input-validation
 description: "Confirm there is some kind of filter or validation REUSED for API inputs — a shared/central validation layer (schema, DTO, request filter) every entry point consumes, so no path bypasses validation"
-condition: ["\\bapi\\b|endpoint|route|handler|controller", "request (body|param|query|header|input)|incoming (data|payload)", "validate|validat|filter|schema|dto|contract|reject", "reuse|shared|central|single (validation|filter|schema)|common (validation|filter)"]
+condition: ["(?=[\\s\\S]*\\bapi\\b|endpoint|route|handler|controller)(?=[\\s\\S]*request (body|param|query|header|input)|incoming (data|payload))(?=[\\s\\S]*validate|validat|filter|schema|dto|contract|reject)(?=[\\s\\S]*reuse|shared|central|single (validation|filter|schema)|common (validation|filter))"]
 scope: ["text", "thinking"]
 ---
 

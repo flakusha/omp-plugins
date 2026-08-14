@@ -1,7 +1,7 @@
 ---
 name: named-tested-regexes
 description: "Avoid bare, naked, untested regular expressions inline — declare static regexes as named constants (single source of truth, reusable, testable) and unit-test them for edge cases and performance; dynamic regexes (built at runtime) are exempt from constant form but still need validation and tests"
-condition: ["regexp?|regular expression", "pattern match(ing|es)?", "new RegExp", "\\.match\\(|\\.test\\(|\\.replace\\(|\\.split\\(|\\.exec\\(", "bare regex|inline regex|naked regex", "regex constant|named regex"]
+condition: ["(?=[\\s\\S]*regexp?|regular expression)(?=[\\s\\S]*pattern match(ing|es)?)(?=[\\s\\S]*new RegExp)(?=[\\s\\S]*\\.match\\(|\\.test\\(|\\.replace\\(|\\.split\\(|\\.exec\\()(?=[\\s\\S]*bare regex|inline regex|naked regex)(?=[\\s\\S]*regex constant|named regex)"]
 scope: ["text", "thinking"]
 ---
 

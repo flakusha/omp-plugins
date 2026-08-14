@@ -1,7 +1,7 @@
 ---
 name: no-git-stash-shared-branch
 description: "Do not run git stash (push/pop/apply/drop) on a branch carrying many uncommitted changes — stash snapshots the whole working tree and index, sweeping up other agents' independent in-flight work in the same branch; commit scoped units instead. Relaxed when each agent works in its own git worktree"
-condition: ["git stash( (push|pop|apply|drop|list))?", "stash.*(changes|work)", "\\bstash\\b.*(pop|apply|drop|push)"]
+condition: ["(?=[\\s\\S]*git stash( (push|pop|apply|drop|list))?)(?=[\\s\\S]*stash.*(changes|work))(?=[\\s\\S]*\\bstash\\b.*(pop|apply|drop|push))"]
 scope: ["tool:bash", "text"]
 ---
 

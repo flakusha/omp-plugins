@@ -1,7 +1,7 @@
 ---
 name: no-repetition-loops
 description: "Hallucination protection for thinking/monologue: 3+ near-identical phrases, justifications, or tool-call intents in a reasoning window means reasoning is pattern-matching its own output instead of grounding in evidence — stop, re-ground, state each claim once with evidence, or downgrade it"
-condition: ["as I (said|mentioned|established)", "as established (above|earlier|before)", "we (showed|saw|established) above", "per my (earlier|previous) analysis", "consistent with (my|our) earlier", "this confirms (my|our) previous", "to (reiterate|repeat|be clear)", "again,", "let me (re-)?(verify|double-check|confirm|restate|recompute)", "I already (said|established|showed|verified)", "(same|identical|reworded) (claim|phrase|reasoning|pattern|justification|point|conclusion|idea)", "note that.*(again|repeatedly)"]
+condition: ["(?=[\\s\\S]*as I (said|mentioned|established))(?=[\\s\\S]*as established (above|earlier|before))(?=[\\s\\S]*we (showed|saw|established) above)(?=[\\s\\S]*per my (earlier|previous) analysis)(?=[\\s\\S]*consistent with (my|our) earlier)(?=[\\s\\S]*this confirms (my|our) previous)(?=[\\s\\S]*to (reiterate|repeat|be clear))(?=[\\s\\S]*again,)(?=[\\s\\S]*let me (re-)?(verify|double-check|confirm|restate|recompute))(?=[\\s\\S]*I already (said|established|showed|verified))(?=[\\s\\S]*(same|identical|reworded) (claim|phrase|reasoning|pattern|justification|point|conclusion|idea))(?=[\\s\\S]*note that.*(again|repeatedly))"]
 scope: ["thinking", "text"]
 ---
 

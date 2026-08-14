@@ -1,7 +1,7 @@
 ---
 name: strict-types-and-reuse
 description: "Prefer strict typing and reuse of the project's types/interfaces/class-derived estimations: typed contracts fail at lint/build/test time instead of runtime — precise, local, cheap to troubleshoot, and safe to modify/extend because the compiler enumerates every affected callsite"
-condition: ["strict( typing| types| mode)?", "type safety|type-safe", "as any|@ts-ignore|@ts-expect-error|implicit any|loose typing|untyped", "reuse (types|interfaces|classes)", "shared type|common type|one definition", "class-derived|derive.*from (the )?(class|interface|schema)", "typed contract|type contract"]
+condition: ["(?=[\\s\\S]*strict( typing| types| mode)?)(?=[\\s\\S]*type safety|type-safe)(?=[\\s\\S]*as any|@ts-ignore|@ts-expect-error|implicit any|loose typing|untyped)(?=[\\s\\S]*reuse (types|interfaces|classes))(?=[\\s\\S]*shared type|common type|one definition)(?=[\\s\\S]*class-derived|derive.*from (the )?(class|interface|schema))(?=[\\s\\S]*typed contract|type contract)"]
 scope: ["text", "thinking"]
 ---
 

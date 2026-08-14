@@ -1,7 +1,7 @@
 ---
 name: db-access-performance
 description: "For DB access — name the performance decisions explicitly: many small requests vs one big request, declared timeout constraints, retry possibility (idempotency), and a fast-fail path on non-transient errors"
-condition: ["db|database|query|sql|n\\+1|round trip|connection (pool|count)|rows", "many (request|query)|one big (request|query)|batch|bulk|collector|join", "timeout|deadline|retry|backoff|fast fail|fail fast|slow query|latency|load"]
+condition: ["(?=[\\s\\S]*db|database|query|sql|n\\+1|round trip|connection (pool|count)|rows)(?=[\\s\\S]*many (request|query)|one big (request|query)|batch|bulk|collector|join)(?=[\\s\\S]*timeout|deadline|retry|backoff|fast fail|fail fast|slow query|latency|load)"]
 scope: ["text", "thinking"]
 ---
 

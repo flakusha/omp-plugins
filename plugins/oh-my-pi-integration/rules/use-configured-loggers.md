@@ -1,7 +1,7 @@
 ---
 name: use-configured-loggers
 description: "Use the logger(s) configured and provided by the application; avoid non-set-up default loggers (bare console.log/print/println, unconfigured root/stdlib loggers) that block, underperform, lack format, and have no handling/dropping/shortening/summarization of incoming data — the configured logger exists precisely for those properties"
-condition: ["console\\.log|console\\.error|console\\.warn|\\bprint\\(|println|\\bprintf\\(", "default logger|root logger|log\\.Print|log\\.Fatal|stdlib log", "configured logger|app(lication)?.*logger|logger.*config(ured|uration)", "blocking|unbuffered|sync (log|write)", "truncat|summariz|shorten|sampling|drop.*log|redact|log.*(format|level|sink|handler)"]
+condition: ["(?=[\\s\\S]*console\\.log|console\\.error|console\\.warn|\\bprint\\(|println|\\bprintf\\()(?=[\\s\\S]*default logger|root logger|log\\.Print|log\\.Fatal|stdlib log)(?=[\\s\\S]*configured logger|app(lication)?.*logger|logger.*config(ured|uration))(?=[\\s\\S]*blocking|unbuffered|sync (log|write))(?=[\\s\\S]*truncat|summariz|shorten|sampling|drop.*log|redact|log.*(format|level|sink|handler))"]
 scope: ["text", "thinking"]
 ---
 

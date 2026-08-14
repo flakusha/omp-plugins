@@ -1,7 +1,7 @@
 ---
 name: wrap-unsafe-language-apis
 description: "Common unsafe standard-library functionality must be wrapped and properly error-handled, not called raw: eval/exec, pickle/yaml.load, shell=True subprocess, unwrap/expect, unchecked indexing, default HTTP clients, unbounded reads — if the repo provides a safe wrapper use it, otherwise wrap at the boundary with validation, error handling, and safe defaults"
-condition: ["\\beval\\(|\\bexec\\(|new Function", "pickle|yaml\\.load|load_model|torch\\.load", "shell\\s*=\\s*True|os\\.system|child_process\\.(exec|execSync)|spawn", "unwrap\\(\\)|expect\\(|\\[i\\].*panic|unsafe", "http\\.(Get|Client)|default.*client|no timeout", "io\\.ReadAll|readAll|read_to_end", "unsafe (function|api|call|standard)", "error handling|error-handl", "wrap.*(unsafe|standard)"]
+condition: ["(?=[\\s\\S]*\\beval\\(|\\bexec\\(|new Function)(?=[\\s\\S]*pickle|yaml\\.load|load_model|torch\\.load)(?=[\\s\\S]*shell\\s*=\\s*True|os\\.system|child_process\\.(exec|execSync)|spawn)(?=[\\s\\S]*unwrap\\(\\)|expect\\(|\\[i\\].*panic|unsafe)(?=[\\s\\S]*http\\.(Get|Client)|default.*client|no timeout)(?=[\\s\\S]*io\\.ReadAll|readAll|read_to_end)(?=[\\s\\S]*unsafe (function|api|call|standard))(?=[\\s\\S]*error handling|error-handl)(?=[\\s\\S]*wrap.*(unsafe|standard))"]
 scope: ["text", "thinking"]
 ---
 

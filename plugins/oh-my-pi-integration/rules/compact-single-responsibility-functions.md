@@ -1,7 +1,7 @@
 ---
 name: compact-single-responsibility-functions
 description: "Prefer compact functions over big logic chunks: small single-responsibility functions are easy to unit-test by name, combine, and extend; split by responsibility (one reason to change), not by line count, and do not fragment cohesive sequences into indirection noise"
-condition: ["big (function|method|logic|block|chunk)", "large (function|method|logic)", "monolithic|god (function|method|class)", "single responsibility|SRP", "refactor.*(function|method|logic)", "split (the )?(function|method|logic)", "compact function|small function", "unit test.*(function|easy|simple)"]
+condition: ["(?=[\\s\\S]*big (function|method|logic|block|chunk))(?=[\\s\\S]*large (function|method|logic))(?=[\\s\\S]*monolithic|god (function|method|class))(?=[\\s\\S]*single responsibility|SRP)(?=[\\s\\S]*refactor.*(function|method|logic))(?=[\\s\\S]*split (the )?(function|method|logic))(?=[\\s\\S]*compact function|small function)(?=[\\s\\S]*unit test.*(function|easy|simple))"]
 scope: ["text", "thinking"]
 ---
 

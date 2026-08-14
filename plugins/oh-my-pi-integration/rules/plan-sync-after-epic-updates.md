@@ -1,7 +1,7 @@
 ---
 name: plan-sync-after-epic-updates
 description: "After updating planning/epic/ticket/backlog artifacts, verify they are reconciled with the issue tracker"
-condition: ["\\.plan/epics/.*\\.md", "\\.plan/tickets/.*\\.md", "\\b(plan|epic|ticket|backlog)\\b.*\\.md", "planning artifacts"]
+condition: ["(?=[\\s\\S]*\\.plan/epics/.*\\.md)(?=[\\s\\S]*\\.plan/tickets/.*\\.md)(?=[\\s\\S]*\\b(plan|epic|ticket|backlog)\\b.*\\.md)(?=[\\s\\S]*planning artifacts)"]
 scope: ["tool:write", "tool:edit"]
 ---
 

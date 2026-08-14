@@ -1,7 +1,7 @@
 ---
 name: config-established-interfaces
 description: "When creating configs, config data structures and so on — consider using established interfaces in case some external libraries are used, instead of creating local config subset(s)"
-condition: ["config|configuration|settings|options object|config file", "interface|schema|type|typedef", "external (library|dependency|package)|library (config|options)|third-party", "subset|map (to|from)|translate|bridge|own (config|options)"]
+condition: ["(?=[\\s\\S]*config|configuration|settings|options object|config file)(?=[\\s\\S]*interface|schema|type|typedef)(?=[\\s\\S]*external (library|dependency|package)|library (config|options)|third-party)(?=[\\s\\S]*subset|map (to|from)|translate|bridge|own (config|options))"]
 scope: ["text", "thinking"]
 ---
 

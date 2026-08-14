@@ -1,7 +1,7 @@
 ---
 name: stop-on-external-blockage
 description: "On GPG/SSH/agent/lock/service blockage, stop and ask the user to resolve it or propose a plan — never unblock by deleting lock files, killing/restarting agents or services, restarting the program/system, or destructive /tmp experiments that disturb shared state"
-condition: ["(rm|delete|remove|unlink|rm -f).*\\.lock", "stale lock", "lock file", "kill (gpg|ssh)-agent", "gpgconf --kill", "killall (gpg|ssh|agent)", "systemctl (restart|stop|start)", "service .* (restart|stop)", "restart (the )?(gpg|ssh|agent|daemon|service|harness|program|system)", "\\breboot\\b", "bypass.*(passphrase|pin|pinentry|secret)", "unlock.*(key|gpg|ssh)", "(rm|delete|remove).*/tmp/", "test.*in /tmp"]
+condition: ["(?=[\\s\\S]*(rm|delete|remove|unlink|rm -f).*\\.lock)(?=[\\s\\S]*stale lock)(?=[\\s\\S]*lock file)(?=[\\s\\S]*kill (gpg|ssh)-agent)(?=[\\s\\S]*gpgconf --kill)(?=[\\s\\S]*killall (gpg|ssh|agent))(?=[\\s\\S]*systemctl (restart|stop|start))(?=[\\s\\S]*service .* (restart|stop))(?=[\\s\\S]*restart (the )?(gpg|ssh|agent|daemon|service|harness|program|system))(?=[\\s\\S]*\\breboot\\b)(?=[\\s\\S]*bypass.*(passphrase|pin|pinentry|secret))(?=[\\s\\S]*unlock.*(key|gpg|ssh))(?=[\\s\\S]*(rm|delete|remove).*/tmp/)(?=[\\s\\S]*test.*in /tmp)"]
 scope: ["tool:bash", "text"]
 ---
 

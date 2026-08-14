@@ -1,7 +1,7 @@
 ---
 name: data-sanitization
 description: "Confirm data is sanitized where required — output/context encoding, PII and secret redaction in logs; distinct from validation (reject) vs sanitization (transform to safe form for its destination context)"
-condition: ["sanitiz|sanitize|escape|encode|scrub|redact|clean (input|output|content)|mask", "xss|innerHTML|html|shell|attribute|url-encode|log (line|cat|message)", "user (input|content|data)|untrusted|pii|secret"]
+condition: ["(?=[\\s\\S]*sanitiz|sanitize|escape|encode|scrub|redact|clean (input|output|content)|mask)(?=[\\s\\S]*xss|innerHTML|html|shell|attribute|url-encode|log (line|cat|message))(?=[\\s\\S]*user (input|content|data)|untrusted|pii|secret)"]
 scope: ["text", "thinking"]
 ---
 

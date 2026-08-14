@@ -1,7 +1,7 @@
 ---
 name: hot-code-datastructure-todos
 description: "For potentially hot code, review the data structure picks — the container choice is the highest-leverage performance decision — and consider a commented TODO marking the future slot for a compiled/native implementation hook (FFI, wasm, native addon, lower-level rewrite) in script languages; profiling-first, no premature optimization"
-condition: ["hot (code|path|loop)|performance[ -]sensitive|\\bperf\\b|inner loop", "data structure|datastructure|collection|container", "choose.*(data structure|container)|array vs|Set vs Map|Map vs", "compiled (implementation|hook)|native (addon|module|extension)|FFI|\\bwasm\\b", "TODO.*(compile|native|optimiz|ffi)", "O\\(n"]
+condition: ["(?=[\\s\\S]*hot (code|path|loop)|performance[ -]sensitive|\\bperf\\b|inner loop)(?=[\\s\\S]*data structure|datastructure|collection|container)(?=[\\s\\S]*choose.*(data structure|container)|array vs|Set vs Map|Map vs)(?=[\\s\\S]*compiled (implementation|hook)|native (addon|module|extension)|FFI|\\bwasm\\b)(?=[\\s\\S]*TODO.*(compile|native|optimiz|ffi))(?=[\\s\\S]*O\\(n)"]
 scope: ["text", "thinking"]
 ---
 

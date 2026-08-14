@@ -1,7 +1,7 @@
 ---
 name: frontend-backend-validation
 description: "Validate on BOTH frontend and backend: the frontend is not reliable (modifiable/hackable, not a security boundary) but still validates to avoid sending unsatisfiable requests; API/DB validation is the authoritative boundary, done by default unless an explicitly-stated fast prototype"
-condition: ["frontend|client|browser|ui|form|input (field)|client-side", "validation|validate|constraint|required (field)|format check", "backend|server|api|db|server-side", "prototype|rapid (development|prototype)|spike|proof of concept|poc"]
+condition: ["(?=[\\s\\S]*frontend|client|browser|ui|form|input (field)|client-side)(?=[\\s\\S]*validation|validate|constraint|required (field)|format check)(?=[\\s\\S]*backend|server|api|db|server-side)(?=[\\s\\S]*prototype|rapid (development|prototype)|spike|proof of concept|poc)"]
 scope: ["text", "thinking"]
 ---
 

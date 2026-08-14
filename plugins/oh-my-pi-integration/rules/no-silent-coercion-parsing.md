@@ -1,7 +1,7 @@
 ---
 name: no-silent-coercion-parsing
 description: "Guard against silent coercion and parsing traps: parseInt without radix, loose ==, implicit Number()/string coercion, Date parsing rollover, default lexicographic sort, float precision, NaN propagation, reduce on empty — validate input before parsing and make conversions explicit so errors surface instead of silently producing wrong values"
-condition: ["parseInt|parseFloat|Number\\(|String\\(", "loose equal|== (comparison|equality)|\\b==\\b.*(string|number)", "Date\\.parse|new Date\\(.*string", "\\.sort\\(\\)", "0\\.1\\+0\\.2|float (precision|arithmetic)|rounding", "NaN|toFixed|toPrecision", "\\.reduce\\(.*(empty|initial)", "silent (coercion|conversion|parsing)", "type coercion"]
+condition: ["(?=[\\s\\S]*parseInt|parseFloat|Number\\(|String\\()(?=[\\s\\S]*loose equal|== (comparison|equality)|\\b==\\b.*(string|number))(?=[\\s\\S]*Date\\.parse|new Date\\(.*string)(?=[\\s\\S]*\\.sort\\(\\))(?=[\\s\\S]*0\\.1\\+0\\.2|float (precision|arithmetic)|rounding)(?=[\\s\\S]*NaN|toFixed|toPrecision)(?=[\\s\\S]*\\.reduce\\(.*(empty|initial))(?=[\\s\\S]*silent (coercion|conversion|parsing))(?=[\\s\\S]*type coercion)"]
 scope: ["text", "thinking"]
 ---
 

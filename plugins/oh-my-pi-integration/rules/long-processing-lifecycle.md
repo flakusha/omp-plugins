@@ -1,7 +1,7 @@
 ---
 name: long-processing-lifecycle
 description: "For long-running processing — identify whether it can be paused, postponed, cached, saved, dropped, cancelled, or offloaded (separate db/table/tmpfs/tmp) and re-picked up by cron/reprocessing/reconciliation — or simply dropped; name the lifecycle decision explicitly"
-condition: ["long-?running|expensive|lengthy|heavy (process|task|job|computation)|takes (long|time)|big batch|slow (task|process)", "pause|postpone|resume|cache|save|persist|drop|cancel|abort|offload|defer|re-?queue|queue|reprocess|reconcil|checkpoint|porch", "cron|scheduler|background (job|task)|separate (db|table|tmpfs|tmp)|re-?pick|pickup|resume (later|later)"]
+condition: ["(?=[\\s\\S]*long-?running|expensive|lengthy|heavy (process|task|job|computation)|takes (long|time)|big batch|slow (task|process))(?=[\\s\\S]*pause|postpone|resume|cache|save|persist|drop|cancel|abort|offload|defer|re-?queue|queue|reprocess|reconcil|checkpoint|porch)(?=[\\s\\S]*cron|scheduler|background (job|task)|separate (db|table|tmpfs|tmp)|re-?pick|pickup|resume (later|later))"]
 scope: ["text", "thinking"]
 ---
 

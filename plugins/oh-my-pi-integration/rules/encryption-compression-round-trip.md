@@ -1,7 +1,7 @@
 ---
 name: encryption-compression-round-trip
 description: "For applications that require it — confirm data is properly encrypted and compressed, AND is decryptable/decompressable on round trip: serialize -> encrypt/compress -> store -> retrieve -> decrypt/decompress reproduces the original bytes"
-condition: ["encrypt|decrypt|cipher|crypto|at rest|in transit|TLS", "compress|decompress|gzip|zlib|snappy|lz4|lzma|zip|codec", "round trip|serialize|deserialize", "secret|sensitive|credential|password|pii|personal (data|info)|token"]
+condition: ["(?=[\\s\\S]*encrypt|decrypt|cipher|crypto|at rest|in transit|TLS)(?=[\\s\\S]*compress|decompress|gzip|zlib|snappy|lz4|lzma|zip|codec)(?=[\\s\\S]*round trip|serialize|deserialize)(?=[\\s\\S]*secret|sensitive|credential|password|pii|personal (data|info)|token)"]
 scope: ["text", "thinking"]
 ---
 

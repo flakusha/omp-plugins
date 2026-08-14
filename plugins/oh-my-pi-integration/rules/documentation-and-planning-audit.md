@@ -1,7 +1,7 @@
 ---
 name: documentation-and-planning-audit
 description: "When updating/extending docs, plans, tickets — audit implementation-process documents that may always be stale against the actual code; and promote .tmp scratchpad validation scripts that earned their keep into real project hooks"
-condition: ["(doc|documentation|README|CHANGELOG|spec|design doc|architecture|plan|epic|ticket|roadmap|backlog)", "(update|extend|rewrite|add\\b|refer|cite|rely|follow)", "stale|outdated|out of (date|sync)|drift|drifted|audit|verify against (code|reality)", "(scratchpad|\\.tmp|\\.scratch)[a-z /]*script|validation (script|check|gate)|migrate (to|into) (a )?(real )?hook|commit hook|pre-commit"]
+condition: ["(?=[\\s\\S]*(doc|documentation|README|CHANGELOG|spec|design doc|architecture|plan|epic|ticket|roadmap|backlog))(?=[\\s\\S]*(update|extend|rewrite|add\\b|refer|cite|rely|follow))(?=[\\s\\S]*stale|outdated|out of (date|sync)|drift|drifted|audit|verify against (code|reality))(?=[\\s\\S]*(scratchpad|\\.tmp|\\.scratch)[a-z /]*script|validation (script|check|gate)|migrate (to|into) (a )?(real )?hook|commit hook|pre-commit)"]
 scope: ["text", "thinking"]
 ---
 

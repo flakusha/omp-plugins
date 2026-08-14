@@ -1,7 +1,7 @@
 ---
 name: verify-api-actuality
 description: "Before using an API pattern, verify the current recommended form — await vs .then(), deprecated vs modern functions, current library guidance — instead of pattern-matching on memory; docs tools/MCP, changelogs, and deprecation-aware linters are the source, not training recall"
-condition: ["\\.then\\(|\\.catch\\(|async/await|await vs", "deprecat(ed)? (API|method|function)|outdated API", "current (recommended|api)|modern (api|replacement)", "is .* still (current|recommended|used)|actual.*api", "verify.*(api|pattern|recommendation)|check.*(api|docs)"]
+condition: ["(?=[\\s\\S]*\\.then\\(|\\.catch\\(|async/await|await vs)(?=[\\s\\S]*deprecat(ed)? (API|method|function)|outdated API)(?=[\\s\\S]*current (recommended|api)|modern (api|replacement))(?=[\\s\\S]*is .* still (current|recommended|used)|actual.*api)(?=[\\s\\S]*verify.*(api|pattern|recommendation)|check.*(api|docs))"]
 scope: ["text", "thinking"]
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: split-html-fragments
 description: "If the project supports it, split big HTML files into fragments loaded at render time (includes, partials, components) — each fragment one responsibility, reusable, cacheable; fragments may be dynamic with the same constants/replacements as the main template; if the project prohibits or the stack does not support fragments, keep the file whole and state why"
-condition: ["big html|large html|html file.*(big|large|long|split)", "fragment|partial|include|component", "split.*(html|template|file)", "server-side include|\\bSSI\\b", "render.*(fragment|partial)", "single-file (html|template)"]
+condition: ["(?=[\\s\\S]*big html|large html|html file.*(big|large|long|split))(?=[\\s\\S]*fragment|partial|include|component)(?=[\\s\\S]*split.*(html|template|file))(?=[\\s\\S]*server-side include|\\bSSI\\b)(?=[\\s\\S]*render.*(fragment|partial))(?=[\\s\\S]*single-file (html|template))"]
 scope: ["text", "thinking"]
 ---
 
