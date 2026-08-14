@@ -83,6 +83,7 @@ dist
 # Scratchpad, agents
 .tmp
 .serena
+.omp
 # Bundle (omp-plugins)
 bun.lockb
 pack/dist/

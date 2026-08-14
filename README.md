@@ -10,6 +10,7 @@ project skill — all loadable into any omp profile.
 |---|---|---|
 | Integration extension — rtk/lean-ctx bash rewrite, engram memory auto-save + turn-start retrieval, GPG/SSH hard-stop guards | `plugins/oh-my-pi-integration/extensions/index.ts` (+ `guards/`) | `package.json` → `omp.extensions` |
 | Native-tool → lean-ctx re-route hook | `plugins/oh-my-pi-integration/hooks/pre/lean-ctx-native-reroute.ts` | `agent/hooks/pre/` |
+| Universal project rules — harness behavior (no unsourced framework claims, no premature completion), tool-routing discipline, strict review standards, docs-and-planning audit, parallel-safe tests, config merge precedence, safe-command guards | `plugins/oh-my-pi-integration/rules/` | `agent/…/.omp/rules/` |
 | Loop-Lore world-timeline skill | `plugins/oh-my-pi-integration/skills/loop-lore-world-timeline/SKILL.md` | `agent/skills/` |
 | Agent config scaffold (no credentials) | `agent/config.yml` | `agent/config.yml` |
 
@@ -33,6 +34,17 @@ plugin can be installed directly with `omp plugin install`.
   imperative hard-stop directive and blocks the agent's usual self-recovery
   commands (`gpgconf`, `gpg-agent`, `ssh-agent` lifecycle, socket reassignment,
   passphrase bypass).
+- **Destructive-git guard** — notifies (never blocks) when a `git` command
+  would destroy work (`reset --hard`, `clean -f`, `push -f`, `branch -D`,
+  `stash`, `checkout --`, …) so the agent sees the risk before committing.
+- **Post-edit lint feedback** — after a successful `edit`/`write` of a TS
+  file, runs the project's biome on that file and surfaces diagnostics in the
+  tool result (best-effort, bounded; resolves the repo-local biome from
+  `node_modules/.bin`, falling back to PATH).
+- **Compaction preservation** — on `session.compacting`, injects the
+  in-flight mutation buffer into the compaction summary so no uncommitted work
+  is lost across a compaction (`harness-evasion-guard` pre-hook additionally
+  blocks agent attempts to bypass the read-only harness tools in the shell).
 
 All guards live as pure, unit-tested logic in `extensions/guards/`: they take
 command/output strings and return decisions, so behavior is auditable without a
@@ -60,6 +72,14 @@ databases, sessions, caches, or memories. It refuses to run against your live
 home profile (use an isolated target, e.g. `/tmp/omp-test`), then point a
 scratch profile at it with `omp --profile test`.
 
+Re-runs are safe and manifest-driven: an ownership ledger records every file
+the installer wrote. On re-run, installer-owned files are updated in place
+(rules added, changed, or renamed synchronize without `--force`), files that no
+longer ship are removed, and files you modified locally (or never installed)
+are kept with a notice — never clobbered without `--force`, which overwrites
+them while keeping the previous copy as `<dst>.bak`. Symlinked destinations are
+never followed; every touched path is checked to stay inside `TARGET`.
+
 ## Extension runtime options
 
 | Environment variable | Effect |
@@ -80,14 +100,16 @@ bun run verify     # lint + typecheck + test
 
 | Script | What it runs |
 |---|---|
-| `verify` | `lint` → `typecheck` → `test` |
-| `lint` / `lint:fix` | [Biome](https://biomejs.dev) check (`lint:fix` applies safe fixes + import sorting) |
+| `verify` | `lint` → `typecheck` → `test` → `check:rules` |
+| `lint` / `lint:fix` | Biome check, then the console-log gate (`check-no-console.sh`) — `lint:fix` also applies safe fixes + import sorting |
 | `typecheck` | `tsc --noEmit` over `plugins/**/*.ts` |
-| `test` | `bun test` — guard unit tests in `extensions/guards/__tests__/` |
+| `test` | `bun test` — guard unit tests in `extensions/guards/__tests__/` and hook tests |
+| `check:rules` | `check-rules-sync.sh` — validates every rule's frontmatter (name == filename, description/condition non-empty, valid scope) and syncs against the installer laydown |
 | `install:test` | `scripts/install.sh --target /tmp/omp-test` |
 
-Linting, types, and tests are all exercised together by `bun run verify`, which
-is the standard pre-commit / CI gate for this repository.
+Linting, types, tests, and the rules bundle are all exercised together by
+`bun run verify`, which is the standard pre-commit / CI gate for this
+repository.
 
 > **Note on Biome and regex guards.** `noUselessStringRaw` is disabled in
 > `biome.json` because the guard modules build regexes from `String.raw`
@@ -102,7 +124,8 @@ is the standard pre-commit / CI gate for this repository.
 ```
 ├── .omp-plugin/marketplace.json   catalog for `omp plugin install`
 ├── agent/config.yml               agent config scaffold (credential-free)
-├── plugins/oh-my-pi-integration/  the plugin package (extensions/hooks/skills/manifest)
+├── plugins/oh-my-pi-integration/  the plugin package (extensions/hooks/rules/skills/manifest)
+│   └── rules/                      universal project rules (installed to <target>.omp/rules/)
 ├── scripts/install.sh             installer for an isolated omp profile
 ├── biome.json                     lint/format config
 ├── tsconfig.json                  TS config (moduleResolution: bundler)

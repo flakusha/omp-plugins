@@ -16,12 +16,13 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "biome check plugins scripts",
-    "lint:fix": "biome check --write plugins scripts",
+    "lint": "biome check plugins scripts && bash scripts/check-no-console.sh",
+    "lint:fix": "biome check --write plugins scripts && bash scripts/check-no-console.sh",
     "format": "biome format --write plugins scripts",
     "test": "bun test",
     "test:watch": "bun test --watch",
-    "verify": "bun run lint && bun run typecheck && bun run test",
+    "check:rules": "bash scripts/check-rules-sync.sh",
+    "verify": "bun run lint && bun run typecheck && bun run test && bun run check:rules",
     "install:test": "bash scripts/install.sh --target /tmp/omp-test"
   }
 }
