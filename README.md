@@ -22,7 +22,9 @@ plugin can be installed directly with `omp plugin install`.
 - **Bash tool-call rewrite** — rewrites simple `bash` tool calls to use `rtk`
   (output trimming) or `lean-ctx -c` (compression) so agent tool output costs
   less context. Only single, simple commands are rewritten; anything ambiguous,
-  PTY, or async is passed through untouched.
+  PTY, or async is passed through untouched. rtk subcommands are discovered at
+  runtime from the installed binary (`rtk --help`) and gated behind a curated
+  safety set — version drift or a missing rtk falls through to lean-ctx.
 - **Engram memory persistence** — buffers notable mutations each turn and saves
   them to [engram](https://engram.sh) at turn end and session shutdown, so later
   sessions can reuse recorded solutions.
@@ -49,6 +51,48 @@ plugin can be installed directly with `omp plugin install`.
 All guards live as pure, unit-tested logic in `extensions/guards/`: they take
 command/output strings and return decisions, so behavior is auditable without a
 harness.
+
+## Universal project rules
+
+Rules live in `plugins/oh-my-pi-integration/rules/` and are installed to
+`<target>.omp/agent/rules/`. Each rule has YAML frontmatter:
+
+```yaml
+---
+name: <filename-stem>
+description: "<one-line purpose>"
+condition: ["<regex-with-lookahead-AND-facets>"]
+scope: ["text", "thinking"]
+---
+<imperative steering content>
+```
+
+### Condition semantics — AND across facets
+
+The ttsr engine compiles each `condition:` array element into an independent
+RegExp and triggers when **any** one matches (OR). To express AND (all facets
+must co-appear in the assistant's stream), each rule's condition is a single
+regex using lookahead chains:
+
+```
+(?=[\s\S]*facet1)(?=[\s\S]*facet2)(?=[\s\S]*facet3)...
+```
+
+This fires only when the assistant's streamed text/thinking contains all
+facets. A rule with a single facet is unchanged.
+
+### Scope conventions
+
+| Scope | Fires on | Use for |
+|---|---|---|
+| `text` | assistant prose | reminders about approach, quality, conventions |
+| `thinking` | assistant internal reasoning | same as text, for thinking blocks |
+| `tool:bash` | bash tool-call composition | preventing specific commands or tool misuse |
+| `tool:edit` / `tool:write` | edit/write tool calls | file-content rules |
+
+Rules about **preventing specific commands** (e.g. `git status` during
+implementation) should scope to `tool:bash` only — scoping to `text` causes
+them to fire during review/discussion where the commands are legitimate.
 
 ## Install
 
@@ -106,11 +150,12 @@ bun run verify     # lint + typecheck + test
 
 | Script | What it runs |
 |---|---|
-| `verify` | `lint` → `typecheck` → `test` → `check:rules` |
+| `verify` | `lint` → `typecheck` → `test` → `check:rules` → `check:ship` |
 | `lint` / `lint:fix` | Biome check, then the console-log gate (`check-no-console.sh`) — `lint:fix` also applies safe fixes + import sorting |
 | `typecheck` | `tsc --noEmit` over `plugins/**/*.ts` |
 | `test` | `bun test` — guard unit tests in `extensions/guards/__tests__/` and hook tests |
 | `check:rules` | `check-rules-sync.sh` — validates every rule's frontmatter (name == filename, description/condition non-empty, valid scope) and syncs against the installer laydown |
+| `check:ship` | `check-shipment.sh` — installs into a temp target and asserts no `__tests__/` dirs ship, no `.bak`/`.original` files, and only `index.ts` at top of `agent/extensions/` |
 | `install:test` | `scripts/install.sh --target /tmp/omp-test` |
 
 Linting, types, tests, and the rules bundle are all exercised together by
