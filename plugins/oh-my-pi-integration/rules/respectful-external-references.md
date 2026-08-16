@@ -1,7 +1,7 @@
 ---
 name: respectful-external-references
 description: "When referencing other project(s) or researching them — use respectful language: factual, credited, evidence-based; never dismissive or disparaging of someone else's work"
-condition: ["(?=[\\s\\S]*other project|external project|upstream|third-party|reference project|competitor|their (code|design|approach|implementation))(?=[\\s\\S]*respectful|disparag|dismissive|insult|criticiz|poorly (designed|written)|hacky|terrible|stupid)"]
+condition: ["^(?=[\\s\\S]*other project|external project|upstream|third-party|reference project|competitor|their (code|design|approach|implementation))(?=[\\s\\S]*respectful|disparag|dismissive|insult|criticiz|poorly (designed|written)|hacky|terrible|stupid)"]
 scope: ["text", "thinking"]
 ---
 

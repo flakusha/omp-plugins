@@ -1,7 +1,7 @@
 ---
 name: template-constants-for-i18n
 description: "When the application supports constants, dynamic syntax, replacements, handlebars, or any template interpolation, design new named constants/keys for user-visible strings from the start — future i18n and dynamic content slot into the existing keys instead of requiring a full-content sweep"
-condition: ["(?=[\\s\\S]*handlebar|mustache|template (engine|syntax)|\\{\\{|\\{placeholder)(?=[\\s\\S]*i18n|internationaliz|translation|localiz)(?=[\\s\\S]*constant[\\s\\S]{0,40}?(template|html|string)|placeholder[\\s\\S]{0,40}?(key|constant))(?=[\\s\\S]*hardcod[\\s\\S]{0,40}?(string|text|label|button))(?=[\\s\\S]*user-visible (string|text|label))"]
+condition: ["^(?=[\\s\\S]*handlebar|mustache|template (engine|syntax)|\\{\\{|\\{placeholder)(?=[\\s\\S]*i18n|internationaliz|translation|localiz)(?=[\\s\\S]*constant[\\s\\S]{0,40}?(template|html|string)|placeholder[\\s\\S]{0,40}?(key|constant))(?=[\\s\\S]*hardcod[\\s\\S]{0,40}?(string|text|label|button))(?=[\\s\\S]*user-visible (string|text|label))"]
 scope: ["text", "thinking"]
 ---
 

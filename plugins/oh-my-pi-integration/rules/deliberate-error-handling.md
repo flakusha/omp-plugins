@@ -1,7 +1,7 @@
 ---
 name: deliberate-error-handling
 description: "For implemented functionality, deliberately choose the error-handling structure — try/catch/finally (or the language's equivalent): what is caught, what propagates, what finally guarantees. Proper error handling is a must, not an afterthought: handle or propagate, never silently swallow"
-condition: ["(?=[\\s\\S]*\\btry\\b|\\bcatch\\b|\\bfinally\\b|try/catch|try-catch)(?=[\\s\\S]*error handling|error path|error-handl)(?=[\\s\\S]*exception|\\bthrow\\b|\\bpanic\\b|onError)(?=[\\s\\S]*propagat(e|ion)?|rethrow)(?=[\\s\\S]*swallow(ed)? (error|exception))(?=[\\s\\S]*catch[\\s\\S]{0,40}?ignore|empty catch)"]
+condition: ["^(?=[\\s\\S]*\\btry\\b|\\bcatch\\b|\\bfinally\\b|try/catch|try-catch)(?=[\\s\\S]*error handling|error path|error-handl)(?=[\\s\\S]*exception|\\bthrow\\b|\\bpanic\\b|onError)(?=[\\s\\S]*propagat(e|ion)?|rethrow)(?=[\\s\\S]*swallow(ed)? (error|exception))(?=[\\s\\S]*catch[\\s\\S]{0,40}?ignore|empty catch)"]
 scope: ["text", "thinking"]
 ---
 

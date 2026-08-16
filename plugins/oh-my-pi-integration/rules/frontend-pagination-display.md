@@ -1,7 +1,7 @@
 ---
 name: frontend-pagination-display
 description: "Pagination on frontend AND backend with a proper amount of elements displayed — users do not list huge pages, devices may be slow, memory can be exhausted, responsiveness suffers; choose a sane page size and bounded rendering"
-condition: ["(?=[\\s\\S]*frontend|client|ui|list|table|grid|display (results|items|rows))(?=[\\s\\S]*pagination|paginate|page size|show more|load more|infinite scroll|next page|items per page)(?=[\\s\\S]*huge page|too many|slow device|memory (exhaust|pressure)|responsive|lag|freeze|virtualiz)"]
+condition: ["^(?=[\\s\\S]*frontend|client|ui|list|table|grid|display (results|items|rows))(?=[\\s\\S]*pagination|paginate|page size|show more|load more|infinite scroll|next page|items per page)(?=[\\s\\S]*huge page|too many|slow device|memory (exhaust|pressure)|responsive|lag|freeze|virtualiz)"]
 scope: ["text", "thinking"]
 ---
 

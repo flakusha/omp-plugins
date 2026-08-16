@@ -1,7 +1,7 @@
 ---
 name: prefer-async-parallelism
 description: "If possible to identify — prefer async code: multiple tasks running in parallel or a framework-managed loop are much more effective than sequential execution; counter-rationale: fast operations should run in one thread due to cache locality and thread/async overhead"
-condition: ["(?=[\\s\\S]*async|await|Promise|concurrent|parallel)(?=[\\s\\S]*sequential|one by one|one at a time|blocking (call|loop))(?=[\\s\\S]*in parallel|at the same time|concurrently|fire off)"]
+condition: ["^(?=[\\s\\S]*async|await|Promise|concurrent|parallel)(?=[\\s\\S]*sequential|one by one|one at a time|blocking (call|loop))(?=[\\s\\S]*in parallel|at the same time|concurrently|fire off)"]
 scope: ["text", "thinking"]
 ---
 

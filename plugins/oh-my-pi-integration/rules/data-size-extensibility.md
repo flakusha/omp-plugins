@@ -1,7 +1,7 @@
 ---
 name: data-size-extensibility
 description: "Optional confirmation — data size/length constraints (enforced, no silent truncation, no unbounded reads) and future extensibility (forward-compatible shapes, schema versioning) where size/extensibility is a real requirement"
-condition: ["(?=[\\s\\S]*size|length|max (size|length)|limit|truncat|buffer|payload|field size|column (size|length))(?=[\\s\\S]*extensib|future (proof|extend|evolution)|reserve|evolve|schema (change|migration|version))(?=[\\s\\S]*\\bapi\\b|db|column|field|payload|data store)"]
+condition: ["^(?=[\\s\\S]*size|length|max (size|length)|limit|truncat|buffer|payload|field size|column (size|length))(?=[\\s\\S]*extensib|future (proof|extend|evolution)|reserve|evolve|schema (change|migration|version))(?=[\\s\\S]*\\bapi\\b|db|column|field|payload|data store)"]
 scope: ["text", "thinking"]
 ---
 

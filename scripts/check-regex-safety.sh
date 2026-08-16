@@ -9,11 +9,18 @@
 #      into two lookaheads (`(?=[\s\S]*X)(?=[\s\S]*Y)`) per the README AND-facet
 #      idiom.
 #
-#   2. WARN — greedy `[\s\S]*` lead in a lookahead. In Bun/JavaScriptCore the
+#   2. ERROR — unanchored lookahead chain. A condition that starts with `(?=`
+#      but not `^(?=` is a zero-width regex with no anchor: on non-matching
+#      input, .test() retries the full greedy `[\s\S]*` scan at every stream
+#      position -> O(n^2) (measured ~2.3 s across 75 rules on 8 KB non-match;
+#      1.2 ms anchored). Fix: prepend `^` to the chain. Semantically identical
+#      (each facet's `[\s\S]*` already scans the whole stream from position 0).
+#
+#   3. WARN — greedy `[\s\S]*` lead in a lookahead. In Bun/JavaScriptCore the
 #      greedy `[\s\S]*` prefix defeats the engine's literal fast-path search:
 #      `(?=[\s\S]*documentation)` is ~35,000× slower than bare `documentation`
-#      (~3.8 ms vs 0.11 µs on 2.8 KB). This is the dominant per-delta cost and
-#      is structural (every facet has one). Mitigation is engine-level: test
+#      (~3.8 ms vs 0.11 µs on 2.8 KB). This is a constant-factor per-delta cost
+#      (structural: every facet has one). Mitigation is engine-level: test
 #      each facet as a bare regex and AND the results, or for rules with ≤3
 #      facets rewrite the AND-chain as an OR-of-permutations
 #      (`A[\s\S]*B|B[\s\S]*A` ≈ 1000× faster). Not fixable in the rule text
@@ -64,9 +71,12 @@ for fn in sorted(os.listdir(rules_dir)):
         if DOTSTAR_RE.search(c):
             print(f"ERROR {fn}: unbounded .* (quadratic backtracking): {c[:80]}...")
             errors += 1
+        if c.startswith("(?=") and not c.startswith("^(?="):
+            print(f"ERROR {fn}: unanchored lookahead chain (O(n^2) ReDoS): {c[:80]}...")
+            errors += 1
         if GREEDY_LEAD_RE.search(c):
             warnings += 1  # counted, not printed per-file (every rule triggers it)
 
-print(f"checked {len(os.listdir(rules_dir))} rule files: {errors} nested-wildcard errors, {warnings} greedy-lead warnings")
+print(f"checked {len(os.listdir(rules_dir))} rule files: {errors} regex-safety errors, {warnings} greedy-lead warnings")
 sys.exit(1 if errors else 0)
 PY

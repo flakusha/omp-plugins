@@ -1,7 +1,7 @@
 ---
 name: log-boundary-events
 description: "Log incoming and outgoing requests — or at minimum the fact of them happening — at debug/info for external boundaries: connections to other systems/programs, sh/bash and subprocess calls, external allocations/deallocations, tmp access; structured, secret-free, scoped to the boundary class not internal plumbing"
-condition: ["(?=[\\s\\S]*log[\\s\\S]{0,40}?(incoming|outgoing|request|connection)|incoming request|outgoing request)(?=[\\s\\S]*\\bdebug\\b|\\binfo\\b|logging|logger|log level)(?=[\\s\\S]*connection[\\s\\S]{0,40}?(other|external|system|program)|connect[\\s\\S]{0,40}?(db|socket|api))(?=[\\s\\S]*sh/bash|shell call|subprocess|\\bexec\\b|spawn|external (process|call|command))(?=[\\s\\S]*allocat[\\s\\S]{0,40}?(external|deallocat)|resource (acquire|release|allocat)|(socket|file handle|lock)[\\s\\S]{0,40}?(open|close|acquire|release))(?=[\\s\\S]*tmp|temp (file|dir|directory|access))(?=[\\s\\S]*observab|correlation|structured log)"]
+condition: ["^(?=[\\s\\S]*log[\\s\\S]{0,40}?(incoming|outgoing|request|connection)|incoming request|outgoing request)(?=[\\s\\S]*\\bdebug\\b|\\binfo\\b|logging|logger|log level)(?=[\\s\\S]*connection[\\s\\S]{0,40}?(other|external|system|program)|connect[\\s\\S]{0,40}?(db|socket|api))(?=[\\s\\S]*sh/bash|shell call|subprocess|\\bexec\\b|spawn|external (process|call|command))(?=[\\s\\S]*allocat[\\s\\S]{0,40}?(external|deallocat)|resource (acquire|release|allocat)|(socket|file handle|lock)[\\s\\S]{0,40}?(open|close|acquire|release))(?=[\\s\\S]*tmp|temp (file|dir|directory|access))(?=[\\s\\S]*observab|correlation|structured log)"]
 scope: ["text", "thinking"]
 ---
 

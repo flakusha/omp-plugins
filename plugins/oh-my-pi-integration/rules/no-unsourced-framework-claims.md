@@ -1,7 +1,7 @@
 ---
 name: no-unsourced-framework-claims
 description: "Never assert framework/library capabilities or limitations without reading actual source or docs"
-condition: ["(?=[\\s\\S]*doesn't support)(?=[\\s\\S]*doesn't have a built-in)(?=[\\s\\S]*can't just)(?=[\\s\\S]*plugins are created with[\\s\\S]{0,40}?baked in)(?=[\\s\\S]*no way to)(?=[\\s\\S]*does not support)"]
+condition: ["^(?=[\\s\\S]*doesn't support)(?=[\\s\\S]*doesn't have a built-in)(?=[\\s\\S]*can't just)(?=[\\s\\S]*plugins are created with[\\s\\S]{0,40}?baked in)(?=[\\s\\S]*no way to)(?=[\\s\\S]*does not support)"]
 scope: "text"
 ---
 

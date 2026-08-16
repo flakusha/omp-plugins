@@ -1,7 +1,7 @@
 ---
 name: parallel-safe-tests
 description: "When writing and running tests — always consider that tests can run in parallel and allocate/deallocate the same resource; isolated 1-thread testing is fine for initial implementation, but the end goal is fast parallel tests usable in a pre-commit hook"
-condition: ["(?=[\\s\\S]*test|spec|bun test|jest|vitest|pytest|go test|describe\\(|it\\(|test\\()(?=[\\s\\S]*parallel|concurrent|race|in parallel|--threads|--workers|-j \\d)(?=[\\s\\S]*fixture|teardown|setUp|afterEach|beforeEach|temp|tmpdir|port \\d|shared (state|resource|global))"]
+condition: ["^(?=[\\s\\S]*test|spec|bun test|jest|vitest|pytest|go test|describe\\(|it\\(|test\\()(?=[\\s\\S]*parallel|concurrent|race|in parallel|--threads|--workers|-j \\d)(?=[\\s\\S]*fixture|teardown|setUp|afterEach|beforeEach|temp|tmpdir|port \\d|shared (state|resource|global))"]
 scope: ["text", "thinking"]
 ---
 

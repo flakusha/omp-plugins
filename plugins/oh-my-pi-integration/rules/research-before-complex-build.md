@@ -1,7 +1,7 @@
 ---
 name: research-before-complex-build
 description: "For complex functionality, run parallel research before building: existing reliable implementations, mature libraries, and dependencies already usable — use the harness's parallel research tools (librarian, library-docs MCP, web search, subagents) and prefer proven building blocks over inventing complex behavior from scratch"
-condition: ["(?=[\\s\\S]*complex (functionality|feature|logic|module|system))(?=[\\s\\S]*implement(ing)? (a )?(complex|non-trivial|advanced))(?=[\\s\\S]*research[\\s\\S]{0,40}?(implement|library|dependenc|existing))(?=[\\s\\S]*existing (reliable )?(implement|solution|library)|proven (library|implementation))(?=[\\s\\S]*which (library|dependency|implementation)|pick (a )?(library|dependency))(?=[\\s\\S]*build from scratch|reinvent)"]
+condition: ["^(?=[\\s\\S]*complex (functionality|feature|logic|module|system))(?=[\\s\\S]*implement(ing)? (a )?(complex|non-trivial|advanced))(?=[\\s\\S]*research[\\s\\S]{0,40}?(implement|library|dependenc|existing))(?=[\\s\\S]*existing (reliable )?(implement|solution|library)|proven (library|implementation))(?=[\\s\\S]*which (library|dependency|implementation)|pick (a )?(library|dependency))(?=[\\s\\S]*build from scratch|reinvent)"]
 scope: ["text", "thinking"]
 ---
 

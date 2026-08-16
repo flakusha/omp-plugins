@@ -1,7 +1,7 @@
 ---
 name: unique-identifiers-confirmed
 description: "For API, DB access implementations — confirm unique ids are used: collision-safe identity for every stored record, idempotency keys for retryable writes, and unguessable/opaque ids where exposure matters"
-condition: ["(?=[\\s\\S]*unique id|uuid|guid|idempoten|primary key|identity|collision|enumerable)(?=[\\s\\S]*create (a )?(record|row|entity|resource)|insert|add (a )?new|generate (an )?id|upsert)(?=[\\s\\S]*api|database|db|table|collection|data store)"]
+condition: ["^(?=[\\s\\S]*unique id|uuid|guid|idempoten|primary key|identity|collision|enumerable)(?=[\\s\\S]*create (a )?(record|row|entity|resource)|insert|add (a )?new|generate (an )?id|upsert)(?=[\\s\\S]*api|database|db|table|collection|data store)"]
 scope: ["text", "thinking"]
 ---
 

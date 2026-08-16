@@ -1,7 +1,7 @@
 ---
 name: harness-use-readonly-mcp
 description: "Native grep is wired to lean-ctx and shell rg/grep are blocked — use the read-only lean-ctx MCP tool directly"
-condition: ["(?=[\\s\\S]*\\brg\\b)(?=[\\s\\S]*ripgrep)(?=[\\s\\S]*\\bgrep\\b)(?=[\\s\\S]*pattern)"]
+condition: ["^(?=[\\s\\S]*\\brg\\b)(?=[\\s\\S]*ripgrep)(?=[\\s\\S]*\\bgrep\\b)(?=[\\s\\S]*pattern)"]
 scope: ["tool:bash", "tool:grep"]
 ---
 

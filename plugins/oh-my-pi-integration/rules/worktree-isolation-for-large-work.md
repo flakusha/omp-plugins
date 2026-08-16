@@ -1,7 +1,7 @@
 ---
 name: worktree-isolation-for-large-work
 description: "Qualify where agent changes land: for large planned work or work needing isolation, prefer a dedicated git worktree (in-repo path, gitignored) when supported; easy changes may land on the current branch unless it is protected by system or repo management"
-condition: ["(?=[\\s\\S]*(a lot|large|major|significant|big))(?=[\\s\\S]*(planned work|change|refactor|feature|task))(?=[\\s\\S]*worktree)(?=[\\s\\S]*git worktree)(?=[\\s\\S]*isolation|isolate(d)? (work|changes)?)(?=[\\s\\S]*protected branch|branch protection|protected by)(?=[\\s\\S]*easy change|small change|simple fix|one-line fix)(?=[\\s\\S]*continue (the )?work)(?=[\\s\\S]*which branch|where (should|do)[\\w ]{0,24}work)"]
+condition: ["^(?=[\\s\\S]*(a lot|large|major|significant|big))(?=[\\s\\S]*(planned work|change|refactor|feature|task))(?=[\\s\\S]*worktree)(?=[\\s\\S]*git worktree)(?=[\\s\\S]*isolation|isolate(d)? (work|changes)?)(?=[\\s\\S]*protected branch|branch protection|protected by)(?=[\\s\\S]*easy change|small change|simple fix|one-line fix)(?=[\\s\\S]*continue (the )?work)(?=[\\s\\S]*which branch|where (should|do)[\\w ]{0,24}work)"]
 scope: ["thinking", "text"]
 ---
 

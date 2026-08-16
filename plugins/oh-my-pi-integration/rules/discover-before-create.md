@@ -1,7 +1,7 @@
 ---
 name: discover-before-create
 description: "Before creating new functionality, research the repo for something similar already implemented: use repo tooling (symbol search, pattern search, call/dependency graphs) to find existing, unwired, or duplicating functions; prefer reuse, or consolidation into a shared module, over writing a parallel implementation"
-condition: ["(?=[\\s\\S]*new (function|feature|functionality|module|util|helper|api))(?=[\\s\\S]*implement|create (a )?(function|util|helper|module))(?=[\\s\\S]*add[\\s\\S]{0,40}?(function|util|helper))(?=[\\s\\S]*similar[\\s\\S]{0,40}?(exist|implemented)|already (exists|implemented|wired))(?=[\\s\\S]*duplicat(ed|e)? (function|code|implementation)|near-identical)(?=[\\s\\S]*reuse|shared module|DRY|one source of truth)(?=[\\s\\S]*discover|search (the )?(code|repo)|call graph|dependency graph|symbol (search|lookup))"]
+condition: ["^(?=[\\s\\S]*new (function|feature|functionality|module|util|helper|api))(?=[\\s\\S]*implement|create (a )?(function|util|helper|module))(?=[\\s\\S]*add[\\s\\S]{0,40}?(function|util|helper))(?=[\\s\\S]*similar[\\s\\S]{0,40}?(exist|implemented)|already (exists|implemented|wired))(?=[\\s\\S]*duplicat(ed|e)? (function|code|implementation)|near-identical)(?=[\\s\\S]*reuse|shared module|DRY|one source of truth)(?=[\\s\\S]*discover|search (the )?(code|repo)|call graph|dependency graph|symbol (search|lookup))"]
 scope: ["text", "thinking"]
 ---
 

@@ -75,11 +75,19 @@ must co-appear in the assistant's stream), each rule's condition is a single
 regex using lookahead chains:
 
 ```
-(?=[\s\S]*facet1)(?=[\s\S]*facet2)(?=[\s\S]*facet3)...
+^(?=[\s\S]*facet1)(?=[\s\S]*facet2)(?=[\s\S]*facet3)...
 ```
 
 This fires only when the assistant's streamed text/thinking contains all
 facets. A rule with a single facet is unchanged.
+
+**Always anchor the chain with `^`.** Without it the zero-width lookahead
+regex has no anchor, so on non-matching input `.test()` re-runs the greedy
+`[\s\S]*` scan at every stream position — O(n²) ReDoS (measured ~2.3 s across
+75 rules on an 8 KB non-match vs ~1.2 ms anchored). Anchoring is semantically
+identical: each facet's `[\s\S]*` already scans the whole stream from
+position 0. `scripts/check-regex-safety.sh` (wired into `bun run verify`)
+errors on any unanchored lookahead chain and on unbounded `.*`.
 
 ### Scope conventions
 

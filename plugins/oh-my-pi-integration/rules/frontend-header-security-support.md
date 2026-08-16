@@ -1,7 +1,7 @@
 ---
 name: frontend-header-security-support
 description: "For the frontend — review and confirm security and support for HTTP headers: incorrect initialization, lack of headers, or misconfiguration can make the entire page dysfunctional; the depth is environment/frontend-implementation dependent and MAY be postponed for a primitive MVP/POC"
-condition: ["(?=[\\s\\S]*frontend|client|browser|page|app|spa)(?=[\\s\\S]*header|\\bmeta\\b|http (head)|request header|response header|security header)(?=[\\s\\S]*content-security|csp|x-frame|frame-ancestors|iframe|cors|referrer|hsts|csrf|authorization|token)"]
+condition: ["^(?=[\\s\\S]*frontend|client|browser|page|app|spa)(?=[\\s\\S]*header|\\bmeta\\b|http (head)|request header|response header|security header)(?=[\\s\\S]*content-security|csp|x-frame|frame-ancestors|iframe|cors|referrer|hsts|csrf|authorization|token)"]
 scope: ["text", "thinking"]
 ---
 

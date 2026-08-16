@@ -1,7 +1,7 @@
 ---
 name: template-literals-over-concat
 description: "Prefer f-strings/template literals (and format methods) over '+' string concatenation — readable, typo-resistant interpolation; for very large or loop-built strings, prefer a static array of parts joined once over one giant template or repeated concatenation"
-condition: ["(?=[\\s\\S]*f-string|fstring|template literal)(?=[\\s\\S]*string concat(enation)?|concat(enate)?)(?=[\\s\\S]*\\+[\\s\\S]{0,40}?(string|concat))(?=[\\s\\S]*'[^']*' \\+)(?=[\\s\\S]*\"[^\"]*\" \\+)(?=[\\s\\S]*backtick|`[\\s\\S]{0,80}?\\${)(?=[\\s\\S]*join(\\(|ed))(?=[\\s\\S]*String\\.raw)"]
+condition: ["^(?=[\\s\\S]*f-string|fstring|template literal)(?=[\\s\\S]*string concat(enation)?|concat(enate)?)(?=[\\s\\S]*\\+[\\s\\S]{0,40}?(string|concat))(?=[\\s\\S]*'[^']*' \\+)(?=[\\s\\S]*\"[^\"]*\" \\+)(?=[\\s\\S]*backtick|`[\\s\\S]{0,80}?\\${)(?=[\\s\\S]*join(\\(|ed))(?=[\\s\\S]*String\\.raw)"]
 scope: ["text", "thinking"]
 ---
 

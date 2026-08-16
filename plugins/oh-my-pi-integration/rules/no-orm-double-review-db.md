@@ -1,7 +1,7 @@
 ---
 name: no-orm-double-review-db
 description: "When the project uses no ORM or similar abstraction for DB access — double-review the raw database access commands: parameterization, error handling, transaction boundaries, and every path that builds/sends SQL or commands"
-condition: ["(?=[\\s\\S]*no orm|without (an? )?orm|raw (sql|query|db)|plain (sql|query)|direct (db|database) (access|query|driver))(?=[\\s\\S]*sqlite3|\\bpg\\b|mysql|odbc|jdbc|driver|hand-?written (sql|query))(?=[\\s\\S]*db|database|access (command|query)|no (query builder|abstraction|orm))"]
+condition: ["^(?=[\\s\\S]*no orm|without (an? )?orm|raw (sql|query|db)|plain (sql|query)|direct (db|database) (access|query|driver))(?=[\\s\\S]*sqlite3|\\bpg\\b|mysql|odbc|jdbc|driver|hand-?written (sql|query))(?=[\\s\\S]*db|database|access (command|query)|no (query builder|abstraction|orm))"]
 scope: ["text", "thinking"]
 ---
 

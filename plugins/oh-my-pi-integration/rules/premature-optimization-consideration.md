@@ -1,7 +1,7 @@
 ---
 name: premature-optimization-consideration
 description: "Consider effective structures and algorithms up front ('premature optimization') to avoid returning to the topic later — dynamic programming, dicts vs arrays, sets for lookups when sets are big — BUT prefer memory-bounded naive solutions when memory is constrained, rather than allocating uncontrollably"
-condition: ["(?=[\\s\\S]*performance|optimiz|fast|speed|slow|latency|lookup|search (is|in) (an? )?(array|set|dict|map)|dynamic programming)(?=[\\s\\S]*dict|map|set|array|hash|list (vs|or) (dict|set)|lookup (table|structure)|memoiz|\\bDP\\b)(?=[\\s\\S]*memory (constrained|bounded|limit)|allocation|uncontrolled|naive (solution|approach)|simple (solution|approach))"]
+condition: ["^(?=[\\s\\S]*performance|optimiz|fast|speed|slow|latency|lookup|search (is|in) (an? )?(array|set|dict|map)|dynamic programming)(?=[\\s\\S]*dict|map|set|array|hash|list (vs|or) (dict|set)|lookup (table|structure)|memoiz|\\bDP\\b)(?=[\\s\\S]*memory (constrained|bounded|limit)|allocation|uncontrolled|naive (solution|approach)|simple (solution|approach))"]
 scope: ["text", "thinking"]
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: async-research-during-build
 description: "When developing — identify if additional search/research needs to be spun up asynchronously or in a separate agent; work on the implementation and then verify whether additional edits are needed"
-condition: ["(?=[\\s\\S]*research|investigate|search (for|the)|look up|check docs|find out)(?=[\\s\\S]*while (implementing|working|building)|in the meantime|in parallel|separate agent|subagent|background (task|agent))(?=[\\s\\S]*verify (after|whether)|re-check|revisit)"]
+condition: ["^(?=[\\s\\S]*research|investigate|search (for|the)|look up|check docs|find out)(?=[\\s\\S]*while (implementing|working|building)|in the meantime|in parallel|separate agent|subagent|background (task|agent))(?=[\\s\\S]*verify (after|whether)|re-check|revisit)"]
 scope: ["text", "thinking"]
 ---
 

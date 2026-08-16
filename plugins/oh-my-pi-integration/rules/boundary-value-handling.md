@@ -1,7 +1,7 @@
 ---
 name: boundary-value-handling
 description: "For values crossing boundaries — handle null/undefined/empty/empty-object/big-number/small-number/error/option/failure/result cases explicitly; tooling may enforce these but is often absent and missed cases can be catastrophic; prefer designed default values to reduce null checks"
-condition: ["(?=[\\s\\S]*\\bnull\\b|undefined|empty (object|string|array|result)|big number|bigint|huge (number|value)|overflow|underflow)(?=[\\s\\S]*error object|failure (object|result)|option (object|value|type)|result (object|type)|\\bmaybe\\b|\\boptional\\b|nullable)(?=[\\s\\S]*return (value|type)|function returns|could be undefined|null pointer|optional chaining|\\b\\?\\.)"]
+condition: ["^(?=[\\s\\S]*\\bnull\\b|undefined|empty (object|string|array|result)|big number|bigint|huge (number|value)|overflow|underflow)(?=[\\s\\S]*error object|failure (object|result)|option (object|value|type)|result (object|type)|\\bmaybe\\b|\\boptional\\b|nullable)(?=[\\s\\S]*return (value|type)|function returns|could be undefined|null pointer|optional chaining|\\b\\?\\.)"]
 scope: ["text", "thinking"]
 ---
 

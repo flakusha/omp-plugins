@@ -1,7 +1,7 @@
 ---
 name: harness-tooling-discipline
 description: "When the agent uses shell/python/bun/external scripts: flag any that replace original harness functionality; strictly-required work becomes re-executable ./.tmp/ files; check/reconciliation logic becomes hooks or shared functions; discover system tools and route execution through harness tooling (lean-ctx, rtk); never evade interception with command/builtin/full-path forms"
-condition: ["(?=[\\s\\S]*command (ls|grep|cat|find|rg|sed)|\\bbuiltin\\b|bash -c|/usr/bin/|/bin/(ls|cat|grep|find))(?=[\\s\\S]*bypass|evade|intercept|rewrite|escape[\\s\\S]{0,40}?(harness|tooling)|not captured)(?=[\\s\\S]*which |command -v|tool[\\s\\S]{0,40}?(available|discovery|installed))(?=[\\s\\S]*lean-ctx|\\brtk\\b|ctx_shell)(?=[\\s\\S]*re-executable|\\.tmp/|scratch|reusable (script|hook)|shared function)(?=[\\s\\S]*replace[\\s\\S]{0,40}?harness|harness[\\s\\S]{0,40}?(replace|bypass)|external (script|tooling))"]
+condition: ["^(?=[\\s\\S]*command (ls|grep|cat|find|rg|sed)|\\bbuiltin\\b|bash -c|/usr/bin/|/bin/(ls|cat|grep|find))(?=[\\s\\S]*bypass|evade|intercept|rewrite|escape[\\s\\S]{0,40}?(harness|tooling)|not captured)(?=[\\s\\S]*which |command -v|tool[\\s\\S]{0,40}?(available|discovery|installed))(?=[\\s\\S]*lean-ctx|\\brtk\\b|ctx_shell)(?=[\\s\\S]*re-executable|\\.tmp/|scratch|reusable (script|hook)|shared function)(?=[\\s\\S]*replace[\\s\\S]{0,40}?harness|harness[\\s\\S]{0,40}?(replace|bypass)|external (script|tooling))"]
 scope: ["text", "thinking"]
 ---
 

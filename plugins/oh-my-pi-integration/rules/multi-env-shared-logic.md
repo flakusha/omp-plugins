@@ -1,7 +1,7 @@
 ---
 name: multi-env-shared-logic
 description: "If the project requires or may require support of multiple execution environments or frameworks (node, bun, deno) — note it in a TODO for future extensions, or use universally shared logic/interfaces with pinpoint runtime resolutions"
-condition: ["(?=[\\s\\S]*node|bun|deno|nodejs|bunjs)(?=[\\s\\S]*runtime|execution environment|platform|framework|portab|multi-env|works in (node|bun|deno))(?=[\\s\\S]*shim|polyfill|adapter|compat|process\\.env|node:fs|Bun\\.file)"]
+condition: ["^(?=[\\s\\S]*node|bun|deno|nodejs|bunjs)(?=[\\s\\S]*runtime|execution environment|platform|framework|portab|multi-env|works in (node|bun|deno))(?=[\\s\\S]*shim|polyfill|adapter|compat|process\\.env|node:fs|Bun\\.file)"]
 scope: ["text", "thinking"]
 ---
 

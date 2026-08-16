@@ -1,7 +1,7 @@
 ---
 name: derive-types-from-valid-structures
 description: "TypeScript — derive types from valid const structures and reuse them (as const + typeof array[number]), avoiding parallel datastructure/interface/type/schema definitions that must be kept in sync"
-condition: ["(?=[\\s\\S]*typescript|\\bts\\b|types?)(?=[\\s\\S]*as const|typeof (array|object|structure|owo|foo)|\\[number\\]|literal (union|type)|derive (type|types)|compil(e|ing) (type|types))(?=[\\s\\S]*interface|schema|type alias|duplicate (type|schema|interface)|keep in sync|\\bDRY\\b)"]
+condition: ["^(?=[\\s\\S]*typescript|\\bts\\b|types?)(?=[\\s\\S]*as const|typeof (array|object|structure|owo|foo)|\\[number\\]|literal (union|type)|derive (type|types)|compil(e|ing) (type|types))(?=[\\s\\S]*interface|schema|type alias|duplicate (type|schema|interface)|keep in sync|\\bDRY\\b)"]
 scope: ["text", "thinking"]
 ---
 

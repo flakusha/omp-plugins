@@ -1,7 +1,7 @@
 ---
 name: resource-access-verification
 description: "Verify access to files and other resources at use time — to avoid incorrect reads, broken filesystem, unavailable resources (applies to external systems and running applications); the happy path is merely a default, not a guarantee"
-condition: ["(?=[\\s\\S]*file (read|access|io|open|load)|filesystem|fs\\.|read (from|a|the) file|open (a )?file|read (content|data|from) (a )?file)(?=[\\s\\S]*resource (unavailable|missing|access|not ?found|doesn'?t exist)|broken|permission|not ?found|econnrefused|refused|timeout|down|offline)(?=[\\s\\S]*external (system|service|api|request)|running (app|application|process)|happy path|verify (the )?(file|resource|system|availability))"]
+condition: ["^(?=[\\s\\S]*file (read|access|io|open|load)|filesystem|fs\\.|read (from|a|the) file|open (a )?file|read (content|data|from) (a )?file)(?=[\\s\\S]*resource (unavailable|missing|access|not ?found|doesn'?t exist)|broken|permission|not ?found|econnrefused|refused|timeout|down|offline)(?=[\\s\\S]*external (system|service|api|request)|running (app|application|process)|happy path|verify (the )?(file|resource|system|availability))"]
 scope: ["text", "thinking"]
 ---
 

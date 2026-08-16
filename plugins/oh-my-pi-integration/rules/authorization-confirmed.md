@@ -1,7 +1,7 @@
 ---
 name: authorization-confirmed
 description: "For API, DB access implementations — confirm access is actually allowed: server-side, per entry point and per resource, on user permissions/scopes/tokens; default-deny; never rely on hidden UI or unguessable ids"
-condition: ["(?=[\\s\\S]*authoriz|permission|role|scope|acl|token|access (control|check|level|granted))(?=[\\s\\S]*allow|deny|unauthorized|forbidden|403|route|endpoint|handler|middleware)(?=[\\s\\S]*api|database|db|read (a )?(record|row)|fetch (a )?(record|row)|expose)"]
+condition: ["^(?=[\\s\\S]*authoriz|permission|role|scope|acl|token|access (control|check|level|granted))(?=[\\s\\S]*allow|deny|unauthorized|forbidden|403|route|endpoint|handler|middleware)(?=[\\s\\S]*api|database|db|read (a )?(record|row)|fetch (a )?(record|row)|expose)"]
 scope: ["text", "thinking"]
 ---
 

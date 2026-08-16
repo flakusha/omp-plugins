@@ -1,7 +1,7 @@
 ---
 name: config-merge-precedence
 description: "For configs, config files, config data structures — identify domain, mergeability, creation of examples, logics of merges and prevalence of config: command-line arguments -> env -> config files -> defaults"
-condition: ["(?=[\\s\\S]*config|configuration|settings)(?=[\\s\\S]*CLI|command[- ]line|flag|argument|option)(?=[\\s\\S]*environment variable|env var|\\bENV\\b|process\\.env)(?=[\\s\\S]*default|precedence|override|merge|deep merge|fallback)(?=[\\s\\S]*example config|config example|sample)"]
+condition: ["^(?=[\\s\\S]*config|configuration|settings)(?=[\\s\\S]*CLI|command[- ]line|flag|argument|option)(?=[\\s\\S]*environment variable|env var|\\bENV\\b|process\\.env)(?=[\\s\\S]*default|precedence|override|merge|deep merge|fallback)(?=[\\s\\S]*example config|config example|sample)"]
 scope: ["text", "thinking"]
 ---
 

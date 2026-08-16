@@ -1,7 +1,7 @@
 ---
 name: value-sanitation-normalization
 description: "Consider sanitation/normalization for incoming values — trim spaces, align case, check and clamp math where required, respect the provided number precision, validate buffer length, and bound loop size/parallelization"
-condition: ["(?=[\\s\\S]*sanitiz|normaliz|trim|strip|case (fold|lower|upper)|uppercase|lowercase)(?=[\\s\\S]*clamp|saturat|\\bmin\\b|\\bmax\\b|precision|rounding|overflow|underflow)(?=[\\s\\S]*buffer (length|size|validation)|loop (size|count|limit)|large loop|paralleliz|parallel (loop|work)|N items)"]
+condition: ["^(?=[\\s\\S]*sanitiz|normaliz|trim|strip|case (fold|lower|upper)|uppercase|lowercase)(?=[\\s\\S]*clamp|saturat|\\bmin\\b|\\bmax\\b|precision|rounding|overflow|underflow)(?=[\\s\\S]*buffer (length|size|validation)|loop (size|count|limit)|large loop|paralleliz|parallel (loop|work)|N items)"]
 scope: ["text", "thinking"]
 ---
 

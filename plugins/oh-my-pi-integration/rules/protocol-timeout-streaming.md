@@ -1,7 +1,7 @@
 ---
 name: protocol-timeout-streaming
 description: "For protocols that have timeouts and operations that may take significant time — name timeout constraints, stream instead of buffering large/continuous data, handle continuous-communication semantics, and leave a TODO when the current approach should migrate to a different one"
-condition: ["(?=[\\s\\S]*timeout|deadline|expiry|long-?running|take(s)? significant time|slow (operation|call|downstream))(?=[\\s\\S]*stream|chunk|buffer|backpressure|websocket|\\bsse\\b|long poll|polling|continuous|keep-?alive|socket|event stream)(?=[\\s\\S]*migrate (to|away)|future (approach|implementation)|different approach|stopgap|interim)"]
+condition: ["^(?=[\\s\\S]*timeout|deadline|expiry|long-?running|take(s)? significant time|slow (operation|call|downstream))(?=[\\s\\S]*stream|chunk|buffer|backpressure|websocket|\\bsse\\b|long poll|polling|continuous|keep-?alive|socket|event stream)(?=[\\s\\S]*migrate (to|away)|future (approach|implementation)|different approach|stopgap|interim)"]
 scope: ["text", "thinking"]
 ---
 
