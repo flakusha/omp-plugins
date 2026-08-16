@@ -1,7 +1,7 @@
 ---
 name: no-tool-rerouting-admonitions
 description: "Stop inserting lean-ctx/MCP rerouting admonitions into tool-call intent fields; call built-in read/grep/glob directly and only switch tools on concrete failures"
-condition: "Use (ctx_search|ctx_read|ctx_glob|mcp__lean_ctx).*instead|instead of (read|grep|glob)|instructing|admonition"
+condition: "Use (ctx_search|ctx_read|ctx_glob|mcp__lean_ctx)[\\s\\S]{0,40}?instead|instead of (read|grep|glob)|instructing|admonition"
 scope: "text"
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: prefer-repo-scratchpad
 description: "For throwaway tests/experiments/scratch files, use a gitignored in-repository scratch dir (e.g. .tmp/, .scratch/) instead of /tmp — the repo's dependencies, toolchain, and env are already installed and in-scope, with none of the external-folder tooling or permission friction"
-condition: ["(?=[\\s\\S]*test.*in /tmp)(?=[\\s\\S]*(run|create|mkdir|cd).*/tmp/.*(test|experiment|scratch|fixture|try))(?=[\\s\\S]*(in|to|under) /tmp)(?=[\\s\\S]*/tmp/.*(\\.tmp|scratch|sandbox))(?=[\\s\\S]*mktemp -d)(?=[\\s\\S]*mkdtemp)"]
+condition: ["(?=[\\s\\S]*test[\\s\\S]{0,40}?in /tmp)(?=[\\s\\S]*(run|create|mkdir|cd)[\\s\\S]{0,40}?/tmp/[\\s\\S]{0,40}?(test|experiment|scratch|fixture|try))(?=[\\s\\S]*(in|to|under) /tmp)(?=[\\s\\S]*/tmp/[\\s\\S]{0,40}?(\\.tmp|scratch|sandbox))(?=[\\s\\S]*mktemp -d)(?=[\\s\\S]*mkdtemp)"]
 scope: ["tool:bash", "text"]
 ---
 

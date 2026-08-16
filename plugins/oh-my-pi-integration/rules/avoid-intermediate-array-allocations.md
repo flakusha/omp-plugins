@@ -1,7 +1,7 @@
 ---
 name: avoid-intermediate-array-allocations
 description: "Chained functional array methods (.map().filter().reduce()...) allocate a new array per stage — shadow memory expansion on large collections and hot paths; avoid expanding memory unless the result is a genuinely new isolated data structure; prefer single-pass loops or one-pass reduce when size or frequency is real"
-condition: ["(?=[\\s\\S]*\\.map\\(|\\.filter\\(|\\.reduce\\(|\\.flatMap\\(|\\.forEach\\(|\\.some\\(|\\.every\\(|\\.find\\()(?=[\\s\\S]*chained? (functional )?(methods?|calls|array))(?=[\\s\\S]*intermediate (array|collection|allocation))(?=[\\s\\S]*allocat(e|ion|ing))(?=[\\s\\S]*shadow (array|allocation|memory))(?=[\\s\\S]*iterator|generator|transducer)(?=[\\s\\S]*memory.*(array|chain|map|filter))"]
+condition: ["(?=[\\s\\S]*\\.map\\(|\\.filter\\(|\\.reduce\\(|\\.flatMap\\(|\\.forEach\\(|\\.some\\(|\\.every\\(|\\.find\\()(?=[\\s\\S]*chained? (functional )?(methods?|calls|array))(?=[\\s\\S]*intermediate (array|collection|allocation))(?=[\\s\\S]*allocat(e|ion|ing))(?=[\\s\\S]*shadow (array|allocation|memory))(?=[\\s\\S]*iterator|generator|transducer)(?=[\\s\\S]*memory[\\s\\S]{0,40}?(array|chain|map|filter))"]
 scope: ["text", "thinking"]
 ---
 

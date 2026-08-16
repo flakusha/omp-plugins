@@ -1,7 +1,7 @@
 ---
 name: prefer-repo-json-buffer-wrappers
 description: "If the repository provides safe wrappers over standard JSON/Buffer functions, use them instead of raw JSON.parse/stringify and Buffer constructors — wrappers validate, type, and guarantee single stringification; raw calls are fine in test code, where a JSON failure is a useful early flag"
-condition: ["(?=[\\s\\S]*JSON\\.(parse|stringify)|JSON\\.)(?=[\\s\\S]*Buffer(\\.from|\\.alloc)?|new Buffer)(?=[\\s\\S]*safe (parse|decode|encode|wrap(per)?))(?=[\\s\\S]*wrapper)(?=[\\s\\S]*stringif(y|ication))(?=[\\s\\S]*double stringif|already (serialized|stringified))(?=[\\s\\S]*json.*wrap|wrap.*json)(?=[\\s\\S]*base64|utf8)"]
+condition: ["(?=[\\s\\S]*JSON\\.(parse|stringify)|JSON\\.)(?=[\\s\\S]*Buffer(\\.from|\\.alloc)?|new Buffer)(?=[\\s\\S]*safe (parse|decode|encode|wrap(per)?))(?=[\\s\\S]*wrapper)(?=[\\s\\S]*stringif(y|ication))(?=[\\s\\S]*double stringif|already (serialized|stringified))(?=[\\s\\S]*json[\\s\\S]{0,40}?wrap|wrap[\\s\\S]{0,40}?json)(?=[\\s\\S]*base64|utf8)"]
 scope: ["text", "thinking"]
 ---
 

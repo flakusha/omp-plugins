@@ -1,7 +1,7 @@
 ---
 name: no-silent-coercion-parsing
 description: "Guard against silent coercion and parsing traps: parseInt without radix, loose ==, implicit Number()/string coercion, Date parsing rollover, default lexicographic sort, float precision, NaN propagation, reduce on empty — validate input before parsing and make conversions explicit so errors surface instead of silently producing wrong values"
-condition: ["(?=[\\s\\S]*parseInt|parseFloat|Number\\(|String\\()(?=[\\s\\S]*loose equal|== (comparison|equality)|\\b==\\b.*(string|number))(?=[\\s\\S]*Date\\.parse|new Date\\(.*string)(?=[\\s\\S]*\\.sort\\(\\))(?=[\\s\\S]*0\\.1\\+0\\.2|float (precision|arithmetic)|rounding)(?=[\\s\\S]*NaN|toFixed|toPrecision)(?=[\\s\\S]*\\.reduce\\(.*(empty|initial))(?=[\\s\\S]*silent (coercion|conversion|parsing))(?=[\\s\\S]*type coercion)"]
+condition: ["(?=[\\s\\S]*parseInt|parseFloat|Number\\(|String\\()(?=[\\s\\S]*loose equal|== (comparison|equality)|\\b==\\b[\\s\\S]{0,40}?(string|number))(?=[\\s\\S]*Date\\.parse|new Date\\([\\s\\S]{0,40}?string)(?=[\\s\\S]*\\.sort\\(\\))(?=[\\s\\S]*0\\.1\\+0\\.2|float (precision|arithmetic)|rounding)(?=[\\s\\S]*NaN|toFixed|toPrecision)(?=[\\s\\S]*\\.reduce\\([\\s\\S]{0,40}?(empty|initial))(?=[\\s\\S]*silent (coercion|conversion|parsing))(?=[\\s\\S]*type coercion)"]
 scope: ["text", "thinking"]
 ---
 

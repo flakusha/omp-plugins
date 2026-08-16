@@ -1,7 +1,7 @@
 ---
 name: api-schema-versioning
 description: "Recommend versioning at compatibility boundaries: path/namespace versioning for APIs (/v1/...) and explicit version markers (version field or versioned names) for DB schemas, data structures, classes, types — additive migrations, parallel evolution, easy deprecations; never mutate an existing version's contract"
-condition: ["(?=[\\s\\S]*(API|endpoint|route|REST|gRPC|GraphQL|service).*(version(ed|ing)?|v\\d+))(?=[\\s\\S]*version(ed|ing)?.*(API|endpoint|route|schema|data structure|class|type))(?=[\\s\\S]*/v\\d+/|v\\d+/)(?=[\\s\\S]*db schema|database schema|data structure)(?=[\\s\\S]*migrat(ion|e)?)(?=[\\s\\S]*deprecat(ion|e|ed)?)(?=[\\s\\S]*backward compat(ibility)?)(?=[\\s\\S]*breaking change)"]
+condition: ["(?=[\\s\\S]*(API|endpoint|route|REST|gRPC|GraphQL|service))(?=[\\s\\S]*(version(ed|ing)?|v\\d+))(?=[\\s\\S]*version(ed|ing)?)(?=[\\s\\S]*(API|endpoint|route|schema|data structure|class|type))(?=[\\s\\S]*/v\\d+/|v\\d+/)(?=[\\s\\S]*db schema|database schema|data structure)(?=[\\s\\S]*migrat(ion|e)?)(?=[\\s\\S]*deprecat(ion|e|ed)?)(?=[\\s\\S]*backward compat(ibility)?)(?=[\\s\\S]*breaking change)"]
 scope: ["text", "thinking"]
 ---
 

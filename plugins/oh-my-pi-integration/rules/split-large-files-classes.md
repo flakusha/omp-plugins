@@ -1,7 +1,7 @@
 ---
 name: split-large-files-classes
 description: "When a file or class grows too large, split it — file into multiple cohesive functions/modules by responsibility, over-large class into dispatchers or smaller collaborators, or recombine into composable units; split by cohesion and reason-to-change, never by line count, and propose restructuring rather than silently doing it"
-condition: ["(?=[\\s\\S]*file (is|gets|grows) (too|very) (large|big|long)|large file|file.*too (large|big|long))(?=[\\s\\S]*class.*(too|very) (large|big)|god class|large class)(?=[\\s\\S]*split (the )?(file|class|module))(?=[\\s\\S]*dispatcher|dispatch(er)? class|extract.*(class|module|method))(?=[\\s\\S]*recombine|recompos)(?=[\\s\\S]*break.*(file|class|module).*(up|into))"]
+condition: ["(?=[\\s\\S]*file (is|gets|grows) (too|very) (large|big|long)|large file|file[\\s\\S]{0,40}?too (large|big|long))(?=[\\s\\S]*class[\\s\\S]{0,40}?(too|very) (large|big)|god class|large class)(?=[\\s\\S]*split (the )?(file|class|module))(?=[\\s\\S]*dispatcher|dispatch(er)? class|extract[\\s\\S]{0,40}?(class|module|method))(?=[\\s\\S]*recombine|recompos)(?=[\\s\\S]*break[\\s\\S]{0,40}?(file|class|module)[\\s\\S]{0,40}?(up|into))"]
 scope: ["text", "thinking"]
 ---
 

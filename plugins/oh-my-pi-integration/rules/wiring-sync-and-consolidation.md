@@ -1,7 +1,7 @@
 ---
 name: wiring-sync-and-consolidation
 description: "When work touches layer boundaries (frontend/backend, client/server, code/DB), update and validate wirings of calls and endpoints on both sides; unless the task explicitly scopes to one layer (only frontend/db/backend/...), recommend consolidation: dedupe magic values and type unions, and derive types from live classes, data structures, or schema"
-condition: ["(?=[\\s\\S]*(frontend|backend|client|server|API|endpoint|route|DB|schema).*(sync|wire|call|contract))(?=[\\s\\S]*wire(d)? (up|the)?)(?=[\\s\\S]*call.*endpoint|endpoint.*call)(?=[\\s\\S]*only (frontend|backend|db|database|client|server|api))(?=[\\s\\S]*magic value|hardcod|string literal|inline (type|union))(?=[\\s\\S]*type union|duplicat(ed|e) type)(?=[\\s\\S]*derive.*type|infer.*type|generated type)"]
+condition: ["(?=[\\s\\S]*(frontend|backend|client|server|API|endpoint|route|DB|schema))(?=[\\s\\S]*(sync|wire|call|contract))(?=[\\s\\S]*wire(d)? (up|the)?)(?=[\\s\\S]*call)(?=[\\s\\S]*endpoint)(?=[\\s\\S]*only (frontend|backend|db|database|client|server|api))(?=[\\s\\S]*magic value|hardcod|string literal|inline (type|union))(?=[\\s\\S]*type union|duplicat(ed|e) type)(?=[\\s\\S]*(derive|infer|generated)[\\w ]{0,24}type)"]
 scope: ["text", "thinking"]
 ---
 

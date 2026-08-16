@@ -1,7 +1,7 @@
 ---
 name: forward-compatible-datastructures
 description: "When designing data structures that mirror or participate in external contracts (specs, protocols, wire formats), link the existing spec/implementation, continue implementing, add TODOs at anticipated expansion points, and consider an extras catch-all (Record<string, unknown> in TS, flatten map in Rust, dict in Python, map in Go) for structures involved in external communication — unless a strong performance constraint forbids it"
-condition: ["(?=[\\s\\S]*data structure|datastructure|(type|class|model|schema).*(extend|forward|future))(?=[\\s\\S]*extras|Record<.*unknown|unknown field|extra field|flatten)(?=[\\s\\S]*spec link|reference implementation|RFC|wire format|protocol)(?=[\\s\\S]*TODO.*(spec|extend|future|expand))(?=[\\s\\S]*external communication|external (system|service|api)|message type)(?=[\\s\\S]*forward.compat|extensib)"]
+condition: ["(?=[\\s\\S]*data structure|datastructure|(type|class|model|schema)[\\s\\S]{0,40}?(extend|forward|future))(?=[\\s\\S]*extras|Record<[\\s\\S]{0,40}?unknown|unknown field|extra field|flatten)(?=[\\s\\S]*spec link|reference implementation|RFC|wire format|protocol)(?=[\\s\\S]*TODO[\\s\\S]{0,40}?(spec|extend|future|expand))(?=[\\s\\S]*external communication|external (system|service|api)|message type)(?=[\\s\\S]*forward.compat|extensib)"]
 scope: ["text", "thinking"]
 ---
 

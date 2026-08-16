@@ -22,8 +22,9 @@
     "test": "bun test",
     "test:watch": "bun test --watch",
     "check:rules": "bash scripts/check-rules-sync.sh",
+    "check:regex": "bash scripts/check-regex-safety.sh",
     "check:ship": "bash scripts/check-shipment.sh",
-    "verify": "bun run lint && bun run typecheck && bun run test && bun run check:rules && bun run check:ship",
+    "verify": "bun run lint && bun run typecheck && bun run test && bun run check:rules && bun run check:regex && bun run check:ship",
     "install:test": "bash scripts/install.sh --target /tmp/omp-test"
   }
 }

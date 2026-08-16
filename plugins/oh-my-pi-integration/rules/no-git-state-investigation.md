@@ -1,7 +1,7 @@
 ---
 name: no-git-state-investigation
 description: "During implementation tasks, do not investigate git working-tree state (status/rev-parse/dirty counts); implement on the assigned branch directly."
-condition: ["(?=[\\s\\S]*git\\s+status)(?=[\\s\\S]*git\\s+rev-parse)(?=[\\s\\S]*git\\s+branch\\s+--show-current)(?=[\\s\\S]*\\bdirty\\b[^\\n]*\\b(entries|files|count)\\b)(?=[\\s\\S]*investigate.*git\\s+state)"]
+condition: ["(?=[\\s\\S]*git\\s+status)(?=[\\s\\S]*git\\s+rev-parse)(?=[\\s\\S]*git\\s+branch\\s+--show-current)(?=[\\s\\S]*\\bdirty\\b[^\\n]*\\b(entries|files|count)\\b)(?=[\\s\\S]*investigate)(?=[\\s\\S]*git\\s+state)"]
 scope: ["tool:bash"]
 ---
 
