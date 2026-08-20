@@ -28,11 +28,13 @@
 #   TARGET/.omp/agent/extensions/guards/{gpg,ssh}-guard.ts
 #   TARGET/.omp/agent/hooks/pre/lean-ctx-native-reroute.ts
 #   TARGET/.omp/agent/hooks/pre/harness-evasion-guard.ts
-#   TARGET/.omp/agent/rules/*.md                           universal project rules
+#   TARGET/.omp/agent/rules/*.md                       universal project rules (agent-scoped)
+#   TARGET/.omp/rules/*.md                            universal project rules (root level, picked up by omp directly)
+#   TARGET/.omp/profiles/<name>/agent/config.yml      per-profile config (from repo profiles/<name>/agent/)
+#   TARGET/.omp/profiles/<name>/agent/AGENTS.md       per-profile agent rules (from repo profiles/<name>/agent/)
 #   TARGET/.omp/plugins/node_modules/oh-my-pi-integration/   plugin package
 #   TARGET/.omp/plugins/omp-plugins.lock.json                enablement state
 #   TARGET/.omp/plugins/oh-my-pi-integration.manifest        ownership ledger
-#
 # Update semantics (manifest-driven):
 #   The manifest records every file/dir this installer wrote, with the
 #   source hash at install time. On re-run:
@@ -90,7 +92,8 @@ else
   RLOB=".omp/"               # rel-prefix: profile root is TARGET/.omp
 fi
 AGENT_DIR="$OMP_ROOT/agent"
-RULES_DIR="$AGENT_DIR/rules"   # global project rules live under agent/rules
+RULES_DIR="$AGENT_DIR/rules"        # agent-scoped rules (backward-compat)
+ROOT_RULES_DIR="$OMP_ROOT/rules"     # root-level rules (picked up by omp directly)
 PLUGIN_DIR="$OMP_ROOT/plugins"
 PKG_NAME="oh-my-pi-integration"
 PLUGIN_SRC="$REPO_ROOT/plugins/$PKG_NAME"
@@ -420,12 +423,33 @@ sync_file "$PLUGIN_SRC/extensions/guards/git-destructive-guard.ts" "$AGENT_DIR/e
 sync_file "$PLUGIN_SRC/hooks/pre/lean-ctx-native-reroute.ts" "$AGENT_DIR/hooks/pre/lean-ctx-native-reroute.ts" "${RLOB}agent/hooks/pre/lean-ctx-native-reroute.ts"
 sync_file "$PLUGIN_SRC/hooks/pre/harness-evasion-guard.ts" "$AGENT_DIR/hooks/pre/harness-evasion-guard.ts" "${RLOB}agent/hooks/pre/harness-evasion-guard.ts"
 
-# ---- 1b) universal project rules (loaded by omp from .omp/agent/rules/) ----
+# ---- 1b) universal project rules (installed to both agent/ and root level) ----
 if [[ -d "$PLUGIN_SRC/rules" ]]; then
   echo "==> universal project rules"
   for rule in "$PLUGIN_SRC"/rules/*.md; do
     [[ -e "$rule" ]] || continue
     sync_file "$rule" "$RULES_DIR/$(basename "$rule")" "${RLOB}agent/rules/$(basename "$rule")"
+    sync_file "$rule" "$ROOT_RULES_DIR/$(basename "$rule")" "${RLOB}rules/$(basename "$rule")"
+  done
+fi
+
+# ---- 1c) per-profile payloads (from repo profiles/<name>/agent/) ----
+if [[ -d "$REPO_ROOT/profiles" ]]; then
+  echo "==> per-profile payloads"
+  for profile_dir in "$REPO_ROOT/profiles"/*/agent/; do
+    [[ -e "$profile_dir" ]] || continue
+    profile_name="$(basename "$(dirname "$profile_dir")")"
+    profile_agent_dir="$OMP_ROOT/profiles/$profile_name/agent"
+    echo "    profile: $profile_name"
+    for src_file in "$profile_dir"/*; do
+      [[ -e "$src_file" ]] || continue
+      [[ -f "$src_file" ]] || continue
+      src_basename="$(basename "$src_file")"
+      # only install config.yml and AGENTS.md at profile level
+      [[ "$src_basename" == "config.yml" || "$src_basename" == "AGENTS.md" ]] || continue
+      sync_file "$src_file" "$profile_agent_dir/$src_basename" \
+        "${RLOB}profiles/$profile_name/agent/$src_basename"
+    done
   done
 fi
 

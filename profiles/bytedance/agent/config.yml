@@ -1,0 +1,64 @@
+# BytePlus / bytedance-seed-code profile for oh-my-pi.
+# Inherits base ~/.omp/agent/{AGENTS.md,extensions,hooks,rules,...}
+# Override only what is model/provider-specific here.
+
+symbolPreset: nerd
+theme:
+  dark: anthracite
+setupVersion: 1
+
+modelRoles:
+  default: bytedance-seed-code
+  smol: bytedance-seed-code
+  slow: bytedance-seed-code:high
+  vision: bytedance-seed-code
+  advisor: bytedance-seed-code
+
+defaultThinkingLevel: auto
+
+task:
+  prewalk: true
+  enableLsp: true
+  enableEffort: false
+
+prewalk:
+  enabled: true
+
+terminal:
+  showProgress: true
+
+tui:
+  tight: true
+
+ttsr:
+  interruptMode: tool-only
+
+memory:
+  backend: mnemopi
+
+autolearn:
+  enabled: true
+  autoContinue: true
+
+lsp:
+  lazy: false
+
+bashInterceptor:
+  enabled: true
+
+bash:
+  autoBackground:
+    enabled: true
+
+astGrep:
+  enabled: true
+
+checkpoint:
+  enabled: true
+
+security:
+  enabled: true
+
+providers:
+  maxInFlightRequests:
+    byteplus-plan: 30

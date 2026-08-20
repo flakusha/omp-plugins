@@ -80,10 +80,15 @@ count="${count%% rules*}"
 
 if [[ "$SCHEMA_ONLY" -eq 0 ]]; then
   echo "==> rules laydown sync (installer dry-run)"
-  laid="$(bash "$REPO_ROOT/scripts/install.sh" --dry-run --target "/tmp/rules-check-$$" 2>&1 | grep -c '\.omp/agent/rules/')" || true
-  echo "    shipped: $count   laid: $laid"
-  if [[ "$count" != "$laid" ]]; then
-    echo "ERROR: shipped ($count) != laid ($laid) — a rule is missing from the installer or was renamed" >&2
+  # dual install: each rule goes to both agent/rules/ and rules/
+  laid="$(
+    bash "$REPO_ROOT/scripts/install.sh" --dry-run --target "/tmp/rules-check-$$" 2>&1 \
+      | grep -cE '\.omp/(agent/)?rules/' || true
+  )"
+  expected="$(( count * 2 ))"
+  echo "    shipped: $count   laid: $laid (expected: $expected)"
+  if [[ "$laid" != "$expected" ]]; then
+    echo "ERROR: laid ($laid) != expected ($expected) — rules may not be dual-installed correctly" >&2
     exit 1
   fi
 fi
