@@ -440,6 +440,8 @@ if [[ -d "$REPO_ROOT/profiles" ]]; then
     [[ -e "$profile_dir" ]] || continue
     profile_name="$(basename "$(dirname "$profile_dir")")"
     profile_agent_dir="$OMP_ROOT/profiles/$profile_name/agent"
+    # skip profiles not yet bootstrapped by omp — omp creates these on first switch
+    [[ -d "$profile_agent_dir" ]] || { echo "    profile: $profile_name (not yet bootstrapped, skipping)"; continue; }
     echo "    profile: $profile_name"
     for src_file in "$profile_dir"/*; do
       [[ -e "$src_file" ]] || continue
