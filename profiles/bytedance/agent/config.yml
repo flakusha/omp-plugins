@@ -45,6 +45,13 @@ lsp:
 
 bashInterceptor:
   enabled: true
+  patterns:
+    - pattern: ^\s*git\s+stash\b(?![\s\S]*\s--\s+\S)
+      tool: ask
+      message: "BLOCKED: hard ban on `git stash` in shared-branch agent flows — agents repeatedly run stash despite the recommendation and sweep each other's in-flight work. Pathspec-scoped safe shape: `git stash push -- <files you own>`. Acceptable alternatives: (1) commit the change with `git add <files> && git commit -m \"...\"`; (2) use `git worktree add ../<dir>` for isolation. If the user has explicitly authorized a stash in this turn and you can show the exact pathspec covers only files you own, redo with `git stash push -- <pathspec>` and re-run."
+    - pattern: ^\s*git\s+push\b(?!\s+--dry-run)(?!\s+(-h|--help)\b)
+      tool: ask
+      message: "BLOCKED: hard ban on `git push` in agent flows — wrong-branch and force-push mistakes are not recoverable on a shared remote, and secrets can land in remote history without pre-push scanning. Do NOT push. Stage the local commit (`git add` + `git commit -m \"...\"`), output the commit hash + one-line summary, and wait for explicit user authorization. The user's authorization is per-session, not per-agent; if the user is not present in this turn, surface the prepared commit and stop. Safe shapes are `git push --dry-run` and `git push -h`/`--help` (information only)."
 
 bash:
   autoBackground:
