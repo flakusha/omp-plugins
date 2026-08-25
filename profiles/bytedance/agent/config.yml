@@ -1,7 +1,7 @@
 # BytePlus / bytedance-seed-code profile for oh-my-pi.
-# Inherits base ~/.omp/agent/{AGENTS.md,extensions,hooks,rules,...}
+# Profile runtime (rules/, hooks/, extensions/, skills/, plugins/) is shared
+# with the default profile via symlinks — see PROFILE-LOADER-RESOLUTION.md.
 # Override only what is model/provider-specific here.
-
 symbolPreset: nerd
 theme:
   dark: anthracite

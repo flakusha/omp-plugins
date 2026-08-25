@@ -23,9 +23,22 @@ trap cleanup EXIT
 
 fail() { echo "ERROR: $*" >&2; exit 1; }
 
+# Pre-bootstrap the repo's profile dirs in the test fixture, exactly as a
+# real user must. omp --profile <name> is what creates
+# ~/.omp/profiles/<name>/agent/ in production; the installer's new
+# bootstrap gate (PROFILE-LOADER-RESOLUTION.md) fails with exit 4 if
+# these dirs don't exist. Mimic the bootstrap here so the test exercises
+# the install path, not the bootstrap gate.
+if [[ -d "$REPO_ROOT/profiles" ]]; then
+  for p in "$REPO_ROOT/profiles"/*/agent/; do
+    [[ -e "$p" ]] || continue
+    pname="$(basename "$(dirname "$p")")"
+    mkdir -p "$tmp/.omp/profiles/$pname/agent"
+  done
+fi
+
 echo "==> shipment check (install into $tmp)"
 "$REPO_ROOT/scripts/install.sh" --target "$tmp" >/dev/null
-
 inst_pkg="$tmp/.omp/plugins/node_modules/oh-my-pi-integration"
 inst_ext="$tmp/.omp/agent/extensions"
 

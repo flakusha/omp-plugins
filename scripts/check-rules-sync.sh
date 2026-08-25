@@ -81,8 +81,21 @@ count="${count%% rules*}"
 if [[ "$SCHEMA_ONLY" -eq 0 ]]; then
   echo "==> rules laydown sync (installer dry-run)"
   # dual install: each rule goes to both agent/rules/ and rules/
+  # Pre-bootstrap fixture profiles so the installer's up-front prerequisite
+  # gate (PROFILE-LOADER-RESOLUTION.md) does not abort the dry-run with
+  # exit 4. This test exercises the install path, not the gate.
+  rules_tmp="$(mktemp -d --suffix=-rules-check)"
+  cleanup_rules_tmp() { rm -rf "$rules_tmp"; }
+  trap cleanup_rules_tmp EXIT
+  if [[ -d "$REPO_ROOT/profiles" ]]; then
+    for p in "$REPO_ROOT/profiles"/*/agent/; do
+      [[ -e "$p" ]] || continue
+      pname="$(basename "$(dirname "$p")")"
+      mkdir -p "$rules_tmp/.omp/profiles/$pname/agent"
+    done
+  fi
   laid="$(
-    bash "$REPO_ROOT/scripts/install.sh" --dry-run --target "/tmp/rules-check-$$" 2>&1 \
+    bash "$REPO_ROOT/scripts/install.sh" --dry-run --target "$rules_tmp" 2>&1 \
       | grep -cE '\.omp/(agent/)?rules/' || true
   )"
   expected="$(( count * 2 ))"

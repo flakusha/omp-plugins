@@ -1,0 +1,97 @@
+# minimax / MiniMax-M3 profile for oh-my-pi.
+# Profile runtime (rules/, hooks/, extensions/, skills/, plugins/) is shared
+# with the default profile via symlinks — see PROFILE-LOADER-RESOLUTION.md.
+# Override only model/provider/theme and per-profile runtime tweaks here.
+
+symbolPreset: nerd
+theme:
+  dark: dark-tundra
+  light: porcelain
+setupVersion: 2
+
+modelRoles:
+  default: minimax-code/MiniMax-M3
+  tiny: minimax-code/MiniMax-M2.5-lightning:low
+  advisor: minimax-code/MiniMax-M2.5-lightning:low
+  smol: minimax-code/MiniMax-M2.7:auto
+  slow: minimax-code/MiniMax-M3:high
+
+defaultThinkingLevel: auto
+
+advisor:
+  enabled: true
+  syncBacklog: "3"
+  immuneTurns: 1
+
+prewalk:
+  enabled: true
+
+contextPromotion:
+  enabled: false
+
+memory:
+  backend: mnemopi
+
+providers:
+  memoryModel: lfm2-1.2b
+  maxInFlightRequests:
+    anthropic: 1
+    opencode-go: 20
+    opencode-zen: 20
+    openrouter: 20
+
+autolearn:
+  enabled: true
+
+mnemopi:
+  polyphonicRecall: true
+  enhancedRecall: true
+  proactiveLinking: true
+
+edit:
+  mode: hashline
+
+readLineNumbers: true
+
+read:
+  renderMarkdown: true
+  toolResultPreview: true
+
+lsp:
+  lazy: false
+  formatOnWrite: false
+
+bashInterceptor:
+  enabled: true
+
+astGrep:
+  enabled: true
+
+checkpoint:
+  enabled: true
+
+security:
+  enabled: true
+
+tools:
+  xdevDocs: builtins
+
+task:
+  agentAdvisor:
+    task: "on"
+
+ttsr:
+  contextMode: discard
+  interruptMode: tool-only
+  repeatMode: once
+
+composer:
+  shape: box
+
+colorBlindMode: false
+
+statusLine:
+  compactThinkingLevel: false
+
+compaction:
+  thresholdTokens: 200000

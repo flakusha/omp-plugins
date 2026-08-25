@@ -61,9 +61,14 @@ for fn in sorted(os.listdir(rules_dir)):
     if not cond:
         continue
     # Unescape the JSON/YAML condition to its single-backslash regex form.
+    # Fail loud on JSON parse error — silently `continue`ing (the previous
+    # behavior) shipped a broken regex into the live profile without
+    # any signal at the check layer (no-git-stash-blocked regression).
     try:
         conds = json.loads(cond)
-    except Exception:
+    except Exception as e:
+        print(f"ERROR {fn}: cannot parse condition as JSON: {e}")
+        errors += 1
         continue
     if isinstance(conds, str):
         conds = [conds]

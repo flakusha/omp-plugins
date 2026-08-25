@@ -4,6 +4,7 @@
 #
 # Usage:
 #   ./scripts/install.sh [--target DIR] [--force] [--dry-run] [--no-plugin] [--live]
+#                        [--ignore-unbootstrapped-profiles]
 #
 #   --target DIR   Where to install. Default: /tmp/omp-test.
 #                  Equivalent to setting PREFIX=DIR.
@@ -20,7 +21,14 @@
 #   --live         Allow updating a live omp profile under $HOME directly
 #                  (e.g. --target ~/.omp or --target "$HOME"). Refused by
 #                  default to protect the live profile.
-#
+#   --ignore-unbootstrapped-profiles
+#                  Skip profiles whose ~/.omp/profiles/<name>/agent/ does
+#                  not exist yet. The DEFAULT is to fail loudly when any
+#                  repo profile is unbootstrapped, because an unbootstrapped
+#                  profile cannot load this plugin's rules/hooks/extensions:
+#                  omp only creates that dir on first `omp --profile <name>`
+#                  invocation. The fail mode prints the exact bootstrap
+#                  command for each missing profile (see PROFILE-LOADER-RESOLUTION.md).
 # Laydown (relative to TARGET):
 #   TARGET/.omp/agent/AGENTS.md                      omp-specific global agent rules
 #   TARGET/.omp/agent/config.yml                       agent config scaffold
@@ -32,14 +40,14 @@
 #   TARGET/.omp/rules/*.md                            universal project rules (root level, picked up by omp directly)
 #   TARGET/.omp/profiles/<name>/agent/config.yml      per-profile config (from repo profiles/<name>/agent/)
 #   TARGET/.omp/profiles/<name>/agent/AGENTS.md       per-profile agent rules (from repo profiles/<name>/agent/)
+#   TARGET/.omp/profiles/<name>/agent/{rules,hooks,extensions,skills,plugins}
+#                                                  symlinks back to ../<x> of the default agent runtime,
+#                                                  so every profile sees the canonical content without
+#                                                  duplication or drift. See PROFILE-LOADER-RESOLUTION.md.
 #   TARGET/.omp/plugins/node_modules/oh-my-pi-integration/   plugin package
 #   TARGET/.omp/plugins/omp-plugins.lock.json                enablement state
 #   TARGET/.omp/plugins/oh-my-pi-integration.manifest        ownership ledger
 # Update semantics (manifest-driven):
-#   The manifest records every file/dir this installer wrote, with the
-#   source hash at install time. On re-run:
-#     * files we own (destination hash unchanged) are updated in place —
-#       rules added, changed, or renamed synchronize WITHOUT --force;
 #     * files we own but that no longer ship are removed (reconciliation);
 #     * files the user modified since install (hash differs), or files we
 #       never wrote, are kept with a notice — never clobbered without
@@ -57,13 +65,12 @@ set -euo pipefail
 # ---- resolve repo root (this script lives in <root>/scripts) ----
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# ---- defaults ----
 TARGET="${PREFIX:-/tmp/omp-test}"
 FORCE=0
 DRY_RUN=0
 NO_PLUGIN=0
 LIVE=0
-
+IGNORE_UNBOOTSTRAPPED_PROFILES=0
 # ---- arg parsing ----
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -72,6 +79,7 @@ while [[ $# -gt 0 ]]; do
     --dry-run) DRY_RUN=1; shift ;;
     --no-plugin) NO_PLUGIN=1; shift ;;
     --live)   LIVE=1; shift ;;
+    --ignore-unbootstrapped-profiles) IGNORE_UNBOOTSTRAPPED_PROFILES=1; shift ;;
     -h|--help)
       sed -n '2,58p' "${BASH_SOURCE[0]}"
       exit 0 ;;
@@ -122,6 +130,54 @@ if [[ -z "$TARGET" || "$TARGET" == "/" || "$TARGET" == "/root" || "$TARGET" == "
   echo "ERROR: refusing dangerous target: $TARGET" >&2
   exit 3
 fi
+
+# ---- 0) prerequisite: every repo profile must be bootstrapped by omp ----
+# This runs UP-FRONT, before any rules/hooks/extensions/plugin files are
+# laid down. omp only creates ~/.omp/profiles/<name>/agent/ on first
+# invocation of `omp --profile <name>`. Until that runs:
+#   - the per-profile config.yml/AGENTS.md step (§1c) silently `continue`s;
+#   - the runtime-symlink step (§1d) silently `continue`s;
+#   - `--profile <name>` sessions consequently load ZERO user-authored
+#     rules (manifest-resolution bug, see PROFILE-LOADER-RESOLUTION.md).
+# This is the silent "install appears to succeed but does nothing under
+# the named profile" trap. Fail loudly at the top of the run so the
+# agent/user sees it before any half-applied state.
+unbootstrapped=()
+if [[ -d "$REPO_ROOT/profiles" ]]; then
+  for profile_dir in "$REPO_ROOT/profiles"/*/agent/; do
+    [[ -e "$profile_dir" ]] || continue
+    profile_name="$(basename "$(dirname "$profile_dir")")"
+    profile_agent_dir="$OMP_ROOT/profiles/$profile_name/agent"
+    [[ -d "$profile_agent_dir" ]] || unbootstrapped+=("$profile_name")
+  done
+fi
+if [[ ${#unbootstrapped[@]} -gt 0 ]]; then
+  if [[ "$IGNORE_UNBOOTSTRAPPED_PROFILES" -eq 1 ]]; then
+    echo "==> WARNING: ${#unbootstrapped[@]} unbootstrapped profile(s) will be silently skipped:"
+    for p in "${unbootstrapped[@]}"; do echo "       - $p"; done
+    echo "    (--ignore-unbootstrapped-profiles set; this is the bug this gate"
+    echo "     exists to surface — named-profile sessions will load zero rules."
+    echo "     Bootstrap with:  omp --profile <name> -p \"\"  then re-run.)"
+  else
+    echo "ERROR: ${#unbootstrapped[@]} profile(s) ship in this repo but are not yet bootstrapped by omp:" >&2
+    for p in "${unbootstrapped[@]}"; do echo "       - $p" >&2; done
+    echo "" >&2
+    echo "  omp creates ~/.omp/profiles/<name>/agent/ only on first invocation of" >&2
+    echo "  \`omp --profile <name>\`. Until that runs, this installer cannot lay" >&2
+    echo "  down profile payloads or runtime symlinks, and \`--profile <name>\`" >&2
+    echo "  sessions will load zero user-authored rules (see" >&2
+    echo "  PROFILE-LOADER-RESOLUTION.md). Bootstrap each missing profile:" >&2
+    for p in "${unbootstrapped[@]}"; do
+      echo "       omp --profile $p --print \"bootstrap\"  # or:  omp --profile $p -p \"\"" >&2
+    done
+    echo "" >&2
+    echo "  Or pass --ignore-unbootstrapped-profiles to install only the default" >&2
+    echo "  profile and skip the missing ones (NOT recommended — the silent skip" >&2
+    echo "  is the bug this gate exists to surface)." >&2
+    exit 4
+  fi
+fi
+
 
 if [[ ! -d "$PLUGIN_SRC" ]]; then
   echo "ERROR: plugin source missing: $PLUGIN_SRC" >&2
@@ -441,7 +497,7 @@ if [[ -d "$REPO_ROOT/profiles" ]]; then
     profile_name="$(basename "$(dirname "$profile_dir")")"
     profile_agent_dir="$OMP_ROOT/profiles/$profile_name/agent"
     # skip profiles not yet bootstrapped by omp — omp creates these on first switch
-    [[ -d "$profile_agent_dir" ]] || { echo "    profile: $profile_name (not yet bootstrapped, skipping)"; continue; }
+    [[ -d "$profile_agent_dir" ]] || { warn "skipping unbootstrapped profile: $profile_name (no ~/.omp/profiles/$profile_name/agent/ — run \`omp --profile $profile_name -p \"\"\` first)"; continue; }
     echo "    profile: $profile_name"
     for src_file in "$profile_dir"/*; do
       [[ -e "$src_file" ]] || continue
@@ -454,6 +510,44 @@ if [[ -d "$REPO_ROOT/profiles" ]]; then
     done
   done
 fi
+# ---- 1d) profile runtime symlinks (rules/, hooks/, extensions/, skills/, plugins/)
+# Each profile dir gets transparent passthrough symlinks into the default agent
+# runtime so the canonical content is shared, not duplicated. This is the
+# pre-condition for any per-profile plugin manifest or upstream loader fix
+# (see PROFILE-LOADER-RESOLUTION.md). Only created when:
+#   - the profile is bootstrapped (already has its profile_agent_dir),
+#   - the symlink target (default agent subdir) exists,
+#   - the destination doesn't already exist as a real path or a symlink
+#     (idempotent — won't clobber a real directory or break an existing link).
+# The symlink is relative (../../../agent/<sub>) so it survives moves of the
+# install target. The `in_realm` guard ensures the resolved target stays inside TARGET.
+if [[ -d "$REPO_ROOT/profiles" ]]; then
+  for profile_dir in "$REPO_ROOT/profiles"/*/agent/; do
+    [[ -e "$profile_dir" ]] || continue
+    profile_name="$(basename "$(dirname "$profile_dir")")"
+    profile_agent_dir="$OMP_ROOT/profiles/$profile_name/agent"
+    [[ -d "$profile_agent_dir" ]] || { warn "skipping unbootstrapped profile symlinks: $profile_name (no ~/.omp/profiles/$profile_name/agent/ — run \`omp --profile $profile_name -p \"\"\` first)"; continue; }
+    echo "==> profile runtime symlinks: $profile_name"
+    for sub in rules hooks extensions skills plugins; do
+      target="$AGENT_DIR/$sub"
+      link="$profile_agent_dir/$sub"
+      [[ -d "$target" ]] || continue   # default agent/<sub> not present
+      [[ -L "$link" || -e "$link" ]] && continue   # already there (real dir or symlink, even broken)
+
+      if [[ "$DRY_RUN" -eq 1 ]]; then
+        echo "  + symlink $link -> ../../../agent/$sub"
+      else
+        if in_realm "$(cd "$(dirname "$link")" && cd ../../../agent && pwd -P)"; then
+          ln -s "../../../agent/$sub" "$link"
+          echo "  + symlink $link -> ../../../agent/$sub"
+        else
+          warn "skipping symlink $link -> $target (target outside realm)"
+        fi
+      fi
+    done
+  done
+fi
+
 
 # ---- 2) plugin-package registration (marketplace / `omp plugin` discovery) ----
 if [[ "$NO_PLUGIN" -eq 0 ]]; then
