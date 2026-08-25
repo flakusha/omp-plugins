@@ -1,7 +1,7 @@
 ---
 name: strict-review-standards
 description: "When performing review — be strict: zero trust in the author's claims, verify the whole affected surface, check error paths and edge cases, demand observable evidence; strictness is about evidence, never about tone"
-condition: ["review|re-?review|code review|PR|pull request|diff|audit|verif(y|ying|ication) (of|the|this|their)|check(ing)? the (work|changes|claims)|self-review|double-check|second look|accept|approve"]
+condition: ["\\bre-?view\\b|\\bcode review\\b|\\bPR\\b|\\bpull request\\b|\\bdiffs?\\b|\\baudit\\b|\\bverif(?:y|ying|ication) (?:of|the|this|their)\\b|check(?:ing)? the (?:work|changes|claims)|self-review|double-check|second look|\\baccept(?:ance|ed|ing)?\\b|\\bapprov(?:e|al|ed|ing)\\b"]
 scope: ["text", "thinking"]
 ---
 
