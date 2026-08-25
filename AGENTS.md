@@ -44,5 +44,7 @@ Notes:
 - `ctx_shell` enforces an allowlist (`bash`, `lean-ctx`, …). A blocked binary
   is a deliberate policy — for trusted one-off verification use the native
   `bash` tool, not a workaround inside `ctx_shell`.
-- `ctx_read` is confined to the project root; paths outside it (e.g.
-  `~/.codex/…`) must be read with the native `read` tool.
+- `ctx_read`/`ctx_search`/`ctx_glob` are confined to the project root; for
+  paths outside it (e.g. `~/.codex/…`) use the native `read`/`grep`/`glob`
+  tools — those calls are exempt from the lean-ctx redirect there. Inside
+  the project root they are always redirected, so don't start there.

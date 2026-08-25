@@ -1,4 +1,5 @@
 import { statSync } from "node:fs";
+import { isAbsolute, relative, resolve } from "node:path";
 import type { HookAPI } from "@oh-my-pi/pi-coding-agent/extensibility/hooks";
 
 // bashInterceptor (agent/config.yml) already forces raw shell reads/greps/
@@ -10,12 +11,16 @@ import type { HookAPI } from "@oh-my-pi/pi-coding-agent/extensibility/hooks";
 // deferred until lean-ctx MCP uptime was confirmed (user: daily-driven for
 // months) — a hard block here has no fallback if the MCP server is down.
 //
-// Only blocks plain project-relative/absolute filesystem paths. Internal
-// URI schemes (memory://, skill://, agent://, history://, artifact://,
-// local://, mcp://, issue://, pr://, omp://, ssh://) and binary/document/
-// archive/sqlite paths are exempt — ctx_read/ctx_search/ctx_glob are
-// source-code tools and don't cover those; blocking them would break
-// image/PDF/notebook/archive/sqlite reads with no working alternative.
+// Only blocks plain filesystem paths inside the process working directory
+// (project root). Two exemptions keep AGENTS.md's documented fallbacks true:
+// internal URI schemes (memory://, skill://, agent://, history://,
+// artifact://, local://, mcp://, issue://, pr://, omp://, ssh://) and
+// binary/document/archive/sqlite paths are exempt — ctx_read/ctx_search/
+// ctx_glob are source-code tools and don't cover those; blocking them would
+// break image/PDF/notebook/archive/sqlite reads with no working alternative.
+// Paths outside the project root are exempt too — ctx_read/ctx_search/
+// ctx_glob are confined to the project root (+ allow_paths), so native
+// read/grep/glob remain the sanctioned fallback there instead of a dead end.
 
 const URI_RE = /^[a-z][a-z0-9+.-]*:\/\//i;
 const INTERNAL_SCHEME_RE =
@@ -30,17 +35,22 @@ function isExempt(path: string): boolean {
   return false;
 }
 
-const READ_DIR_REASON =
+function isOutsideRoot(path: string): boolean {
+  const rel = relative(process.cwd(), resolve(path));
+  return rel !== "" && (rel.startsWith("..") || isAbsolute(rel));
+}
+
+export const READ_DIR_REASON =
   "Use `mcp__lean_ctx_ctx_tree` instead of `read` on a directory — compact per-directory file counts, respects .gitignore.";
-const READ_FILE_REASON =
+export const READ_FILE_REASON =
   "Use `mcp__lean_ctx_ctx_read` instead of `read` — cached, mode-aware (anchored/full/map/signatures), ~13 tokens on re-read.";
-const GREP_REASON =
+export const GREP_REASON =
   "Use `mcp__lean_ctx_ctx_search` instead of `grep` — regex/semantic/symbol search with compact results.";
-const GLOB_REASON =
+export const GLOB_REASON =
   "Use `mcp__lean_ctx_ctx_glob` instead of `glob` — respects .gitignore and matches faster.";
 
-function readBlockReason(path: string): { block: true; reason: string } | undefined {
-  if (isExempt(path)) return undefined;
+export function readBlockReason(path: string): { block: true; reason: string } | undefined {
+  if (isExempt(path) || isOutsideRoot(path)) return undefined;
   let isDir = false;
   try {
     isDir = statSync(path).isDirectory();
@@ -52,13 +62,13 @@ function readBlockReason(path: string): { block: true; reason: string } | undefi
   return { block: true, reason: isDir ? READ_DIR_REASON : READ_FILE_REASON };
 }
 
-function grepBlockReason(path: string): { block: true; reason: string } | undefined {
-  if (path && isExempt(path)) return undefined;
+export function grepBlockReason(path: string): { block: true; reason: string } | undefined {
+  if (path && (isExempt(path) || isOutsideRoot(path))) return undefined;
   return { block: true, reason: GREP_REASON };
 }
 
-function globBlockReason(path: string): { block: true; reason: string } | undefined {
-  if (path && isExempt(path)) return undefined;
+export function globBlockReason(path: string): { block: true; reason: string } | undefined {
+  if (path && (isExempt(path) || isOutsideRoot(path))) return undefined;
   return { block: true, reason: GLOB_REASON };
 }
 

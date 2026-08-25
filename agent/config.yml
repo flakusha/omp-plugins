@@ -48,16 +48,16 @@ bashInterceptor:
   patterns:
     - pattern: ^\s*(cat|head|tail|less|more)\s+
       tool: read
-      message: "Use the `read` tool instead of cat/head/tail — supports offset/limit selectors and internal URIs."
+      message: "Use `mcp__lean_ctx_ctx_read` instead of cat/head/tail (`{\"path\": \"…\"}`); the native `read` tool only for paths outside the project root."
     - pattern: ^\s*(grep|rg|ripgrep|ag|ack)\s+
       tool: grep
-      message: "Use the `grep` tool instead of grep/rg — respects .gitignore, PCRE2 fallback, compact results."
+      message: "Use `mcp__lean_ctx_ctx_search` instead of grep/rg (`{\"pattern\": \"…\", \"path\": \"…\"}`)."
     - pattern: ^\s*(find|fd|locate)\s+.*(-name|-iname|-type|--type|-glob)
       tool: glob
-      message: "Use the `glob` tool instead of find/fd — respects .gitignore and is faster for glob patterns."
+      message: "Use `mcp__lean_ctx_ctx_glob` instead of find/fd (`{\"pattern\": \"…\"}`; directories: `ctx_tree`)."
     - pattern: ^\s*ls\s+
       tool: read
-      message: "Use the `read` tool instead of ls — a directory path lists entries directly."
+      message: "Use `mcp__lean_ctx_ctx_tree` instead of ls (`{\"path\": \"…\"}`)."
     - pattern: ^\s*sed\s+(-i|--in-place)
       tool: edit
       message: "Use the `edit` tool instead of sed -i. It provides diff preview and fuzzy matching."
