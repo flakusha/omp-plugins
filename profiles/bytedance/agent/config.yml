@@ -46,6 +46,39 @@ lsp:
 bashInterceptor:
   enabled: true
   patterns:
+    - pattern: ^\s*(cat|head|tail|less|more)\s+
+      tool: read
+      message: "Use `mcp__lean_ctx_ctx_read` instead of cat/head/tail (`{\"path\": \"…\"}`); the native `read` tool only for paths outside the project root."
+    - pattern: ^\s*(grep|rg|ripgrep|ag|ack)\s+
+      tool: grep
+      message: "Use `mcp__lean_ctx_ctx_search` instead of grep/rg (`{\"pattern\": \"…\", \"path\": \"…\"}`)."
+    - pattern: ^\s*(find|fd|locate)\s+.*(-name|-iname|-type|--type|-glob)
+      tool: glob
+      message: "Use `mcp__lean_ctx_ctx_glob` instead of find/fd (`{\"pattern\": \"…\"}`; directories: `ctx_tree`)."
+    - pattern: ^\s*ls\s+
+      tool: read
+      message: "Use `mcp__lean_ctx_ctx_tree` instead of ls (`{\"path\": \"…\"}`)."
+    - pattern: ^\s*sed\s+(-i|--in-place)
+      tool: edit
+      message: "Use the `edit` tool instead of sed -i. It provides diff preview and fuzzy matching."
+    - pattern: "^\\s*perl\\s+.*-[pn]?i"
+      tool: edit
+      message: "Use the `edit` tool instead of perl -i. It provides diff preview and fuzzy matching."
+    - pattern: ^\s*awk\s+.*-i\s+inplace
+      tool: edit
+      message: "Use the `edit` tool instead of awk -i inplace. It provides diff preview and fuzzy matching."
+    - pattern: "^\\s*(echo|printf|cat\\s*<<)\\s+(?:(?:[^\"'>]|\"[^\"]*\"|'[^']*')|(?<!\\|)>{1,2}\\|?\\s*(?:\"/dev/(?:null|tty|stdout|stderr)\"|'/dev/(?:null|tty|stdout|stderr)'|/dev/(?:null|tty|stdout|stderr))(?:[\\s;&|]|$))*(?<!\\|)>{1,2}\\|?\\s*(?!(?:\"/dev/(?:null|tty|stdout|stderr)\"|'/dev/(?:null|tty|stdout|stderr)'|/dev/(?:null|tty|stdout|stderr))(?:[\\s;&|]|$))[$\\w./~\"'-]"
+      tool: write
+      message: "Use the `write` tool instead of echo/cat redirection. It handles encoding and provides confirmation."
+    - pattern: ^\s*nohup\s+|(?<!&)\&\s*$
+      tool: hub
+      message: "Use the `hub` tool (`op:\"start\"`) instead of nohup or background shell syntax so the process stays observable and managed."
+    - pattern: ^\s*(?:(?:bun|npm|pnpm|yarn)\s+(?:run\s+)?(?:dev|start)(?:\s|$)|(?:vite|next\s+dev|nuxt\s+dev|nodemon|lldb|gdb|tail\s+-f)(?:\s|$)|docker\s+compose\s+up(?!.*(?:\s-d(?:\s|$)|--detach))(?:\s|$))
+      tool: hub
+      message: "Use the `hub` tool (`op:\"start\"`) for services, watchers, and debuggers so other omp instances can observe and control them."
+    - pattern: ^\s*(?:(?:bun|npm|pnpm|yarn)\s+(?:run\s+)?\S+|cargo\s+watch|watchexec|pytest|vitest|jest|tsc)(?:.|\n)*(?:--watch|-w)(?:\s|$)
+      tool: hub
+      message: "Use the `hub` tool (`op:\"start\"`) for watch mode so its output, input, and lifecycle stay managed."
     - pattern: ^\s*git\s+stash\b(?![\s\S]*\s--\s+\S)
       tool: ask
       message: "BLOCKED: hard ban on `git stash` in shared-branch agent flows — agents repeatedly run stash despite the recommendation and sweep each other's in-flight work. Pathspec-scoped safe shape: `git stash push -- <files you own>`. Acceptable alternatives: (1) commit the change with `git add <files> && git commit -m \"...\"`; (2) use `git worktree add ../<dir>` for isolation. If the user has explicitly authorized a stash in this turn and you can show the exact pathspec covers only files you own, redo with `git stash push -- <pathspec>` and re-run."
