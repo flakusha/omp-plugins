@@ -16,9 +16,6 @@ auto-compression may also be active, but the MCP/CLI tools are the path that
 works everywhere — otherwise large outputs (builds, `tsc`, tests, logs) can
 reach the model uncompressed.
 
-Full rules: `/home/flak/.codex/LEAN-CTX.md`
-<!-- /lean-ctx -->
-
 ### Tool-call corrections — do not fight blocked native tools
 
 When a native tool call is BLOCKED or redirected with a "use the
@@ -27,7 +24,7 @@ STOP and route that exact call through the sanctioned tool:
 
 | Blocked native call | Route to |
 |---|---|
-| `read` on a directory / `ls` / `find` | `ctx_tree` (dirs) |
+| `read` on a directory / `ls` | `ctx_tree` |
 | `bash` command (incl. `cat`/`head`/`tail`/`grep`/`rm`/`sed`) | `ctx_shell` with JSON `{"command": "…"}` |
 | `grep`/`rg` (repo search) | `ctx_search` with JSON `{"pattern": "…", "path": "…"}` |
 | `glob` / `find` patterns | `ctx_glob` with JSON `{"pattern": "…"}` |

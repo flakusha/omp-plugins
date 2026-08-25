@@ -4,7 +4,7 @@ import type { HookAPI } from "@oh-my-pi/pi-coding-agent/extensibility/hooks";
 
 // bashInterceptor (agent/config.yml) already forces raw shell reads/greps/
 // finds/ls onto the native `read`/`grep`/`glob` tools. This hook escalates
-// one layer further: agent/CLAUDE.md's lean-ctx server instructions mandate
+// one layer further: the lean-ctx MCP server instructions mandate
 // ctx_read/ctx_search/ctx_glob over the native tools outright (cached
 // re-reads, anchored patch, semantic/symbol search — deeper compression
 // than the native tools alone give). Escalating this was deliberately
