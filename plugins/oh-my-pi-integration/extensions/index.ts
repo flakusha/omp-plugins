@@ -71,7 +71,7 @@ export function parseRtkSubcommands(helpText: string): Set<string> {
   const names = new Set<string>();
   for (const line of helpText.split("\n")) {
     const m = /^ {2}([a-z][a-z0-9-]*)[\t ]{2,}/.exec(line);
-    if (m) names.add(m[1]);
+    if (m?.[1]) names.add(m[1]);
   }
   return names;
 }
@@ -132,7 +132,116 @@ export function isSimpleCommand(cmd: string): boolean {
 /** First whitespace-delimited token (the binary name). */
 function firstToken(cmd: string): string {
   const m = cmd.match(/^([^\s]+)/);
-  return m ? m[1] : "";
+  return m?.[1] ?? "";
+}
+
+/**
+ * Native-binary → rtk-subcommand bridge. Handles the read-family
+ * (`cat`/`head`/`tail`/`less`/`more`), which `routeRtk` does NOT cover (rtk
+ * proxies them through `rtk read`, not `rtk cat`). Returns the rewritten
+ * command string, or `undefined` when no safe mapping exists.
+ *
+ * Argument translation rules (intentionally narrow; anything ambiguous returns
+ * undefined so the upstream `routeRtk` / `lean-ctx -c` paths handle it):
+ *   cat [flags] <files...>  → rtk read [flags] <files...>     (cat -n / -E / -A kept when rtk read supports them; -A / -E rejected)
+ *   head [-n N | -N] [file] → rtk read [--max-lines N] [file]
+ *   tail [-n N | -N] [file] → rtk read [--tail-lines N] [file]
+ *   less [-N] <file>        → rtk read [-N] <file>
+ *   more <file>             → rtk read <file>
+ *
+ * Rejected (returns undefined → upstream fallback):
+ *   - cat -A / -E / -T / -v (rtk read does not expose show-special-chars)
+ *   - head -c N (byte count, not line count)
+ *   - tail -c N (byte count)
+ *   - head/tail --help, --version (info commands; not file reads)
+ *   - any args containing '=' (env-var-style, ambiguous)
+ *
+ * --------------------------------------------------------------------------
+ * ARCHITECTURAL CEILING: this function rewrites to another `bash` invocation.
+ * It does NOT route to MCP. Hooks cannot reshape `toolName` (`bash` stays
+ * `bash`), and `ExtensionContext` does not expose MCP client APIs to
+ * extensions — so the dispatch layer can compress via rtk but cannot route
+ * a `bash "cat file"` call to `mcp__lean_ctx_ctx_read`. The two ways to get
+ * MCP routing for read-family commands are:
+ *   1. Prompt-time: agent calls the built-in `read` tool directly (see rule
+ *      `bash-read-family-prefer-read-tool`), which then triggers
+ *      `lean-ctx-native-reroute` → `xd://mcp__lean_ctx_ctx_read`.
+ *   2. Upstream: omp exposes MCP client to extensions so this function can
+ *      dispatch directly. Tracked as an upstream issue.
+ * Until then, this is the maximum compression achievable at the hook layer.
+ * --------------------------------------------------------------------------
+ */
+export function nativeToRtk(cmd: string): string | undefined {
+  // Split into tokens without re-using shell parsing — we already enforced
+  // isSimpleCommand above so the input is whitespace-separated plain args.
+  const tokens = cmd.split(/\s+/);
+  const bin = tokens[0];
+  const args = tokens.slice(1);
+
+  if (bin === "cat") {
+    // Reject flags rtk read does not expose.
+    for (const a of args) {
+      if (a.startsWith("-") && !["-n", "--", "-"].includes(a)) {
+        // Allow long-form flags unknown to us only if they match a safe-shape;
+        // be conservative and reject anything that starts with "-" except -n/--.
+        if (
+          a === "-A" ||
+          a === "-B" ||
+          a === "-E" ||
+          a === "-T" ||
+          a === "-v" ||
+          a === "--show-all" ||
+          a === "--show-ends" ||
+          a === "--show-tabs" ||
+          a === "--show-nonprinting"
+        ) {
+          return undefined;
+        }
+      }
+    }
+    // Filter -n (line numbers) — rtk read supports it natively.
+    const filtered = args.filter((a) => a !== "-n");
+    return ["rtk", "read", ...filtered].join(" ");
+  }
+
+  if (bin === "less" || bin === "more") {
+    // less supports -N (line numbers) which rtk read has as -n/--line-numbers.
+    const filtered = args.map((a) => (a === "-N" ? "-n" : a));
+    return ["rtk", "read", ...filtered].join(" ");
+  }
+
+  if (bin === "head" || bin === "tail") {
+    const flag = bin === "head" ? "--max-lines" : "--tail-lines";
+    const out: string[] = ["rtk", "read"];
+    let count: string | undefined;
+    let fileSeen = false;
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === undefined) continue;
+      if (a === "-c" || a === "--bytes") return undefined; // byte count, unsupported
+      if (a === "--help" || a === "--version" || a === "-h" || a === "-V") return undefined;
+      if (a === "-n" || a === "--lines") {
+        const n = args[i + 1];
+        if (!n || !/^\d+$/.test(n)) return undefined;
+        count = n;
+        i++;
+        continue;
+      }
+      // `-N` shorthand (only digits).
+      const m = /^[-+]?(\d+)$/.exec(a);
+      if (m?.[1] && !fileSeen) {
+        count = m[1];
+        continue;
+      }
+      if (a.startsWith("-")) return undefined; // unknown flag, refuse
+      fileSeen = true;
+      out.push(a);
+    }
+    if (count !== undefined) out.splice(2, 0, flag, count);
+    return out.join(" ");
+  }
+
+  return undefined;
 }
 
 /**
@@ -148,6 +257,13 @@ export function rewriteCommand(
 ): string {
   if (pty || isAsync) return cmd; // never touch interactive / background
   if (!isSimpleCommand(cmd)) return cmd;
+
+  // 0) Native-binary → rtk-subcommand bridge (cat/head/tail/less/more → rtk read).
+  //    Runs before routeRtk because those binaries are NOT in RTK_SAFE_SUBCOMMANDS
+  //    (the safe set keys on rtk subcommands, not native binaries). This path
+  //    picks them up directly without falling through to `lean-ctx -c "cat …"`.
+  const bridged = nativeToRtk(cmd);
+  if (bridged) return bridged;
 
   const bin = firstToken(cmd);
 
@@ -195,7 +311,6 @@ function toolNote(event: {
   }
   return undefined;
 }
-
 export default function integrationPlugin(pi: ExtensionAPI): void {
   if (DISABLE()) return;
 
@@ -520,7 +635,8 @@ export default function integrationPlugin(pi: ExtensionAPI): void {
         continue;
       // Match the engram CLI block header: "[1] #611 (session_summary) — title"
       if (/^\[\d+\]\s+#\d+/.test(line)) {
-        lines.push((line.match(/—\s*(.*)$/) || ["", line])[1]);
+        const m = line.match(/—\s*(.*)$/);
+        lines.push(m?.[1] ?? line);
         continue;
       }
       lines.push(line);
