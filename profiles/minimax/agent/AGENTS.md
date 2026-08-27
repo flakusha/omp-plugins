@@ -1,7 +1,7 @@
 # Global Agent Instructions (oh-my-pi / omp)
 
 Agent-scoped rules for this oh-my-pi (omp) agent. Wire into a home/global
-config via `scripts/install-global-agents.sh`.
+config via `scripts/install.sh --target ~/.omp --live`.
 
 <!-- lean-ctx -->
 ## lean-ctx
@@ -9,12 +9,11 @@ config via `scripts/install-global-agents.sh`.
 Prefer lean-ctx MCP tools over native equivalents for token savings.
 
 For compression you can rely on regardless of your code surface or version,
-route shell commands through `ctx_shell` (or
-`/home/flak/node_modules/lean-ctx-bin/bin/lean-ctx -c "<cmd>"`), file reads
-through `ctx_read`, and code search through `ctx_search`. Hook-driven
-auto-compression may also be active, but the MCP/CLI tools are the path that
-works everywhere — otherwise large outputs (builds, `tsc`, tests, logs) can
-reach the model uncompressed.
+use the lean-ctx MCP tools (`mcp__lean_ctx_ctx_shell`, `mcp__lean_ctx_ctx_read`,
+`mcp__lean_ctx_ctx_search`, `mcp__lean_ctx_ctx_glob`, `mcp__lean_ctx_ctx_tree`).
+Hook-driven auto-compression may also be active, but the MCP tools are the
+path that works everywhere — otherwise large outputs (builds, `tsc`, tests,
+logs) can reach the model uncompressed.
 
 ### Tool-call corrections — do not fight blocked native tools
 
