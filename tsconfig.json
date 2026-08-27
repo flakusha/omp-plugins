@@ -11,10 +11,15 @@
     "esModuleInterop": true,
     "isolatedModules": true,
     "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "noUncheckedIndexedAccess": true,
+    "noFallthroughCasesInSwitch": true
   },
   "include": [
-    "plugins/**/*.ts",
-    "agent/**/*.ts"
+    "plugins/**/*.ts"
+  ],
+  "exclude": [
+    "**/__tests__/**",
+    "plugins/**/node_modules/**"
   ]
 }

@@ -228,4 +228,5 @@ omp --profile default     # base profile
 
 ## License
 
-[MIT](LICENSE)
+[AGPL-3.0](LICENSE) — see `LICENSE` for the full text. (The plugin manifest
+in `plugins/oh-my-pi-integration/package.json` declares `AGPL-3.0-or-later`.)

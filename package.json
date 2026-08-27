@@ -4,6 +4,11 @@
   "private": true,
   "type": "module",
   "description": "Installable oh-my-pi (omp) plugin bundle — extensions, hooks, rules, and agent config scaffold.",
+  "packageManager": "bun@1.4.0",
+  "engines": {
+    "bun": ">=1.4.0",
+    "node": ">=20.0.0"
+  },
   "workspaces": [
     "plugins/*"
   ],
@@ -21,6 +26,7 @@
     "format": "biome format --write plugins scripts",
     "test": "bun test",
     "test:watch": "bun test --watch",
+    "test:coverage": "bun test --coverage",
     "check:rules": "bash scripts/check-rules-sync.sh",
     "check:regex": "bash scripts/check-regex-safety.sh",
     "check:ship": "bash scripts/check-shipment.sh",

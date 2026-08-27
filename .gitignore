@@ -87,3 +87,16 @@ dist
 # Bundle (omp-plugins)
 bun.lockb
 pack/dist/
+# OS / editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+*.swp
+*.swo
+*~
+*.bak
+*.original
