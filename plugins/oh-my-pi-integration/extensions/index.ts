@@ -170,77 +170,92 @@ function firstToken(cmd: string): string {
  *      dispatch directly. Tracked as an upstream issue.
  * Until then, this is the maximum compression achievable at the hook layer.
  * --------------------------------------------------------------------------
- */
-export function nativeToRtk(cmd: string): string | undefined {
-  // Split into tokens without re-using shell parsing — we already enforced
-  // isSimpleCommand above so the input is whitespace-separated plain args.
-  const tokens = cmd.split(/\s+/);
-  const bin = tokens[0];
-  const args = tokens.slice(1);
+/** Flags rtk read does NOT expose on `cat`. */
+const CAT_UNSUPPORTED = new Set([
+  "-A",
+  "-B",
+  "-E",
+  "-T",
+  "-v",
+  "--show-all",
+  "--show-ends",
+  "--show-tabs",
+  "--show-nonprinting",
+]);
 
-  if (bin === "cat") {
-    // Reject flags rtk read does not expose.
-    for (const a of args) {
-      if (a.startsWith("-") && !["-n", "--", "-"].includes(a)) {
-        // Allow long-form flags unknown to us only if they match a safe-shape;
-        // be conservative and reject anything that starts with "-" except -n/--.
-        if (
-          a === "-A" ||
-          a === "-B" ||
-          a === "-E" ||
-          a === "-T" ||
-          a === "-v" ||
-          a === "--show-all" ||
-          a === "--show-ends" ||
-          a === "--show-tabs" ||
-          a === "--show-nonprinting"
-        ) {
-          return undefined;
-        }
-      }
-    }
-    // Filter -n (line numbers) — rtk read supports it natively.
-    const filtered = args.filter((a) => a !== "-n");
-    return ["rtk", "read", ...filtered].join(" ");
+/** `cat [flags] <files...>` -> `rtk read [flags] <files...>`. */
+function handleCat(args: string[]): string | undefined {
+  for (const a of args) {
+    const isSafeFlag = a === "-n" || a === "--" || a === "-";
+    if (a.startsWith("-") && !isSafeFlag && CAT_UNSUPPORTED.has(a)) return undefined;
   }
+  return ["rtk", "read", ...args.filter((a) => a !== "-n")].join(" ");
+}
 
-  if (bin === "less" || bin === "more") {
-    // less supports -N (line numbers) which rtk read has as -n/--line-numbers.
-    const filtered = args.map((a) => (a === "-N" ? "-n" : a));
-    return ["rtk", "read", ...filtered].join(" ");
-  }
+/** `less`/`more` -> `rtk read`; `-N` (less line numbers) maps to `-n`. */
+function handleLessMore(args: string[]): string {
+  return ["rtk", "read", ...args.map((a) => (a === "-N" ? "-n" : a))].join(" ");
+}
 
-  if (bin === "head" || bin === "tail") {
-    const flag = bin === "head" ? "--max-lines" : "--tail-lines";
-    const out: string[] = ["rtk", "read"];
-    let count: string | undefined;
-    let fileSeen = false;
-    for (let i = 0; i < args.length; i++) {
-      const a = args[i];
-      if (a === undefined) continue;
-      if (a === "-c" || a === "--bytes") return undefined; // byte count, unsupported
-      if (a === "--help" || a === "--version" || a === "-h" || a === "-V") return undefined;
-      if (a === "-n" || a === "--lines") {
-        const n = args[i + 1];
-        if (!n || !/^\d+$/.test(n)) return undefined;
-        count = n;
-        i++;
-        continue;
-      }
-      // `-N` shorthand (only digits).
-      const m = /^[-+]?(\d+)$/.exec(a);
-      if (m?.[1] && !fileSeen) {
-        count = m[1];
-        continue;
-      }
-      if (a.startsWith("-")) return undefined; // unknown flag, refuse
+type HeadTailAction =
+  | { kind: "count"; count: string }
+  | { kind: "reject" }
+  | { kind: "passthrough" };
+
+/** Classify one head/tail arg into an action. Pure, no side effects. */
+function classifyHeadTailArg(a: string, fileSeen: boolean): HeadTailAction {
+  if (a === "-c" || a === "--bytes") return { kind: "reject" };
+  if (a === "--help" || a === "--version" || a === "-h" || a === "-V") return { kind: "reject" };
+  if (a === "-n" || a === "--lines") return { kind: "count", count: "PENDING" };
+  const m = /^[-+]?(\d+)$/.exec(a);
+  if (m?.[1] && !fileSeen) return { kind: "count", count: m[1] };
+  if (a.startsWith("-")) return { kind: "reject" };
+  return { kind: "passthrough" };
+}
+
+/** Consume a `-n N` / `--lines N` pair; returns the validated count or undefined. */
+function readCountArg(args: string[], i: number): { count: string; nextI: number } | undefined {
+  const n = args[i + 1];
+  if (!n || !/^\d+$/.test(n)) return undefined;
+  return { count: n, nextI: i + 1 };
+}
+
+/** `head [-n N | -N] [file]` -> `rtk read [--max-lines N] [file]`. */
+function handleHeadTail(bin: "head" | "tail", args: string[]): string | undefined {
+  const flag = bin === "head" ? "--max-lines" : "--tail-lines";
+  const out: string[] = ["rtk", "read"];
+  let count: string | undefined;
+  let fileSeen = false;
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === undefined) continue;
+    const action = classifyHeadTailArg(a, fileSeen);
+    if (action.kind === "reject") return undefined;
+    if (action.kind === "passthrough") {
       fileSeen = true;
       out.push(a);
+      continue;
     }
-    if (count !== undefined) out.splice(2, 0, flag, count);
-    return out.join(" ");
+    // action.kind === "count"
+    if (action.count !== "PENDING") {
+      count = action.count;
+      continue;
+    }
+    const pair = readCountArg(args, i);
+    if (!pair) return undefined;
+    count = pair.count;
+    i = pair.nextI;
   }
+  if (count !== undefined) out.splice(2, 0, flag, count);
+  return out.join(" ");
+}
 
+export function nativeToRtk(cmd: string): string | undefined {
+  // isSimpleCommand above guarantees whitespace-separated plain args.
+  const [bin, ...args] = cmd.split(/\s+/);
+  if (bin === "cat") return handleCat(args);
+  if (bin === "less" || bin === "more") return handleLessMore(args);
+  if (bin === "head" || bin === "tail") return handleHeadTail(bin, args);
   return undefined;
 }
 

@@ -127,9 +127,24 @@ const FULL_PATH_GIT = new RegExp(`/(?:usr/)?(?:bin|sbin)/git\\s+(${GIT_MUTATING_
 // (`node -e`, `python -c`) stay out of scope and their string-literal
 // contents don't false-positive against INTERCEPTED-token regexes.
 const SHELL_PASSTHROUGH: Record<string, true> = {
-  bash: true, sh: true, zsh: true, dash: true, busybox: true, ash: true, ksh: true, fish: true,
-  env: true, sudo: true, nohup: true, nice: true, time: true, timeout: true, xargs: true,
-  "lean-ctx": true, rtk: true, xd: true,
+  bash: true,
+  sh: true,
+  zsh: true,
+  dash: true,
+  busybox: true,
+  ash: true,
+  ksh: true,
+  fish: true,
+  env: true,
+  sudo: true,
+  nohup: true,
+  nice: true,
+  time: true,
+  timeout: true,
+  xargs: true,
+  "lean-ctx": true,
+  rtk: true,
+  xd: true,
 };
 // Match `<wrapper> -c "<inner>"` / `--command "<inner>"` / `-e "<inner>"` /
 // `--eval "<inner>"` where the wrapper is one of SHELL_PASSTHROUGH. Group 1
@@ -139,7 +154,8 @@ const SHELL_PASSTHROUGH: Record<string, true> = {
 // (group 5) are accepted for completeness — `bash -c ls` is valid syntax
 // even if unusual. The match is anchored to a preceding space or string
 // start so `-c` doesn't match the inside of `git -c protocol.version=2`.
-const SHELL_STRING_FLAG = /(?:^|\s)([a-zA-Z_][\w.-]*)[\s,;&|]+(-{1,2}(?:command|eval|c|e))\s*(?:=\s*)?(?:"([^"\\\n]*(?:\\.[^"\\\n]*)*)"|'([^'\\\n]*(?:\\.[^'\\\n]*)*)'|(\S+))/;
+const SHELL_STRING_FLAG =
+  /(?:^|\s)([a-zA-Z_][\w.-]*)[\s,;&|]+(-{1,2}(?:command|eval|c|e))\s*(?:=\s*)?(?:"([^"\\\n]*(?:\\.[^"\\\n]*)*)"|'([^'\\\n]*(?:\\.[^'\\\n]*)*)'|(\S+))/;
 /**
  * Split a command string on UNQUOTED shell sequencing separators:
  * `&&` / `||` / `;` / `|`. Quoted regions (single/double quotes) are
@@ -388,7 +404,6 @@ export function gitMutatingReason(cmd: string): string | undefined {
 // Other short flags (`-i`) take no value and must not consume the next token.
 const VALUE_TAKING_SHORT_FLAGS = new Set(["u", "g", "E", "U"]);
 
-
 /**
  * Strip a leading `sudo`/`env`/`nohup` wrapper (and its flag/arg prefixes)
  * so the remainder starts with the binary the wrapper is invoking. Returns
@@ -398,36 +413,57 @@ const VALUE_TAKING_SHORT_FLAGS = new Set(["u", "g", "E", "U"]);
  * `cd /repo && env cat /etc/passwd` reduces to `cat /etc/passwd` and trips
  * `INTERCEPTED_TOKEN_RE` on the second pass.
  */
+/** Tokenize whitespace-separated tokens (no shell parsing). */
+function tokenize(tail: string): string[] {
+  const tokens: string[] = [];
+  const re = /(\s+)|(\S+)/g;
+  let tm: RegExpExecArray | null = re.exec(tail);
+  while (tm !== null) {
+    if (tm[2]) tokens.push(tm[2]);
+    tm = re.exec(tail);
+  }
+  return tokens;
+}
+
+/**
+ * Walk `tokens` until an INTERCEPTED binary is found; track consumed
+ * positions so the caller can slice the wrapper+flag prefix off the front.
+ * Returns the token index where the intercepted binary lives (consumed
+ * prefix is `tokens[0..i]`).
+ */
+function findInterceptedIndex(tokens: string[]): number {
+  let i = 0;
+  while (i < tokens.length) {
+    const tok = tokens[i] ?? "";
+    if (INTERCEPTED.has(tok)) return i;
+    const sm = /^(-[a-zA-Z])$/.exec(tok);
+    if (sm && VALUE_TAKING_SHORT_FLAGS.has((sm[1] ?? "").slice(1))) {
+      const next = tokens[i + 1];
+      if (next && !next.startsWith("-") && !INTERCEPTED.has(next)) {
+        i += 2;
+        continue;
+      }
+    }
+    i++;
+  }
+  return -1;
+}
+
+/** Sum the character widths of `tokens[0..count)` plus one separator each. */
+function tokensCharWidth(tokens: string[], count: number): number {
+  let n = 0;
+  for (let k = 0; k < count; k++) n += (tokens[k] ?? "").length + 1;
+  return n;
+}
+
 function stripWrapperPrefix(seg: string): string {
- const m = seg.match(/^\s*(sudo|env|nohup)\b\s+/);
- if (!m) return seg;
- const tail = seg.slice(m[0].length);
- const tokens: string[] = [];
- const re = /(\s+)|(\S+)/g;
- let tm: RegExpExecArray | null;
- while ((tm = re.exec(tail))) if (tm[2]) tokens.push(tm[2]);
- let i = 0;
- let sawIntercepted = false;
- while (i < tokens.length) {
- const tok = tokens[i] ?? "";
- if (INTERCEPTED.has(tok)) {
- sawIntercepted = true;
- break;
- }
- const sm = /^(-[a-zA-Z])$/.exec(tok);
- if (sm && VALUE_TAKING_SHORT_FLAGS.has((sm[1] ?? "").slice(1))) {
- const next = tokens[i + 1];
- if (next && !next.startsWith("-") && !INTERCEPTED.has(next)) {
- i += 2;
- continue;
- }
- }
- i++;
- }
- if (!sawIntercepted) return seg;
- let consumedLen = 0;
- for (let k = 0; k < i; k++) consumedLen += (tokens[k] ?? "").length + 1;
- return tail.slice(consumedLen).trimStart();
+  const m = seg.match(/^\s*(sudo|env|nohup)\b\s+/);
+  if (!m) return seg;
+  const tail = seg.slice(m[0].length);
+  const tokens = tokenize(tail);
+  const i = findInterceptedIndex(tokens);
+  if (i < 0) return seg;
+  return tail.slice(tokensCharWidth(tokens, i)).trimStart();
 }
 
 /**
@@ -476,37 +512,37 @@ function nonGitEvasion(segments: string[]): string | undefined {
  * bashInterceptor (tail is chained behind a prefix, not line-anchored) and
  * past SHELL_C (wrapper is `lean-ctx`, not bash/sh/zsh/dash).
  */
-function shellStringFlagReason(cmd: string): string | undefined {
+/** Unescape shell-quote escapes and strip the outer quote pair, if present. */
+function extractInner(match: RegExpMatchArray): string {
+  const rawInner = (match[3] ?? match[4] ?? match[5] ?? "").replace(/\\(["'\\])/g, "$1");
+  return rawInner.replace(/^(['"])(.*)\1$/, "$2");
+}
+
+/**
+ * Check the un-quoted inner payload of a `<wrapper> -c "…"` invocation for
+ * either an INTERCEPTED binary or a git mutating subcommand — both are
+ * violations that the outer wrapper would have hidden from the line-anchored
+ * bashInterceptor. Returns the block reason, or undefined when benign.
+ */
+function checkInnerPayload(inner: string): string | undefined {
   const INTERCEPTED_TOKEN_RE = new RegExp(`^\\s*(${BIN_ALT})\\b`);
+  for (const seg of splitCommandSegments(inner)) {
+    if (INTERCEPTED_TOKEN_RE.test(seg)) return EVASION_REASON;
+    if (GIT_MUTATING_RE.test(seg)) return GIT_MUTATING_REASON;
+  }
+  return undefined;
+}
+
+function shellStringFlagReason(cmd: string): string | undefined {
   for (const match of cmd.matchAll(new RegExp(SHELL_STRING_FLAG, "g"))) {
     const wrapper = match[1];
     if (!wrapper || !(wrapper in SHELL_PASSTHROUGH)) continue;
-    // Unescape `\\"` / `\\'` / `\\\\` to the literal char — these are the
-    // shell-quote escapes that survive outer quoting. Other `\\x` forms
-    // are left as-is because the shell treats them as literal backslash.
-    const rawInner = (match[3] ?? match[4] ?? match[5] ?? "").replace(/\\(["'\\])/g, "$1");
-    // Strip the outer quote pair when the captured inner keeps the
-    // delimiters (regex captures the contents AND the quote chars).
-    // `bash -c "env cat x"` captures `"env cat x"` (with quotes); after
-    const inner = rawInner.replace(/^(['"])(.*)\1$/, "$2");
+    const inner = extractInner(match);
     if (!inner) continue;
-    // Always recurse on the inner payload — the inner string is what the
-    // shell will execute regardless of whether the flag is `-c`, `--command`,
-    // or `-e`. SHELL_C only matches `-c` shape, so variants like
-    // `bash --command "cat"` and `bash -e "tail -60"` won't trip the outer
-    // regex; the recursive call on the inner is what catches them.
-    const reason = evasionReason(inner);
-    if (reason) return reason;
-    // Bare-intercepted-token check: the inner may contain a top-level
-    // invocation of an INTERCEPTED binary (e.g. `rtk -c "tail -60 foo"`).
-    // bashInterceptor's `^\\s*<bin>` rule misses this because the OUTER
-    // command starts with `rtk`, not the intercepted binary; the inner
-    // payload is exactly what bashInterceptor would have caught if it
-    // were the top-level command.
-    for (const seg of splitCommandSegments(inner)) {
-      if (INTERCEPTED_TOKEN_RE.test(seg)) return EVASION_REASON;
-      if (GIT_MUTATING_RE.test(seg)) return GIT_MUTATING_REASON;
-    }
+    const recursiveReason = evasionReason(inner);
+    if (recursiveReason) return recursiveReason;
+    const payloadReason = checkInnerPayload(inner);
+    if (payloadReason) return payloadReason;
   }
   return undefined;
 }
