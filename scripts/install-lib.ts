@@ -974,6 +974,38 @@ function printSummary(ctx: InstallCtx): void {
 
 // ---- startup gates (order matches install.sh) -----------------------------
 
+/** Refuse unsafe --target values. Returns null when safe, else a reason. */
+export function checkDangerousTarget(target: string, home: string): string | null {
+  if (target === "" || target === "/") return "target is the filesystem root or empty";
+  if (target === "/root" || target.startsWith("/root/"))
+    return "target is another user's home (/root)";
+  if (target === "/home" || target === "/home/") return "target is the /home directory";
+  if (target.startsWith("/home/")) {
+    const other = target.match(/^\/home\/([^/]+)(?:\/|$)/)?.[1];
+    if (other !== undefined && other !== basename(home))
+      return `target is another user's home (/home/${other}/)`;
+  }
+  // OS-managed read-only paths. User-writable trees are intentionally NOT
+  // denied because the installer may legitimately land in them; the
+  // existing symlink + realm guards already prevent cross-user escapes.
+  for (const prefix of [
+    "/etc",
+    "/sys",
+    "/proc",
+    "/dev",
+    "/boot",
+    "/bin",
+    "/sbin",
+    "/lib",
+    "/lib64",
+    "/snap",
+  ]) {
+    if (target === prefix || target.startsWith(`${prefix}/`))
+      return `target is under a system path (${prefix})`;
+  }
+  return null;
+}
+
 function runGates(ctx: InstallCtx): number | null {
   const { deps, flags, target } = ctx;
   const homeOmp = join(deps.home, ".omp");
@@ -988,8 +1020,13 @@ function runGates(ctx: InstallCtx): number | null {
   if (flags.live && (target === deps.home || target.startsWith(homeOmp))) {
     deps.out(`    [live] updating your live profile under ${deps.home}/.omp`);
   }
-  if (target === "" || target === "/" || target === "/root" || target.startsWith("/root/")) {
+  const danger = checkDangerousTarget(target, deps.home);
+  if (danger !== null) {
     deps.err(`ERROR: refusing dangerous target: ${target}`);
+    deps.err(`       ${danger}`);
+    deps.err("       Pass an isolated target (e.g. --target /tmp/omp-test), or");
+    deps.err("       pass --live if you intentionally mean to update your live");
+    deps.err("       ~/.omp profile.");
     return 3;
   }
   const emptyProfiles = ctx.profiles.filter((name) => {

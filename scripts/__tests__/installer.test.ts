@@ -275,6 +275,24 @@ describe("fix regressions at runInstall level", () => {
     expect(statSync(profileAgent).isDirectory()).toBe(true);
     expect(readFileSync(join(profileAgent, "config.yml"), "utf8")).toMatch(/setupVersion: 2/);
     expect(readFileSync(join(profileAgent, "AGENTS.md"), "utf8").length).toBeGreaterThan(100);
+    expect(readFileSync(join(profileAgent, "AGENTS.md"), "utf8").length).toBeGreaterThan(100);
+  });
+
+  test("refuses --target under a system path and exits 3 without writing", async () => {
+    const rc = await runInstall(["--target", "/etc/omp-test"]);
+    expect(rc).toBe(3);
+    expect(existsSync("/etc/omp-test")).toBe(false);
+  });
+
+  test("refuses --target under another user's /home and exits 3", async () => {
+    const rc = await runInstall(["--target", "/home/somebodyelse/omp-test"]);
+    expect(rc).toBe(3);
+    expect(existsSync("/home/somebodyelse/omp-test")).toBe(false);
+  });
+
+  test("refuses --target=/ (filesystem root) and exits 3", async () => {
+    const rc = await runInstall(["--target", "/"]);
+    expect(rc).toBe(3);
   });
 });
 
