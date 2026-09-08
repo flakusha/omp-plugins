@@ -74,7 +74,7 @@ Both `~/.omp/agent/rules/harness-tooling-discipline.md` and
 (`#9896` snapshot tag confirmed for the harness rule). The top-level
 `rules/`, `hooks/`, `extensions/`, `skills/` directories exist alongside
 the agent-scoped ones. Both contain the same content. The current installer
-(`scripts/install.sh` line 431-432) writes rules to **both** locations.
+(`scripts/install.ts`) writes rules to **both** locations.
 
 ### Log evidence — default profile session (pid 73290)
 
@@ -163,7 +163,7 @@ discrepancy.
 
 ## What this repo CAN fix from its side
 
-The repo's `scripts/install.sh` (lines 414-456) currently:
+The repo's `scripts/install.ts` currently:
 
 1. Writes `agent/AGENTS.md`, `agent/config.yml`, `agent/extensions/*`,
    `agent/hooks/pre/*` to the **default** `agent/` dir only.
@@ -176,12 +176,12 @@ The repo has three viable response paths:
 
 ### Option 1 — Symlink the profile runtime to the global store (lowest risk, adopted 2026-08-25)
 
-Change `install.sh` so that after laying down the default agent dir, it
+Change `install.ts` so that after laying down the default agent dir, it
 creates symlinks in each profile dir pointing back to the default agent
 runtime:
 
 ```bash
-# in install.sh, after the agent-dir payloads section
+# in install.ts, after the agent-dir payloads section
 for profile_dir in "$REPO_ROOT/profiles"/*/agent/; do
   [[ -e "$profile_dir" ]] || continue
   profile_name="$(basename "$(dirname "$profile_dir")")"
@@ -226,7 +226,7 @@ install with a new template.
 
 Mirror the same content the installer writes to `agent/{rules,hooks,extensions,skills}/`
 into each `profiles/<name>/agent/{rules,hooks,extensions,skills}/`. Add a
-profile-payloads block to `install.sh` (similar to the existing
+profile-payloads block to `install.ts` (similar to the existing
 agent-payloads block) that iterates `profiles/<name>/agent/` AND the
 default `agent/` and writes each runtime file to the profile dir too.
 
@@ -234,7 +234,7 @@ Pros: works under any loader behavior. Matches the user's mental model
 ("each profile has its own runtime"). Symmetric across profiles.
 
 Cons: every rule/hook/extension update needs to be re-applied to every
-profile. Drift is inevitable unless `install.sh` is the only writer.
+profile. Drift is inevitable unless `install.ts` is the only writer.
 This is what the user previously rejected as overbroad.
 
 ### Option 4 — Fix the omp loader (correct, out of scope)
@@ -300,7 +300,7 @@ profiles/
   bytedance/agent/config.yml  ← per-profile config
 
 scripts/
-  install.sh                  ← installer; current behavior is correct for
+  install.ts                  ← installer; current behavior is correct for
                                   default profile, wrong for named profiles
 
 .omp-plugin/
@@ -316,10 +316,10 @@ depend on manifest resolution and are broken under named profiles.
 
 ## Verification checklist for whoever picks this up
 
-After `install.sh` lays down the symlinks (Option 1) and the user runs
+After `install.ts` lays down the symlinks (Option 1) and the user runs
 `omp --profile minimax`, verify the layout fix worked:
 
-1. Run `bash scripts/install.sh --target ~/.omp --live` (or the user's
+1. Run `bun scripts/install.ts --target ~/.omp --live` (or the user's
    equivalent install command).
 2. Confirm the install log includes lines like:
    `+ symlink /home/<user>/.omp/profiles/minimax/agent/rules -> ../../../agent/rules`
@@ -406,7 +406,7 @@ omp creates `~/.omp/profiles/<name>/agent/` **only on first invocation** of
 `omp --profile <name>`. Until that runs:
 
 - `~/.omp/profiles/<name>/agent/` does not exist;
-- `scripts/install.sh` cannot write the per-profile `config.yml` /
+- `scripts/install.ts` cannot write the per-profile `config.yml` /
   `AGENTS.md` (the existing 1c step had a silent `continue` on this case);
 - the new 1d symlink step also skips the profile silently;
 - `--profile <name>` sessions consequently load **zero** user-authored
@@ -423,22 +423,12 @@ the named profile" trap.
 when any repo profile is unbootstrapped. The installer prints the exact
 bootstrap command for each missing profile and exits with code 4:
 
-```
-ERROR: 2 profile(s) ship in this repo but are not yet bootstrapped by omp:
+ERROR: 2 profile(s) ship in this repo with no installable payload (no
+config.yml / AGENTS.md in repo source, and no bootstrap dir on disk):
        - bytedance
        - minimax
 
-  omp creates ~/.omp/profiles/<name>/agent/ only on first invocation of
-  `omp --profile <name>`. Until that runs, this installer cannot lay
-  down profile payloads or runtime symlinks, and `--profile <name>`
-  sessions will load zero user-authored rules (see
-  PROFILE-LOADER-RESOLUTION.md). Bootstrap each missing profile:
-       omp --profile bytedance --print "bootstrap"  # or:  omp --profile bytedance -p ""
-       omp --profile minimax --print "bootstrap"  # or:  omp --profile minimax -p ""
-
-  Or pass --ignore-unbootstrapped-profiles to install only the default
-  profile and skip the missing ones (NOT recommended — the silent skip
-  is the bug this gate exists to surface).
+  Bootstrap with:  omp --profile <name> -p ""  or delete the profile
 ```
 
 The bootstrap command (`omp --profile <name> -p ""`) is non-interactive
@@ -455,18 +445,10 @@ form works.
    ```
 2. **Then**: install the bundle:
    ```
-   ./scripts/install.sh --target ~/.omp --live
+   bun scripts/install.ts --target ~/.omp --live
    ```
 3. **Verify**: launch under each profile and confirm rules fire
    (verification checklist above).
-
-### Bypass flag
-
-`--ignore-unbootstrapped-profiles` retains the old silent-skip behavior
-(prints a list of skipped profiles, then continues with the default
-profile only). Use this ONLY when you understand the consequence — a
-named profile you didn't bootstrap will have no config, no symlinks,
-and zero rules until you bootstrap it and re-run install.
 
 ---
 
@@ -474,11 +456,11 @@ and zero rules until you bootstrap it and re-run install.
 
 **The Option 1 symlink workaround is safe today; the installer is NOT safe in
 all run modes.** This needs explicit acknowledgment before anyone re-runs
-`scripts/install.sh` against a live profile.
+`scripts/install.ts` against a live profile.
 
 ### What the installer does on a live `~/.omp`
 
-`scripts/install.sh` is manifest-driven. When invoked against the live
+`scripts/install.ts` is manifest-driven. When invoked against the live
 profile root (`--target ~/.omp` or `--target "$HOME"` with `--live`):
 
 1. Every file the installer previously wrote to `~/.omp/agent/**`,
@@ -539,7 +521,7 @@ A proper resolution would do at least one of:
   omp root and any owned-path hash drifts, instead of silently rewriting.
 
 None of these are implemented today. Until they are, the rule for users
-is: **never run `install.sh --target ~/.omp` after hand-editing files the
+is: **never run `install.ts --target ~/.omp` after hand-editing files the
 repo owns; either commit your edits to the repo first, or work in
 `/tmp/omp-test` and copy out manually.** `--dry-run` is mandatory before
 any live run.
@@ -565,3 +547,13 @@ any live run.
   named-profile session then loaded zero user rules — manifesting as
   "install appeared to succeed but did nothing under my named profile".
   Correct workflow is: bootstrap first, then install (see caveat above).
+
+- 2026-09-08: **Bootstrap removed; installer self-bootstraps from repo
+  source.** The 2026-08-25 gate's premise was wrong: the install could
+  never create `~/.omp/profiles/<name>/agent/` itself, so a fresh
+  install always required the user to run `omp --profile <name> -p ""`
+  first. The installer now `mkdir`s the dir when the repo has source
+  files, and the gate checks the repo source instead of the on-disk
+  dir. The `--ignore-unbootstrapped-profiles` flag is gone. Profiles
+  whose source dir is empty AND whose dst dir is missing still fail
+  loudly with the bootstrap command printed.

@@ -1,49 +1,42 @@
 symbolPreset: nerd
-theme: 
-  dark: titanium
-setupVersion: 1
-modelRoles: 
-  smol: openrouter/deepseek/deepseek-v4-flash-0731:off
-  slow: openrouter/xiaomi/mimo-v2.5-pro:medium
-  designer: openrouter/deepseek/deepseek-v4-flash-0731:high
-  tiny: openrouter/xiaomi/mimo-v2.5:low
-  advisor: opencode-go/deepseek-v4-flash
-  default: openrouter/deepseek/deepseek-v4-flash-0731
+setupVersion: 2
+modelRoles: {}
 defaultThinkingLevel: auto
-advisor: 
+advisor:
   enabled: true
-  subagents: true
   syncBacklog: "3"
   immuneTurns: 1
-prewalk: 
+prewalk:
   enabled: true
-contextPromotion: 
+contextPromotion:
   enabled: false
-memory: 
+memory:
   backend: mnemopi
-providers: 
+providers:
   memoryModel: lfm2-1.2b
-  maxInFlightRequests: 
+  maxInFlightRequests:
     anthropic: 1
     opencode-go: 20
     opencode-zen: 20
     openrouter: 20
-autolearn: 
+autolearn:
   enabled: true
-mnemopi: 
+mnemopi:
   polyphonicRecall: true
   enhancedRecall: true
   proactiveLinking: true
-edit: 
+edit:
   mode: hashline
 readLineNumbers: true
-read: 
+read:
   renderMarkdown: true
   toolResultPreview: true
-lsp: 
+lsp:
   lazy: false
   formatOnWrite: false
-bashInterceptor: 
+bash:
+  allowCompoundCommands: true
+bashInterceptor:
   enabled: true
   patterns:
     - pattern: ^\s*(cat|head|tail|less|more)\s+
@@ -79,17 +72,25 @@ bashInterceptor:
     - pattern: ^\s*(?:(?:bun|npm|pnpm|yarn)\s+(?:run\s+)?\S+|cargo\s+watch|watchexec|pytest|vitest|jest|tsc)(?:.|\n)*(?:--watch|-w)(?:\s|$)
       tool: hub
       message: "Use the `hub` tool (`op:\"start\"`) for watch mode so its output, input, and lifecycle stay managed."
-    - pattern: ^\s*git\s+stash\b(?![\s\S]*\s--\s+\S)
+    - pattern: "^\\s*git\\s+stash\\b(?![\\s\\S]*\\s--\\s+\\S)"
       tool: ask
-      message: "BLOCKED: hard ban on `git stash` in shared-branch agent flows — agents repeatedly run stash despite the recommendation and sweep each other's in-flight work. Pathspec-scoped safe shape: `git stash push -- <files you own>`. Acceptable alternatives: (1) commit the change with `git add <files> && git commit -m \"...\"`; (2) use `git worktree add ../<dir>` for isolation. If the user has explicitly authorized a stash in this turn and you can show the exact pathspec covers only files you own, redo with `git stash push -- <pathspec>` and re-run."
-    - pattern: ^\s*git\s+push\b(?!\s+--dry-run)(?!\s+(-h|--help)\b)
+      message: "hard ban on `git stash` in shared-branch agent flows — agents repeatedly run stash despite the recommendation and sweep each other's in-flight work. Pathspec-scoped safe shape: `git stash push -- <files you own>`. Acceptable alternatives: (1) commit the change with `git add <files> && git commit -m \"...\"`; (2) use `git worktree add ../<dir>` for isolation. If the user has explicitly authorized a stash in this turn and you can show the exact pathspec covers only files you own, redo with `git stash push -- <pathspec>` and re-run."
+    - pattern: ^\s*git\s+commit\b(?!\s+--help\b)(?!\s+-h\b)
       tool: ask
-      message: "BLOCKED: hard ban on `git push` in agent flows — wrong-branch and force-push mistakes are not recoverable on a shared remote, and secrets can land in remote history without pre-push scanning. Do NOT push. Stage the local commit (`git add` + `git commit -m \"...\"`), output the commit hash + one-line summary, and wait for explicit user authorization. The user's authorization is per-session, not per-agent; if the user is not present in this turn, surface the prepared commit and stop. Safe shapes are `git push --dry-run` and `git push -h`/`--help` (information only)."
-astGrep: 
+      message: "hard ban on `git commit` in agent flows — bypasses the worktree finalize gate (no `bun run check`, no GPG signing, no pre-commit hooks, no protected-branch review) and often lands on the shared dev branch with unverified work. Use `bun run scripts/worktree/ agent-commit <branch> -m \"<subject>\"` (or `-F <msgfile>`, `-b <body>`) inside the worktree instead — that wrapper runs the check gate, signs the commit, and routes through the user's finalize/review step. If the user has explicitly authorized a direct `git commit` in this turn and confirmed the branch + message verbatim, redo with the authorized invocation. The authorization is per-session, not per-agent; if you are unsure whether the user is present, ask first. Safe shapes (information only): `git commit --help`, `git commit -h`."
+    - pattern: "^\\s*lean-ctx\\s+-c\\s+(?:\"|\\x27)(?:[^\"\\\\]|\\\\.)*?lean-ctx\\s+-c"
+      tool: ask
+      message: "`lean-ctx -c \"lean-ctx -c \"…\"\"` (the double-wrap) is disallowed. The single `lean-ctx -c \"<one shell cmd>\"` form is the only sanctioned wrapper; the inner `lean-ctx -c` adds no compression and creates an ENV-flag injection point (`FOO=bar lean-ctx -c \"…\"`) that escapes the lean-ctx purpose. For complex logic, write a re-executable `<repo>/.tmp/<name>.{js,py}` and invoke it via `lean-ctx -c \"cd <repo> && bun <name>.js\"`. See `~/.omp/skills/context-tooling/SKILL.md` Section 2.1 (Single-wrap invariant)."
+astGrep:
   enabled: true
-checkpoint: 
+checkpoint:
   enabled: true
-security: 
+security:
   enabled: true
-tools: 
+tools:
   xdevDocs: builtins
+task:
+  agentAdvisor:
+    task: "on"
+composer:
+  shape: band

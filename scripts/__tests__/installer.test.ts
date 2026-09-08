@@ -6,6 +6,7 @@ import {
   readFileSync,
   readlinkSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -266,6 +267,15 @@ describe("fix regressions at runInstall level", () => {
     const victimText = readFileSync(victimCfg, "utf8");
     expect(victimText).toBe(personal);
   });
+  test("install bootstraps a profile dir from repo source instead of failing", async () => {
+    const t = tempDir("p0-bootstrap-");
+    const rc = await runInstall(["--target", t]);
+    expect(rc).toBe(0);
+    const profileAgent = join(t, ".omp", "profiles", "minimax", "agent");
+    expect(statSync(profileAgent).isDirectory()).toBe(true);
+    expect(readFileSync(join(profileAgent, "config.yml"), "utf8")).toMatch(/setupVersion: 2/);
+    expect(readFileSync(join(profileAgent, "AGENTS.md"), "utf8").length).toBeGreaterThan(100);
+  });
 });
 
 // ---- parseArgs -------------------------------------------------------------
@@ -278,7 +288,6 @@ describe("parseArgs", () => {
       dryRun: false,
       noPlugin: false,
       live: false,
-      ignoreUnbootstrappedProfiles: false,
       help: false,
     });
   });
@@ -291,15 +300,7 @@ describe("parseArgs", () => {
 
   test("parses all flags in any order", () => {
     const flags = parseArgs(
-      [
-        "--dry-run",
-        "--force",
-        "--target",
-        "/tmp/z",
-        "--no-plugin",
-        "--live",
-        "--ignore-unbootstrapped-profiles",
-      ],
+      ["--dry-run", "--force", "--target", "/tmp/z", "--no-plugin", "--live"],
       {},
     );
     expect(flags).toEqual({
@@ -308,7 +309,6 @@ describe("parseArgs", () => {
       dryRun: true,
       noPlugin: true,
       live: true,
-      ignoreUnbootstrappedProfiles: true,
       help: false,
     });
   });

@@ -37,7 +37,6 @@ export interface CliFlags {
   dryRun: boolean;
   noPlugin: boolean;
   live: boolean;
-  ignoreUnbootstrappedProfiles: boolean;
   help: boolean;
 }
 
@@ -57,8 +56,6 @@ export const HELP_TEXT = `# install.ts — Install the oh-my-pi integration bund
 #
 # Usage:
 #   bun scripts/install.ts [--target DIR] [--force] [--dry-run] [--no-plugin] [--live]
-#                          [--ignore-unbootstrapped-profiles]
-#
 #   --target DIR   Where to install. Default: /tmp/omp-test.
 #                  Equivalent to setting PREFIX=DIR.
 #                  TARGET is a host root that owns an .omp profile; if TARGET
@@ -73,15 +70,6 @@ export const HELP_TEXT = `# install.ts — Install the oh-my-pi integration bund
 #                  and rules only).
 #   --live         Allow updating a live omp profile under $HOME directly
 #                  (e.g. --target ~/.omp or --target "$HOME"). Refused by
-#                  default to protect the live profile.
-#   --ignore-unbootstrapped-profiles
-#                  Skip profiles whose ~/.omp/profiles/<name>/agent/ does
-#                  not exist yet. The DEFAULT is to fail loudly when any
-#                  repo profile is unbootstrapped, because an unbootstrapped
-#                  profile cannot load this plugin's rules/hooks/extensions:
-#                  omp only creates that dir on first \`omp --profile <name>\`
-#                  invocation. The fail mode prints the exact bootstrap
-#                  command for each missing profile (see PROFILE-LOADER-RESOLUTION.md).
 # Laydown (relative to TARGET):
 #   TARGET/.omp/agent/AGENTS.md                      omp-specific global agent rules
 #   TARGET/.omp/agent/config.yml                       agent config scaffold
@@ -376,7 +364,6 @@ export function parseArgs(
     dryRun: false,
     noPlugin: false,
     live: false,
-    ignoreUnbootstrappedProfiles: false,
     help: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -402,9 +389,6 @@ export function parseArgs(
         break;
       case "--live":
         flags.live = true;
-        break;
-      case "--ignore-unbootstrapped-profiles":
-        flags.ignoreUnbootstrappedProfiles = true;
         break;
       case "-h":
       case "--help":
@@ -791,22 +775,25 @@ async function syncProfilePayloads(ctx: InstallCtx): Promise<void> {
   ctx.deps.out("==> per-profile payloads");
   for (const name of ctx.profiles) {
     const profileAgentDir = join(ctx.ompRoot, "profiles", name, "agent");
+    const srcDir = join(ctx.repoRoot, "profiles", name, "agent");
+    let srcNames: string[];
+    try {
+      srcNames = readdirSync(srcDir);
+    } catch {
+      srcNames = [];
+    }
     if (!isDirectory(profileAgentDir)) {
-      warn(
-        ctx,
-        `skipping unbootstrapped profile: ${name} (no ~/.omp/profiles/${name}/agent/ — run \`omp --profile ${name} -p ""\` first)`,
-      );
-      continue;
+      if (srcNames.length === 0) {
+        continue;
+      }
+      if (!ctx.flags.dryRun) {
+        mkdirSync(profileAgentDir, { recursive: true });
+      } else {
+        ctx.deps.out(`  + mkdir ${profileAgentDir} (bootstrap from repo source)`);
+      }
     }
     ctx.deps.out(`    profile: ${name}`);
-    const srcDir = join(ctx.repoRoot, "profiles", name, "agent");
-    let names: string[];
-    try {
-      names = readdirSync(srcDir);
-    } catch {
-      names = [];
-    }
-    for (const base of names.sort()) {
+    for (const base of srcNames.sort()) {
       const srcFile = join(srcDir, base);
       if (!isFileFollow(srcFile)) continue;
       if (base !== "config.yml" && base !== "AGENTS.md") continue;
@@ -825,10 +812,9 @@ function syncProfileSymlinks(ctx: InstallCtx): void {
   for (const name of ctx.profiles) {
     const profileAgentDir = join(ctx.ompRoot, "profiles", name, "agent");
     if (!isDirectory(profileAgentDir)) {
-      warn(
-        ctx,
-        `skipping unbootstrapped profile symlinks: ${name} (no ~/.omp/profiles/${name}/agent/ — run \`omp --profile ${name} -p ""\` first)`,
-      );
+      // syncProfilePayloads is responsible for bootstrapping; if it skipped
+      // this profile (no repo source and no dst), symlinks have nothing to
+      // attach to. Silently no-op — the gate already surfaced empty profiles.
       continue;
     }
     ctx.deps.out(`==> profile runtime symlinks: ${name}`);
@@ -1006,44 +992,24 @@ function runGates(ctx: InstallCtx): number | null {
     deps.err(`ERROR: refusing dangerous target: ${target}`);
     return 3;
   }
-  const unbootstrapped = ctx.profiles.filter(
-    (name) => !isDirectory(join(ctx.ompRoot, "profiles", name, "agent")),
-  );
-  if (unbootstrapped.length > 0) {
-    if (flags.ignoreUnbootstrappedProfiles) {
-      deps.out(
-        `==> WARNING: ${unbootstrapped.length} unbootstrapped profile(s) will be silently skipped:`,
-      );
-      for (const name of unbootstrapped) deps.out(`       - ${name}`);
-      deps.out("    (--ignore-unbootstrapped-profiles set; this is the bug this gate");
-      deps.out("     exists to surface — named-profile sessions will load zero rules.");
-      deps.out('     Bootstrap with:  omp --profile <name> -p ""  then re-run.)');
-    } else {
-      deps.err(
-        `ERROR: ${unbootstrapped.length} profile(s) ship in this repo but are not yet bootstrapped by omp:`,
-      );
-      for (const name of unbootstrapped) deps.err(`       - ${name}`);
-      deps.err("");
-      deps.err("  omp creates ~/.omp/profiles/<name>/agent/ only on first invocation of");
-      deps.err("  `omp --profile <name>`. Until that runs, this installer cannot lay");
-      deps.err("  down profile payloads or runtime symlinks, and `--profile <name>`");
-      deps.err("  sessions will load zero user-authored rules (see");
-      deps.err("  PROFILE-LOADER-RESOLUTION.md). Bootstrap each missing profile:");
-      for (const name of unbootstrapped) {
-        deps.err(
-          `       omp --profile ${name} --print "bootstrap"  # or:  omp --profile ${name} -p ""`,
-        );
-      }
-      deps.err("");
-      deps.err("  Or pass --ignore-unbootstrapped-profiles to install only the default");
-      deps.err("  profile and skip the missing ones (NOT recommended — the silent skip");
-      deps.err("  is the bug this gate exists to surface).");
-      return 4;
+  const emptyProfiles = ctx.profiles.filter((name) => {
+    const srcDir = join(ctx.repoRoot, "profiles", name, "agent");
+    let srcNames: string[] = [];
+    try {
+      srcNames = readdirSync(srcDir).filter((b) => b === "config.yml" || b === "AGENTS.md");
+    } catch {
+      srcNames = [];
     }
-  }
-  if (!isDirectory(ctx.pluginSrc)) {
-    deps.err(`ERROR: plugin source missing: ${ctx.pluginSrc}`);
-    return 1;
+    const dstDir = join(ctx.ompRoot, "profiles", name, "agent");
+    return srcNames.length === 0 && !isDirectory(dstDir);
+  });
+  if (emptyProfiles.length > 0) {
+    deps.err(
+      `ERROR: ${emptyProfiles.length} profile(s) ship in this repo with no installable payload (no config.yml / AGENTS.md in repo source, and no bootstrap dir on disk):`,
+    );
+    for (const name of emptyProfiles) deps.err(`       - ${name}`);
+    deps.err(' Bootstrap with: omp --profile <name> -p ""  or delete the profile from the repo.');
+    return 4;
   }
   return null;
 }

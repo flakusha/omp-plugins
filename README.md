@@ -86,7 +86,7 @@ regex has no anchor, so on non-matching input `.test()` re-runs the greedy
 `[\s\S]*` scan at every stream position — O(n²) ReDoS (measured ~2.3 s across
 75 rules on an 8 KB non-match vs ~1.2 ms anchored). Anchoring is semantically
 identical: each facet's `[\s\S]*` already scans the whole stream from
-position 0. `scripts/check-regex-safety.sh` (wired into `bun run verify`)
+position 0. `scripts/check-regex-safety.ts` (wired into `bun run verify`)
 errors on any unanchored lookahead chain and on unbounded `.*`.
 
 ### Scope conventions
@@ -106,18 +106,18 @@ them to fire during review/discussion where the commands are legitimate.
 
 ```bash
 # install into an isolated omp profile root (default target)
-bash scripts/install.sh
+bun scripts/install.ts
 
 # explicit target (PREFIX or --target)
-PREFIX=/tmp/omp-test bash scripts/install.sh
-bash scripts/install.sh --target /tmp/omp-test
+PREFIX=/tmp/omp-test bun scripts/install.ts
+bun scripts/install.ts --target /tmp/omp-test
 
 # overwrite an existing install; or preview without writing
-bash scripts/install.sh --force
-bash scripts/install.sh --dry-run
+bun scripts/install.ts --force
+bun scripts/install.ts --dry-run
 
 # update your live profile directly (e.g. AGENTS.md, rules, extensions)
-bash scripts/install.sh --target "$HOME/.omp" --live
+bun scripts/install.ts --target "$HOME/.omp" --live
 ```
 
 The installer lays the payloads into:
@@ -163,12 +163,12 @@ bun run verify     # lint + typecheck + test
 | Script | What it runs |
 |---|---|
 | `verify` | `lint` → `typecheck` → `test` → `check:rules` → `check:ship` |
-| `lint` / `lint:fix` | Biome check, then the console-log gate (`check-no-console.sh`) — `lint:fix` also applies safe fixes + import sorting |
-| `typecheck` | `tsc --noEmit` over `plugins/**/*.ts` |
-| `test` | `bun test` — guard unit tests in `extensions/guards/__tests__/` and hook tests |
-| `check:rules` | `check-rules-sync.sh` — validates every rule's frontmatter (name == filename, description/condition non-empty, valid scope) and syncs against the installer laydown |
-| `check:ship` | `check-shipment.sh` — installs into a temp target and asserts no `__tests__/` dirs ship, no `.bak`/`.original` files, and only `index.ts` at top of `agent/extensions/` |
-| `install:test` | `scripts/install.sh --target /tmp/omp-test` |
+| `lint` / `lint:fix` | Biome check, then the console-log gate (`scripts/check-no-console.ts`) — `lint:fix` also applies safe fixes + import sorting |
+| `typecheck` | `tsc --noEmit` over `plugins/**/*.ts` and `scripts/**/*.ts` |
+| `test` | `bun test` — guard/hook tests in `plugins/**/__tests__/` and installer/checker tests in `scripts/__tests__/` |
+| `check:rules` | `scripts/check-rules-sync.ts` — validates every rule's frontmatter (name == filename, description/condition non-empty, valid scope) and syncs against the installer laydown |
+| `check:ship` | `scripts/check-shipment.ts` — installs into a temp target and asserts no `__tests__/` dirs ship, no `.bak`/`.original` files, and only `index.ts` at top of `agent/extensions/` |
+| `install:test` | `bun scripts/install.ts --target /tmp/omp-test` |
 
 Linting, types, tests, and the rules bundle are all exercised together by
 `bun run verify`, which is the standard pre-commit / CI gate for this
@@ -192,10 +192,10 @@ repository.
 │   └── rules/                     universal project rules (installed to both
 │                                  <target>.omp/agent/rules/ and <target>.omp/rules/)
 ├── profiles/                      per-profile scaffolds (installed to <target>.omp/profiles/<name>/agent/)
-│   └── bytedance/
+│   └── minimax/
 │       └── agent/
-│           └── config.yml         BytePlus/bytedance-seed-code profile
-├── scripts/install.sh             installer for an isolated omp profile
+│           └── config.yml         MiniMax profile scaffold
+├── scripts/install.ts             installer for an isolated omp profile
 ├── biome.json                     lint/format config
 ├── tsconfig.json                  TS config (moduleResolution: bundler)
 ├── package.json / bun.lock        bun dev tooling (typecheck, lint, test)
@@ -208,14 +208,15 @@ OMP supports multiple named profiles under `~/.omp/profiles/`. Each profile has 
 `agent/config.yml` (model, provider, memory backend) and optionally its own
 `agent/AGENTS.md`. Profile settings override the base `~/.omp/agent/` defaults.
 
-The bundle ships a `profiles/` directory in the repo; `install.sh` scaffolds any
-profile it finds there (currently `bytedance`). To add a new profile:
+The bundle ships a `profiles/` directory in the repo; the installer scaffolds any
+profile it finds there (currently `minimax`). To add a new profile:
 
 1. Create `profiles/<name>/agent/config.yml` in the repo — model roles, provider,
-   and any per-profile overrides. See `profiles/bytedance/agent/config.yml` for a
-   starting template.
+   and any per-profile overrides.
 2. Optionally add `profiles/<name>/agent/AGENTS.md` for profile-scoped rules.
-3. On the next `install.sh --target ~/.omp --live`, the profile is scaffolded
+3. Bootstrap it with `omp --profile <name> -p ""` (omp creates
+   `~/.omp/profiles/<name>/agent/` on first invocation), then run
+   `bun scripts/install.ts --target ~/.omp --live` — the profile is scaffolded
    automatically.
 
 Switch profiles at runtime:
