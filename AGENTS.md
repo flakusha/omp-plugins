@@ -1,7 +1,7 @@
 # Global Agent Instructions (oh-my-pi / omp)
 
 Agent-scoped rules for this oh-my-pi (omp) agent. Wire into a home/global
-config via `scripts/install.sh --target ~/.omp --live`.
+config via `bun scripts/install.ts --target ~/.omp --live`.
 
 <!-- lean-ctx -->
 ## lean-ctx
@@ -44,3 +44,21 @@ Notes:
   paths outside it (e.g. `~/.codex/…`) use the native `read`/`grep`/`glob`
   tools — those calls are exempt from the lean-ctx redirect there. Inside
   the project root they are always redirected, so don't start there.
+
+### Wrapper forms — when `bash` is the only surface
+
+Inside `bash`, route shell work through the compression wrappers. Prefer in
+this order: MCP `ctx_*` tools → `lean-ctx -c "…"` → `rtk` → plain binary.
+
+| Form | Example | When |
+|---|---|---|
+| MCP `ctx_shell` | `{"command": "bun test src/foo.test.ts"}` | always preferred |
+| `lean-ctx` single wrap | `lean-ctx -c "bun run check"` | bash one-liners needing compression |
+| `lean-ctx` wrapping `rtk` | `lean-ctx -c "rtk git status"` | rtk-targeted output compression |
+| bare `rtk` | `rtk read src/foo.ts` | direct rtk subcommand use |
+
+Single-wrap invariant: exactly one `lean-ctx -c` layer. `lean-ctx -c
+"lean-ctx -c \"…\""` is disallowed (no added compression; the outer string
+is an env-flag injection point). One command per `-c` string; for complex
+logic write a re-executable `<repo>/.tmp/<name>.{js,py}` and invoke it with
+`lean-ctx -c "cd <repo> && bun <name>.js"`.
