@@ -21,16 +21,16 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "biome check plugins scripts && bash scripts/check-no-console.sh",
-    "lint:fix": "biome check --write plugins scripts && bash scripts/check-no-console.sh",
+    "lint": "biome check plugins scripts && bun scripts/check-no-console.ts",
+    "lint:fix": "biome check --write plugins scripts && bun scripts/check-no-console.ts",
     "format": "biome format --write plugins scripts",
     "test": "bun test",
     "test:watch": "bun test --watch",
     "test:coverage": "bun test --coverage",
-    "check:rules": "bash scripts/check-rules-sync.sh",
-    "check:regex": "bash scripts/check-regex-safety.sh",
-    "check:ship": "bash scripts/check-shipment.sh",
+    "check:rules": "bun scripts/check-rules-sync.ts",
+    "check:regex": "bun scripts/check-regex-safety.ts",
+    "check:ship": "bun scripts/check-shipment.ts",
     "verify": "bun run lint && bun run typecheck && bun run test && bun run check:rules && bun run check:regex && bun run check:ship",
-    "install:test": "bash scripts/install.sh --target /tmp/omp-test"
+    "install:test": "bun scripts/install.ts --target /tmp/omp-test"
   }
 }

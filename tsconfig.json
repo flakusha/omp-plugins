@@ -16,7 +16,8 @@
     "noFallthroughCasesInSwitch": true
   },
   "include": [
-    "plugins/**/*.ts"
+    "plugins/**/*.ts",
+    "scripts/**/*.ts"
   ],
   "exclude": [
     "**/__tests__/**",
