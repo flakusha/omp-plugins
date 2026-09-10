@@ -37,6 +37,7 @@ export interface CliFlags {
   force: boolean;
   dryRun: boolean;
   noPlugin: boolean;
+  cleanBak: boolean;
   live: boolean;
   help: boolean;
 }
@@ -67,6 +68,9 @@ export const HELP_TEXT = `# install.ts — Install the oh-my-pi integration bund
 #                  installer-owned files, keep anything else with a notice.
 #   --dry-run      Print what would be written/updated/removed without
 #                  touching the filesystem.
+#   --clean-bak    Remove ".bak" backups the installer parked next to
+#                  installer-owned paths. ".bak" files next to paths we do
+#                  not own are user data and are never touched.
 #   --no-plugin    Skip registering the plugin package (agent-dir payloads
 #                  and rules only).
 #   --live         Allow updating a live omp profile under $HOME directly
@@ -367,6 +371,7 @@ export function parseArgs(
     force: false,
     dryRun: false,
     noPlugin: false,
+    cleanBak: false,
     live: false,
     help: false,
   };
@@ -390,6 +395,9 @@ export function parseArgs(
         break;
       case "--no-plugin":
         flags.noPlugin = true;
+        break;
+      case "--clean-bak":
+        flags.cleanBak = true;
         break;
       case "--live":
         flags.live = true;
@@ -1007,7 +1015,35 @@ function syncPluginPackage(ctx: InstallCtx): void {
   deps.out(`  + ${lockPath}  (${pkgName} enabled)`);
 }
 
-// ---- reconciliation -------------------------------------------------------
+/**
+ * Sweep installer-parked `.bak` backups (`--clean-bak`). Only paths owned by
+ * the manifest or currently shipped are swept — a stray `.bak` next to a file
+ * we never wrote is user data and survives. Dry-run prints without deleting.
+ */
+function cleanBackups(ctx: InstallCtx): void {
+  const { manifest, shipped, flags, deps, target } = ctx;
+  const rels = new Set<string>([...manifest.keys(), ...shipped.keys()]);
+  let removed = 0;
+  for (const rel of [...rels].sort()) {
+    if (manifest.get(rel) === "dir" || shipped.get(rel) === "dir") continue;
+    const bak = join(target, `${rel}.bak`);
+    const kind = lstatKind(bak);
+    if (kind !== "file" && kind !== "symlink") continue;
+    if (flags.dryRun) {
+      deps.out(`  - ${rel}.bak (stale backup, would remove)`);
+      removed += 1;
+      continue;
+    }
+    rmSync(bak, { force: true });
+    deps.out(`  - ${rel}.bak (stale backup removed)`);
+    removed += 1;
+  }
+  if (removed > 0 || !flags.dryRun) {
+    deps.out(`==> stale .bak sweep: ${removed} removed`);
+  }
+}
+
+// ---- reconcile -------------------------------------------------------------
 
 async function reconcile(ctx: InstallCtx): Promise<void> {
   const { manifest, shipped, counts, flags, deps, target } = ctx;
@@ -1151,8 +1187,6 @@ function runGates(ctx: InstallCtx): number | null {
     deps.err(
       `ERROR: ${emptyProfiles.length} profile(s) ship in this repo with no installable payload (no config.yml / config.fragment.yml / AGENTS.md in repo source, and no bootstrap dir on disk):`,
     );
-    for (const name of emptyProfiles) deps.err(`       - ${name}`);
-    deps.err(' Bootstrap with: omp --profile <name> -p ""  or delete the profile from the repo.');
     return 4;
   }
   return null;
@@ -1211,6 +1245,7 @@ export async function runInstall(argv: string[], deps: RunDeps = defaultDeps()):
   syncProfileSymlinks(ctx);
   syncPluginPackage(ctx);
   await reconcile(ctx);
+  if (ctx.flags.cleanBak) cleanBackups(ctx);
   saveManifest(ctx);
   printSummary(ctx);
   return 0;

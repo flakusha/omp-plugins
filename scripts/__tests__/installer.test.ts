@@ -307,6 +307,7 @@ describe("parseArgs", () => {
       force: false,
       dryRun: false,
       noPlugin: false,
+      cleanBak: false,
       live: false,
       help: false,
     });
@@ -320,7 +321,7 @@ describe("parseArgs", () => {
 
   test("parses all flags in any order", () => {
     const flags = parseArgs(
-      ["--dry-run", "--force", "--target", "/tmp/z", "--no-plugin", "--live"],
+      ["--dry-run", "--force", "--target", "/tmp/z", "--no-plugin", "--clean-bak", "--live"],
       {},
     );
     expect(flags).toEqual({
@@ -328,6 +329,7 @@ describe("parseArgs", () => {
       force: true,
       dryRun: true,
       noPlugin: true,
+      cleanBak: true,
       live: true,
       help: false,
     });
@@ -486,5 +488,43 @@ describe("profile fragments (runInstall)", () => {
     expect(readlinkSync(join(t, ".omp", "profiles", "glm", "agent", "rules"))).toBe(
       "../../../agent/rules",
     );
+  });
+});
+
+describe("--clean-bak (stale backup sweep)", () => {
+  async function parkBak(target: string): Promise<string> {
+    await runInstall(["--target", target]);
+    const cfg = join(target, ".omp", "agent", "config.yml");
+    writeFileSync(cfg, "mutated: true\n");
+    await runInstall(["--target", target, "--force"]);
+    return `${cfg}.bak`;
+  }
+
+  test("removes installer-owned .bak parks, keeps untracked strays", async () => {
+    const t = tempDir("installer-clean-bak-");
+    const bak = await parkBak(t);
+    expect(existsSync(bak)).toBe(true);
+    const stray = join(t, ".omp", "stray.yml.bak");
+    writeFileSync(stray, "user data\n");
+
+    const rc = await runInstall(["--target", t, "--clean-bak"]);
+    expect(rc).toBe(0);
+    expect(existsSync(bak)).toBe(false);
+    expect(existsSync(stray)).toBe(true);
+  });
+
+  test("dry-run reports the sweep without deleting", async () => {
+    const t = tempDir("installer-clean-bak-dry-");
+    const bak = await parkBak(t);
+    const rc = await runInstall(["--target", t, "--clean-bak", "--dry-run"]);
+    expect(rc).toBe(0);
+    expect(existsSync(bak)).toBe(true);
+  });
+
+  test("no-op run without the flag leaves backups in place", async () => {
+    const t = tempDir("installer-clean-bak-off-");
+    const bak = await parkBak(t);
+    await runInstall(["--target", t]);
+    expect(existsSync(bak)).toBe(true);
   });
 });

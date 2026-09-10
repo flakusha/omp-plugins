@@ -120,6 +120,9 @@ bun scripts/install.ts --target /tmp/omp-test
 bun scripts/install.ts --force
 bun scripts/install.ts --dry-run
 
+# sweep installer-parked .bak backups (owned paths only; strays survive)
+bun scripts/install.ts --target ~/.omp --live --clean-bak
+
 # update your live profile directly (e.g. AGENTS.md, rules, extensions)
 bun scripts/install.ts --target "$HOME/.omp" --live
 ```
