@@ -54,6 +54,15 @@ describe("readBlockReason", () => {
     expect(readBlockReason(INSIDE_FILE)?.reason).toBe(READ_FILE_REASON);
     expect(grepBlockReason("")?.reason).toBe(GREP_REASON);
   });
+
+  test("strips read-tool selector suffixes before the filesystem checks", () => {
+    // file.ts:50-200 / :raw / :img?q= are path syntax, not paths —
+    // statSync on the raw string fails and selector reads would bypass.
+    expect(readBlockReason(`${INSIDE_FILE}:50-200`)?.block).toBe(true);
+    expect(readBlockReason(`${INSIDE_FILE}:raw`)?.block).toBe(true);
+    expect(readBlockReason(`${INSIDE_FILE}:img?q=x`)?.reason).toBe(READ_FILE_REASON);
+    expect(readBlockReason(`${process.cwd()}:1-9`)?.block).toBe(true);
+  });
 });
 
 describe("default hook wiring", () => {

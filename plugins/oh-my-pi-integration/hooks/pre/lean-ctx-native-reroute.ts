@@ -62,10 +62,15 @@ export function editBlockReason(path: string): { block: true; reason: string } |
   return { block: true, reason: EDIT_REASON };
 }
 export function readBlockReason(path: string): { block: true; reason: string } | undefined {
-  if (isExempt(path) || isOutsideRoot(path)) return undefined;
+  if (!path) return undefined;
+  // Trailing `:<selector>` (`file.ts:50-200`, `:raw`, `:img?q=`) is read-tool
+  // path syntax, not a filesystem path — strip it or statSync fails, the
+  // non-existent-path fallback fires, and selector reads silently bypass.
+  const plain = path.replace(/:[^/]*$/, "");
+  if (isExempt(plain) || isOutsideRoot(plain)) return undefined;
   let isDir = false;
   try {
-    isDir = statSync(path).isDirectory();
+    isDir = statSync(plain).isDirectory();
   } catch {
     // Path doesn't resolve locally (may still be tool-specific) — let the
     // native tool report the real error rather than mask it.
@@ -73,7 +78,6 @@ export function readBlockReason(path: string): { block: true; reason: string } |
   }
   return { block: true, reason: isDir ? READ_DIR_REASON : READ_FILE_REASON };
 }
-
 export function grepBlockReason(path: string): { block: true; reason: string } | undefined {
   if (path && (isExempt(path) || isOutsideRoot(path))) return undefined;
   return { block: true, reason: GREP_REASON };
