@@ -18,12 +18,16 @@ plugin can be installed directly with `omp plugin install`.
 
 ### What the extension does
 
-- **Bash tool-call rewrite** — rewrites simple `bash` tool calls to use `rtk`
+- **Bash tool-call rewrite** — rewrites `bash` tool calls to use `rtk`
   (output trimming) or `lean-ctx -c` (compression) so agent tool output costs
-  less context. Only single, simple commands are rewritten; anything ambiguous,
-  PTY, or async is passed through untouched. rtk subcommands are discovered at
-  runtime from the installed binary (`rtk --help`) and gated behind a curated
-  safety set — version drift or a missing rtk falls through to lean-ctx.
+  less context. Simple commands route through `rtk` when the installed binary
+  exposes a curated safe subcommand; anything else — compounds, pipelines,
+  argv0 wrappers — is compressed via `lean-ctx -c` (whole command as one
+  argv). Commands already routing through lean-ctx are never re-wrapped
+  (single-wrap invariant), and PTY or async calls are passed through
+  untouched. rtk subcommands are discovered at runtime from the installed
+  binary (`rtk --help`) — version drift or a missing rtk falls through to
+  lean-ctx.
 - **Engram memory persistence** — buffers notable mutations each turn and saves
   them to [engram](https://engram.sh) at turn end and session shutdown, so later
   sessions can reuse recorded solutions.
@@ -124,7 +128,7 @@ The installer lays the payloads into:
 - `TARGET/.omp/agent/` — `AGENTS.md`, `config.yml`, `extensions/`, `hooks/pre/`
 - `TARGET/.omp/agent/rules/` — universal project rules (agent-scoped, backward-compat)
 - `TARGET/.omp/rules/` — universal project rules (root-level, picked up directly by omp)
-- `TARGET/.omp/profiles/<name>/agent/` — per-profile config from `profiles/<name>/agent/` in the repo
+- `TARGET/.omp/profiles/<name>/agent/` — per-profile config from `profiles/<name>/agent/` in the repo: `config.fragment.yml` is deep-merged over `agent/config.yml` (the base) into a complete `config.yml`; a shipped `config.yml` is installed verbatim instead (full override)
 - `TARGET/.omp/plugins/` — plugin registry
 
 When `TARGET` is itself a profile root (e.g. `~/.omp`), the bundle is laid down
@@ -169,7 +173,8 @@ bun run verify     # lint + typecheck + test
 | `check:rules` | `scripts/check-rules-sync.ts` — validates every rule's frontmatter (name == filename, description/condition non-empty, valid scope) and syncs against the installer laydown |
 | `check:ship` | `scripts/check-shipment.ts` — installs into a temp target and asserts no `__tests__/` dirs ship, no `.bak`/`.original` files, and only `index.ts` at top of `agent/extensions/` |
 | `install:test` | `bun scripts/install.ts --target /tmp/omp-test` |
-
+| `check:coverage` | `scripts/check-coverage.ts` — runs the suite under lcov and fails when global line coverage drops below the pinned ratchet (93% at landing; target 100%) |
+| `check:rules` | `scripts/check-rules-sync.ts` — validates every rule's frontmatter (name == filename, description/condition non-empty, valid scope) and syncs against the installer laydown |
 Linting, types, tests, and the rules bundle are all exercised together by
 `bun run verify`, which is the standard pre-commit / CI gate for this
 repository.
@@ -192,9 +197,10 @@ repository.
 │   └── rules/                     universal project rules (installed to both
 │                                  <target>.omp/agent/rules/ and <target>.omp/rules/)
 ├── profiles/                      per-profile scaffolds (installed to <target>.omp/profiles/<name>/agent/)
-│   └── minimax/
-│       └── agent/
-│           └── config.yml         MiniMax profile scaffold
+│   ├── glm/agent/config.fragment.yml      zai GLM-5.3 profile fragment (deep-merged over the base)
+│   └── minimax/agent/
+│       ├── AGENTS.md              profile-scoped agent rules
+│       └── config.fragment.yml    MiniMax profile fragment (deep-merged over the base)
 ├── scripts/install.ts             installer for an isolated omp profile
 ├── biome.json                     lint/format config
 ├── tsconfig.json                  TS config (moduleResolution: bundler)
@@ -209,10 +215,18 @@ OMP supports multiple named profiles under `~/.omp/profiles/`. Each profile has 
 `agent/AGENTS.md`. Profile settings override the base `~/.omp/agent/` defaults.
 
 The bundle ships a `profiles/` directory in the repo; the installer scaffolds any
-profile it finds there (currently `minimax`). To add a new profile:
+profile it finds there (currently `minimax` and `glm`). Profile configs are
+developed as **fragments**: `profiles/<name>/agent/config.fragment.yml` holds
+only the per-profile deltas (model roles, theme, provider quirks, compaction),
+and the installer deep-merges each fragment over `agent/config.yml` (the base)
+to serve a complete `config.yml` into the live profile. Map keys merge
+recursively; lists replace wholesale; scalars override. Shipping a
+`config.yml` in the profile dir instead bypasses assembly entirely (full
+override). To add a new profile:
 
-1. Create `profiles/<name>/agent/config.yml` in the repo — model roles, provider,
-   and any per-profile overrides.
+1. Create `profiles/<name>/agent/config.fragment.yml` in the repo — model roles
+   and any per-profile overrides (or a full `config.yml` to opt out of the
+   base merge).
 2. Optionally add `profiles/<name>/agent/AGENTS.md` for profile-scoped rules.
 3. Bootstrap it with `omp --profile <name> -p ""` (omp creates
    `~/.omp/profiles/<name>/agent/` on first invocation), then run
@@ -222,7 +236,7 @@ profile it finds there (currently `minimax`). To add a new profile:
 Switch profiles at runtime:
 
 ```bash
-omp --profile bytedance   # BytePlus / bytedance-seed-code
+omp --profile glm         # zai GLM-5.3
 omp --profile minimax     # MiniMax-M3
 omp --profile default     # base profile
 ```

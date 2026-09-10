@@ -13,11 +13,12 @@
     "plugins/*"
   ],
   "devDependencies": {
-    "@biomejs/biome": "^2.5.8",
-    "@oh-my-pi/pi-coding-agent": "17.3.2",
-    "@types/bun": "^1.3.14",
+    "@biomejs/biome": "^2.5.12",
+    "@oh-my-pi/pi-coding-agent": "18.1.16",
+    "@types/bun": "^1.4.2",
     "@types/node": "^26.2.0",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "yaml": "^2.9.0"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -30,7 +31,8 @@
     "check:rules": "bun scripts/check-rules-sync.ts",
     "check:regex": "bun scripts/check-regex-safety.ts",
     "check:ship": "bun scripts/check-shipment.ts",
-    "verify": "bun run lint && bun run typecheck && bun run test && bun run check:rules && bun run check:regex && bun run check:ship",
+    "check:coverage": "bun scripts/check-coverage.ts",
+    "verify": "bun run lint && bun run typecheck && bun run test && bun run check:coverage && bun run check:rules && bun run check:regex && bun run check:ship",
     "install:test": "bun scripts/install.ts --target /tmp/omp-test"
   }
 }
