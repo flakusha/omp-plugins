@@ -1,0 +1,22 @@
+# glm / zai GLM-5.3 profile fragment for oh-my-pi.
+# Fragments are deep-merged over agent/config.yml (the base) by the installer;
+# the assembled complete config is written to the live profile's config.yml.
+# Map keys merge recursively; lists replace wholesale; scalars override.
+# Only per-profile deltas live here. Ship a config.yml alongside (or instead of)
+# this file to fully override the assembled result.
+# Runtime (rules/, hooks/, extensions/, skills/, plugins/) is shared with the
+# default profile via installer-created symlinks — see PROFILE-LOADER-RESOLUTION.md.
+modelRoles:
+  default: zai/glm-5.3
+  tiny: zai/glm-5.3-flash:off
+  smol: zai/glm-5.3-flash:low
+  slow: zai/glm-5.3:high
+  advisor: zai/glm-5.3:off
+providers:
+  maxInFlightRequests:
+    zai: 20
+theme:
+  dark: dark-equinox
+compaction:
+  thresholdPercent: 75
+  thresholdTokens: 300000

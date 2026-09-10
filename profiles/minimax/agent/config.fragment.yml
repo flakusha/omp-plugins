@@ -1,0 +1,28 @@
+# minimax / MiniMax-M3 profile fragment for oh-my-pi.
+# Fragments are deep-merged over agent/config.yml (the base) by the installer;
+# the assembled complete config is written to the live profile's config.yml.
+# Map keys merge recursively; lists replace wholesale; scalars override.
+# Only per-profile deltas live here. Ship a config.yml alongside (or instead of)
+# this file to fully override the assembled result.
+theme:
+  dark: dark-tundra
+  light: light
+modelRoles:
+  default: minimax-code/MiniMax-M3
+  tiny: minimax-code/MiniMax-M2.5-lightning:off
+  advisor: minimax-code/MiniMax-M2.5-lightning:low
+  smol: minimax-code/MiniMax-M2.7-highspeed:low
+  slow: minimax-code/MiniMax-M3:high
+ttsr:
+  contextMode: discard
+  interruptMode: tool-only
+  repeatMode: once
+composer:
+  shape: box
+colorBlindMode: false
+statusLine:
+  compactThinkingLevel: false
+compaction:
+  thresholdTokens: 200000
+dev:
+  autoqaConsent: granted
