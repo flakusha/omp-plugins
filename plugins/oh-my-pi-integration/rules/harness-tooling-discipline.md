@@ -8,7 +8,8 @@ scope: ["text", "thinking"]
 When the agent uses the shell, python, bun, or external scripts and tooling, apply three disciplines: flag replacements, preserve repeatable work, and never evade the harness.
 
 1) FLAG REPLACEMENTS OF HARNESS FUNCTIONALITY:
-- If external tooling would REPLACE original harness functionality (read, grep, glob, edit, lsp, specialized tools), FLAG IT: state that this replaces harness X and why Y is required instead. The harness tools exist for correctness — structure-aware, context-compressed, interception-protected (see repo-tooling-scoped-usage, harness-use-readonly-mcp). Silently routing around them is the rerouting anti-pattern.
+- If external tooling would REPLACE original harness functionality (read, grep, glob, edit, lsp, specialized tools), FLAG IT: state that this replaces harness X and why Y is required instead. The harness tools exist for correctness — structure-aware, context-compressed, interception-protected (see repo-tooling-scoped-usage; the reroute hook now
+  enforces read/grep/glob/edit → ctx_* mechanically). Silently routing around them is the rerouting anti-pattern.
 - If the external tooling is STRICTLY REQUIRED (the harness cannot do the job — a custom transformation, a binary it lacks): recommend creating a RE-EXECUTABLE file under `./.tmp/` (in-repo gitignored scratch — see the in-repo scratchpad rule) instead of a one-off inline command. Re-executable = reproducible, editable, reviewable — the same code every time, not rewritten from memory each session.
 - If the external tooling can serve APP/CODE CHECKS AND RECONCILIATION (validators, diff/contract checks, reconciliation passes): make them HOOKS or SHARED FUNCTIONS in the repo — reusable assets, not one-off agent code. The motivation is explicit: avoid losing work and writing the same agent code every time.
 

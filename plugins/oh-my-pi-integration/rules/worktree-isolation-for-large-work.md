@@ -8,7 +8,8 @@ scope: ["thinking", "text"]
 Qualify where changes land by scope. Before significant planned work, check whether the repo or harness supports git worktrees; if supported, prefer a dedicated worktree for large work or work that needs isolation. Easy, low-risk changes may land directly on the current branch — but only if that branch is not protected by system or repo management.
 
 Large planned work or isolation needs → dedicated worktree:
-- A worktree scopes uncommitted changes to its own working tree: it cannot sweep up or be swept by other agents' working trees on the same branch (this also makes `git stash` safe there — see no-git-stash-shared-branch).
+- A worktree scopes uncommitted changes to its own working tree: it cannot sweep up or be swept by other agents' working trees on the same branch (the bashInterceptor hard-blocks `git stash` on the shared branch anyway;
+  inside a worktree the scoped pathspec form is safe).
 - Parallel agents can work on independent parts of the same branch without interference.
 - CREATE IT IN-REPO: in this harness, reads outside the project root are refused, so a sibling worktree (e.g. `../repo-feature`) is unreachable by tooling. Use an in-repo path such as `.worktrees/<name>` under the repo root, and ensure it is gitignored (add `.worktrees/` to `.gitignore` if not covered). Follow the repo's worktree convention if one exists.
 - Name it descriptively (`.worktrees/<feature>`), one worktree per unit of work; remove it when merged or abandoned.
