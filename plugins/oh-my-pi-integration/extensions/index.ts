@@ -18,9 +18,11 @@
  *    `PI_RETRIEVE_EVERY_TURN=1` to re-retrieve on every turn (default: once
  *    per session, where cross-session reuse matters most).
  *
- * Safety model: rewrites ONLY single, simple commands (no pipes/separators/
- * quotes/heredocs). Anything ambiguous passes through untouched. PTY and
- * async (background) tool calls are never rewritten.
+ * Safety model: single simple commands are additionally routed through `rtk`
+ * when the installed binary exposes the subcommand. Anything else — including
+ * compounds, pipelines, and argv0 wrappers — is compressed via `lean-ctx -c`
+ * (whole command as one argv). Commands already routing through lean-ctx are
+ * never re-wrapped, and PTY/async tool calls are never rewritten.
  */
 
 import { spawnSync } from "node:child_process";
@@ -119,6 +121,13 @@ function loadRtkInfo(): RtkInfo {
  * redirects, command substitution, grouping. If any appear, we skip the rewrite.
  */
 const SHELL_CONTROL = /[|;&<>`$(){}\\\n]/;
+
+// Any `lean-ctx` token in the command — as the binary, behind env-var
+// assignments, or inside an argument — means the command is already routed
+// (or quotes one). Re-wrapping it would synthesize the banned double-wrap
+// `lean-ctx -c "lean-ctx -c \"…\""` (bashInterceptor hard-ban + AGENTS.md
+// single-wrap invariant), so such commands pass through untouched.
+const LEAN_CTX_TOKEN_RE = /(^|[\s"'=])lean-ctx\b/;
 
 /** A simple command is a single command word plus plain args. */
 export function isSimpleCommand(cmd: string): boolean {
@@ -271,28 +280,35 @@ export function rewriteCommand(
   isAsync: boolean | undefined,
 ): string {
   if (pty || isAsync) return cmd; // never touch interactive / background
-  if (!isSimpleCommand(cmd)) return cmd;
+  // Single-wrap invariant: a command that already routes through lean-ctx
+  // (or embeds the token) must pass through untouched — wrapping it would
+  // synthesize the banned `lean-ctx -c "lean-ctx -c \"…\""` form, which
+  // bashInterceptor then hard-blocks as an agent violation.
+  if (LEAN_CTX_TOKEN_RE.test(cmd)) return cmd;
 
-  // 0) Native-binary → rtk-subcommand bridge (cat/head/tail/less/more → rtk read).
-  //    Runs before routeRtk because those binaries are NOT in RTK_SAFE_SUBCOMMANDS
-  //    (the safe set keys on rtk subcommands, not native binaries). This path
-  //    picks them up directly without falling through to `lean-ctx -c "cat …"`.
-  const bridged = nativeToRtk(cmd);
-  if (bridged) return bridged;
+  if (isSimpleCommand(cmd)) {
+    // 0) Native-binary → rtk-subcommand bridge (cat/head/tail/less/more → rtk read).
+    //    Runs before routeRtk because those binaries are NOT in RTK_SAFE_SUBCOMMANDS
+    //    (the safe set keys on rtk subcommands, not native binaries). This path
+    //    picks them up directly without falling through to `lean-ctx -c "cat …"`.
+    const bridged = nativeToRtk(cmd);
+    if (bridged) return bridged;
 
-  const bin = firstToken(cmd);
-
-  // 1) rtk output-trimming: route through the installed rtk binary.
-  //    `routeRtk` gates on the curated SAFE set AND the discovered subcommand
-  //    list, so we never emit `rtk <missing>` on a machine without the binary
-  //    (falls through to lean-ctx, which still compresses).
-  const { available, subcommands } = rtkInfo();
-  if (routeRtk(bin, subcommands, available)) {
-    return `rtk ${cmd}`;
+    // 1) rtk output-trimming: route through the installed rtk binary.
+    //    `routeRtk` gates on the curated SAFE set AND the discovered subcommand
+    //    list, so we never emit `rtk <missing>` on a machine without the binary
+    //    (falls through to lean-ctx, which still compresses).
+    const { available, subcommands } = rtkInfo();
+    if (routeRtk(firstToken(cmd), subcommands, available)) {
+      return `rtk ${cmd}`;
+    }
   }
 
-  // 2) lean-ctx compression for any other simple command (git, npm, etc.).
-  //    Only when lean-ctx is present; rtk lacks a generic compressed form.
+  // 2) lean-ctx compression for anything else — including compounds,
+  //    pipelines, and argv0-wrapper commands. `lean-ctx -c` takes the whole
+  //    command as ONE argv (JSON.stringify), so shell constructs are safe
+  //    here; only the `rtk <cmd>` prefix above needs the simple-command
+  //    restriction. Only when lean-ctx is present.
   if (leanCtxAvailable()) {
     return `lean-ctx -c ${JSON.stringify(cmd)}`;
   }

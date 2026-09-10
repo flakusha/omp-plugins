@@ -108,8 +108,41 @@ describe("rewriteCommand (guard paths only — no discovery side effects)", () =
     expect(rewriteCommand("git status", undefined, true)).toBe("git status");
   });
 
-  test("never rewrites non-simple commands", () => {
-    expect(rewriteCommand("git status | head", undefined, undefined)).toBe("git status | head");
+  test("non-simple commands are only ever passed through or lean-ctx wrapped", () => {
+    const out = rewriteCommand("git status | head", undefined, undefined);
+    expect(
+      out === "git status | head" || out === `lean-ctx -c ${JSON.stringify("git status | head")}`,
+    ).toBe(true);
+  });
+});
+
+describe("rewriteCommand — compound/wrapper compression", () => {
+  test("compound command wraps into lean-ctx -c as a single argv", () => {
+    const cmd = "cd /repo && bun test";
+    const out = rewriteCommand(cmd, undefined, undefined);
+    expect(out === cmd || out === `lean-ctx -c ${JSON.stringify(cmd)}`).toBe(true);
+  });
+
+  test("pipeline wraps into lean-ctx -c as a single argv", () => {
+    const cmd = "bun test | tail -20";
+    const out = rewriteCommand(cmd, undefined, undefined);
+    expect(out === cmd || out === `lean-ctx -c ${JSON.stringify(cmd)}`).toBe(true);
+  });
+
+  test("argv0-wrapper command wraps into lean-ctx -c as a single argv", () => {
+    const cmd = "sudo bun test";
+    const out = rewriteCommand(cmd, undefined, undefined);
+    expect(out === cmd || out === `lean-ctx -c ${JSON.stringify(cmd)}`).toBe(true);
+  });
+
+  test("compound containing a lean-ctx token is never wrapped (single-wrap)", () => {
+    const cmd = 'cd /repo && lean-ctx -c "bun test"';
+    expect(rewriteCommand(cmd, undefined, undefined)).toBe(cmd);
+  });
+
+  test("compound is never rtk-prefixed (rtk takes one command word only)", () => {
+    const out = rewriteCommand("git status && git diff", undefined, undefined);
+    expect(out.startsWith("rtk ")).toBe(false);
   });
 });
 
@@ -211,6 +244,35 @@ describe("rewriteCommand — native-to-rtk bridge integration", () => {
     const out = rewriteCommand("git status", undefined, undefined);
     // Either rtk-prefixed (when installed) or lean-ctx-wrapped, depending on
     // environment. Both are valid for git — the bridge is irrelevant.
+    expect(out === "rtk git status" || out.startsWith("lean-ctx -c ")).toBe(true);
+  });
+});
+
+describe("rewriteCommand — single-wrap invariant (never re-wrap lean-ctx)", () => {
+  test("an already-wrapped lean-ctx -c command passes through unchanged", () => {
+    const cmd = 'lean-ctx -c "bun test"';
+    expect(rewriteCommand(cmd, undefined, undefined)).toBe(cmd);
+  });
+
+  test("env-prefixed lean-ctx invocation passes through unchanged", () => {
+    const cmd = 'LEAN_CTX_MODE=raw lean-ctx -c "rtk git status"';
+    expect(rewriteCommand(cmd, undefined, undefined)).toBe(cmd);
+  });
+
+  test("bare lean-ctx invocation (no -c) passes through unchanged", () => {
+    const cmd = "lean-ctx doctor";
+    expect(rewriteCommand(cmd, undefined, undefined)).toBe(cmd);
+  });
+
+  test("command quoting a lean-ctx -c string is never wrapped", () => {
+    // Wrapping this would synthesize `lean-ctx -c "echo lean-ctx -c x"`,
+    // which matches the bashInterceptor double-wrap hard-ban regex.
+    const cmd = "echo lean-ctx -c x";
+    expect(rewriteCommand(cmd, undefined, undefined)).toBe(cmd);
+  });
+
+  test("commands without a lean-ctx token still rewrite (control)", () => {
+    const out = rewriteCommand("git status", undefined, undefined);
     expect(out === "rtk git status" || out.startsWith("lean-ctx -c ")).toBe(true);
   });
 });
