@@ -12,7 +12,9 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { parse as parseYaml } from "yaml";
 import {
+  assembleProfileConfig,
   fileSha,
   InstallerError,
   mergeInterceptorPatterns,
@@ -398,5 +400,91 @@ describe("realpathMissing", () => {
     mkdirSync(join(dir, "real"));
     symlinkSync(join(dir, "real"), join(dir, "link"));
     expect(realpathMissing(join(dir, "link", "child"))).toBe(join(dir, "real", "child"));
+  });
+});
+
+// ---- profile config fragments ---------------------------------------------
+
+describe("assembleProfileConfig (fragment deep-merge)", () => {
+  test("fragment scalars override, maps merge recursively, lists replace", () => {
+    const base = [
+      "theme:",
+      "  dark: base-dark",
+      "  light: base-light",
+      "providers:",
+      "  maxInFlightRequests:",
+      "    anthropic: 1",
+      "    zai: 5",
+      "bashInterceptor:",
+      "  patterns:",
+      "    - pattern: ^a",
+      "      tool: read",
+      "compaction:",
+      "  thresholdTokens: 200000",
+    ].join("\n");
+    const frag = [
+      "theme:",
+      "  dark: frag-dark",
+      "providers:",
+      "  maxInFlightRequests:",
+      "    zai: 20",
+      "bashInterceptor:",
+      "  patterns:",
+      "    - pattern: ^b",
+      "      tool: grep",
+    ].join("\n");
+    const merged = parseYaml(assembleProfileConfig(base, frag));
+    expect(merged.theme).toEqual({ dark: "frag-dark", light: "base-light" });
+    expect(merged.providers.maxInFlightRequests).toEqual({ anthropic: 1, zai: 20 });
+    expect(merged.bashInterceptor.patterns).toEqual([{ pattern: "^b", tool: "grep" }]);
+    expect(merged.compaction.thresholdTokens).toBe(200000);
+  });
+
+  test("empty fragment or empty base degrades to the other side", () => {
+    expect(parseYaml(assembleProfileConfig("a: 1\n", ""))).toEqual({ a: 1 });
+    expect(parseYaml(assembleProfileConfig("", "a: 1\n"))).toEqual({ a: 1 });
+  });
+
+  test("invalid fragment YAML raises InstallerError with exit code 1", () => {
+    expect(() => assembleProfileConfig("a: 1\n", "b: [1, 2\n")).toThrow(InstallerError);
+  });
+
+  test("long interceptor regex lines stay unwrapped", () => {
+    const regex = `^\\s*git\\s+stash\\b(?![\\s\\S]*\\s--\\s+\\S)${"x".repeat(120)}`;
+    const text = assembleProfileConfig(
+      `bashInterceptor:\n  patterns:\n    - pattern: ${JSON.stringify(regex)}\n      tool: ask\n`,
+      "theme:\n  dark: d\n",
+    );
+    expect(text).not.toContain("\n      x"); // never folded onto a continuation line
+    expect(parseYaml(text).bashInterceptor.patterns[0].pattern).toBe(regex);
+  });
+});
+
+describe("profile fragments (runInstall)", () => {
+  test("assembles fragment profiles over the base config and lands runtime symlinks", async () => {
+    const t = tempDir("installer-frag-");
+    const rc = await runInstall(["--target", t]);
+    expect(rc).toBe(0);
+
+    const glm = parseYaml(
+      readFileSync(join(t, ".omp", "profiles", "glm", "agent", "config.yml"), "utf8"),
+    );
+    expect(glm.modelRoles.default).toBe("zai/glm-5.3");
+    expect(glm.providers.maxInFlightRequests.zai).toBe(20);
+    expect(glm.providers.maxInFlightRequests.anthropic).toBe(1); // base key survives the union
+    expect(glm.compaction).toEqual({ thresholdPercent: 75, thresholdTokens: 300000 });
+    expect(glm.bashInterceptor.enabled).toBe(true); // inherited from base, not shipped per profile
+    expect(glm.memory.backend).toBe("mnemopi");
+
+    const mm = parseYaml(
+      readFileSync(join(t, ".omp", "profiles", "minimax", "agent", "config.yml"), "utf8"),
+    );
+    expect(mm.modelRoles.default).toBe("minimax-code/MiniMax-M3");
+    expect(mm.compaction.thresholdTokens).toBe(200000);
+    expect(mm.bashInterceptor.enabled).toBe(true);
+
+    expect(readlinkSync(join(t, ".omp", "profiles", "glm", "agent", "rules"))).toBe(
+      "../../../agent/rules",
+    );
   });
 });

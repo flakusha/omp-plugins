@@ -25,8 +25,9 @@ import {
   writeFileSync,
 } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 /** rel path -> sha256 for files we own, or the literal "dir" marker. */
 export type Manifest = Map<string, string | "dir">;
@@ -78,8 +79,11 @@ export const HELP_TEXT = `# install.ts — Install the oh-my-pi integration bund
 #   TARGET/.omp/agent/hooks/pre/lean-ctx-native-reroute.ts
 #   TARGET/.omp/agent/hooks/pre/harness-evasion-guard.ts
 #   TARGET/.omp/agent/rules/*.md                       universal project rules (agent-scoped)
-#   TARGET/.omp/rules/*.md                            universal project rules (root level, picked up by omp directly)
-#   TARGET/.omp/profiles/<name>/agent/config.yml      per-profile config (from repo profiles/<name>/agent/)
+#   TARGET/.omp/profiles/<name>/agent/config.yml      per-profile config: assembled from
+#                                                  agent/config.yml (base) deep-merged with
+#                                                  profiles/<name>/agent/config.fragment.yml,
+#                                                  or shipped verbatim when the profile ships
+#                                                  its own config.yml (full override)
 #   TARGET/.omp/profiles/<name>/agent/AGENTS.md       per-profile agent rules (from repo profiles/<name>/agent/)
 #   TARGET/.omp/profiles/<name>/agent/{rules,hooks,extensions,skills,plugins}
 #                                                  symlinks back to ../<x> of the default agent runtime,
@@ -649,6 +653,71 @@ async function mergeConfigPatterns(
   warn(ctx, `config kept + merged (user-modified); backup at ${dst}.bak`);
 }
 
+// ---- profile config fragments ----------------------------------------------
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/**
+ * Deep-merge a profile fragment over the base config: maps merge recursively
+ * (fragment wins on conflicts), any other value — scalar or list — replaces
+ * the base value wholesale.
+ */
+export function deepMergeConfig(base: unknown, frag: unknown): unknown {
+  if (isPlainObject(base) && isPlainObject(frag)) {
+    const out: Record<string, unknown> = { ...base };
+    for (const [key, value] of Object.entries(frag)) {
+      out[key] = deepMergeConfig(base[key], value);
+    }
+    return out;
+  }
+  return frag;
+}
+
+/**
+ * Assemble a complete profile config: parse base (`agent/config.yml`) and
+ * fragment YAML, deep-merge (fragment wins), re-serialize deterministically
+ * with line wrapping disabled so long interceptor regexes stay on one line.
+ */
+export function assembleProfileConfig(baseText: string, fragmentText: string): string {
+  let base: unknown;
+  let frag: unknown;
+  try {
+    base = parseYaml(baseText);
+  } catch (error) {
+    throw new InstallerError(`agent/config.yml is not valid YAML: ${(error as Error).message}`, 1);
+  }
+  try {
+    frag = parseYaml(fragmentText);
+  } catch (error) {
+    throw new InstallerError(
+      `config.fragment.yml is not valid YAML: ${(error as Error).message}`,
+      1,
+    );
+  }
+  if (base === null) base = {};
+  if (frag === null) frag = {};
+  if (!isPlainObject(base) || !isPlainObject(frag)) {
+    throw new InstallerError("profile config base and fragment must be YAML mappings", 1);
+  }
+  return `${stringifyYaml(deepMergeConfig(base, frag), { lineWidth: 0 }).trimEnd()}\n`;
+}
+
+/**
+ * Sync in-memory text (e.g. an assembled profile config) through the same
+ * ownership ladder as `syncFile` by parking it in a temp file for the call.
+ */
+async function syncText(ctx: InstallCtx, text: string, dst: string, rel: string): Promise<void> {
+  const tmp = join(tmpdir(), `omp-plugins-${process.pid}-${Date.now()}.yml`);
+  writeFileSync(tmp, text);
+  try {
+    await syncFile(ctx, tmp, dst, rel);
+  } finally {
+    rmSync(tmp, { force: true });
+  }
+}
+
 // ---- sync one bundle file -------------------------------------------------
 
 async function syncFile(ctx: InstallCtx, src: string, dst: string, rel: string): Promise<void> {
@@ -783,7 +852,10 @@ async function syncProfilePayloads(ctx: InstallCtx): Promise<void> {
       srcNames = [];
     }
     if (!isDirectory(profileAgentDir)) {
-      if (srcNames.length === 0) {
+      const hasPayload = srcNames.some(
+        (b) => b === "config.yml" || b === "AGENTS.md" || b === "config.fragment.yml",
+      );
+      if (!hasPayload) {
         continue;
       }
       if (!ctx.flags.dryRun) {
@@ -793,16 +865,49 @@ async function syncProfilePayloads(ctx: InstallCtx): Promise<void> {
       }
     }
     ctx.deps.out(`    profile: ${name}`);
+    // config.yml (full override) wins over config.fragment.yml (deep-merged
+    // over the base agent/config.yml) when both ship.
+    const hasFull = srcNames.includes("config.yml");
     for (const base of srcNames.sort()) {
       const srcFile = join(srcDir, base);
       if (!isFileFollow(srcFile)) continue;
-      if (base !== "config.yml" && base !== "AGENTS.md") continue;
-      await syncFile(
-        ctx,
-        srcFile,
-        join(profileAgentDir, base),
-        `${ctx.rlob}profiles/${name}/agent/${base}`,
-      );
+      if (base === "AGENTS.md") {
+        await syncFile(
+          ctx,
+          srcFile,
+          join(profileAgentDir, base),
+          `${ctx.rlob}profiles/${name}/agent/${base}`,
+        );
+        continue;
+      }
+      if (base === "config.yml") {
+        if (!hasFull) continue;
+        if (srcNames.includes("config.fragment.yml")) {
+          warn(
+            ctx,
+            `profiles/${name}/agent: config.yml overrides config.fragment.yml (full override)`,
+          );
+        }
+        await syncFile(
+          ctx,
+          srcFile,
+          join(profileAgentDir, base),
+          `${ctx.rlob}profiles/${name}/agent/${base}`,
+        );
+        continue;
+      }
+      if (base === "config.fragment.yml" && !hasFull) {
+        const assembled = assembleProfileConfig(
+          readFileSync(join(ctx.repoRoot, "agent", "config.yml"), "utf8"),
+          readFileSync(srcFile, "utf8"),
+        );
+        await syncText(
+          ctx,
+          assembled,
+          join(profileAgentDir, "config.yml"),
+          `${ctx.rlob}profiles/${name}/agent/config.yml`,
+        );
+      }
     }
   }
 }
@@ -1033,7 +1138,9 @@ function runGates(ctx: InstallCtx): number | null {
     const srcDir = join(ctx.repoRoot, "profiles", name, "agent");
     let srcNames: string[] = [];
     try {
-      srcNames = readdirSync(srcDir).filter((b) => b === "config.yml" || b === "AGENTS.md");
+      srcNames = readdirSync(srcDir).filter(
+        (b) => b === "config.yml" || b === "AGENTS.md" || b === "config.fragment.yml",
+      );
     } catch {
       srcNames = [];
     }
@@ -1042,7 +1149,7 @@ function runGates(ctx: InstallCtx): number | null {
   });
   if (emptyProfiles.length > 0) {
     deps.err(
-      `ERROR: ${emptyProfiles.length} profile(s) ship in this repo with no installable payload (no config.yml / AGENTS.md in repo source, and no bootstrap dir on disk):`,
+      `ERROR: ${emptyProfiles.length} profile(s) ship in this repo with no installable payload (no config.yml / config.fragment.yml / AGENTS.md in repo source, and no bootstrap dir on disk):`,
     );
     for (const name of emptyProfiles) deps.err(`       - ${name}`);
     deps.err(' Bootstrap with: omp --profile <name> -p ""  or delete the profile from the repo.');
