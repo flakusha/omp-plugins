@@ -100,7 +100,7 @@ const SSH_BENIGN_RE = new RegExp(
 
 /** Block reason injected when ssh-agent tampering is attempted. */
 export const SSH_BLOCK_REASON =
-  "BLOCKED: an SSH/ssh-agent socket failure left the agent unconnectable, which only a human " +
+  "An SSH/ssh-agent socket failure left the agent unconnectable, which only a human " +
   "can fix. Do not kill/restart ssh-agent, remove or reset its socket or runtime dir, reassign " +
   "SSH_AUTH_SOCK, or eval a new `ssh-agent`. STOP and ask the user to start ssh-agent with their " +
   "keys loaded (or unlock their key); the socket must rest under their control.";

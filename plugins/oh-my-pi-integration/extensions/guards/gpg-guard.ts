@@ -72,7 +72,7 @@ export function isGpgTamperCommand(cmd: string): boolean {
 
 /** Block reason injected when a gpg-agent tamper command is attempted. */
 export const GPG_BLOCK_REASON =
-  "BLOCKED: a GPG signing failure left the secret key locked, which only a human can unlock. " +
+  "A GPG signing failure left the secret key locked, which only a human can unlock. " +
   "Do not inspect or modify gpg config, restart/kill/reload gpg-agent or gpgconf, force a passphrase, " +
   "or use --pinentry-mode loopback. STOP and ask the user to unlock their GPG key " +
   "(pinentry passphrase or smartcard), then have them re-run the commit.";

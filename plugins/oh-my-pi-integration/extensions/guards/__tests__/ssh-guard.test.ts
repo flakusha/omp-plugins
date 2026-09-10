@@ -59,7 +59,7 @@ describe("sshSockHardStop", () => {
 
 describe("SSH_BLOCK_REASON", () => {
   test("is imperative and non-empty", () => {
-    expect(SSH_BLOCK_REASON).toContain("BLOCKED:");
+    expect(SSH_BLOCK_REASON).toContain("SSH/ssh-agent socket failure");
     expect(SSH_BLOCK_REASON.length).toBeGreaterThan(50);
   });
 });

@@ -307,12 +307,12 @@ export function stripGitOptionPrefix(seg: string): string {
 }
 
 export const EVASION_REASON =
-  "BLOCKED: `command`/`builtin`/`bash -c`/full-path form bypasses harness interception — " +
+  "`command`/`builtin`/`bash -c`/full-path form bypasses harness interception — " +
   "use the dedicated `read`/`grep`/`glob`/`edit` tools (or `mcp__lean_ctx_ctx_*`) instead. " +
   "Tool discovery via `which`/`command -v` stays allowed.";
 
 export const GIT_MUTATING_REASON =
-  "BLOCKED: git mutating subcommand (`push`/`stash`/`reset --hard`/`clean -fd`/`branch -D`/" +
+  "git mutating subcommand (`push`/`stash`/`reset --hard`/`clean -fd`/`branch -D`/" +
   "`commit --amend`) reached via evasion form (chained-prefix `cd … && …`, `command`/" +
   "`builtin`/`bash -c`/full-path, or `git -C/-c/--git-dir=` global-option prefix) — the " +
   "bashInterceptor line-anchored regex misses this shape; the rule on `git push`/" +

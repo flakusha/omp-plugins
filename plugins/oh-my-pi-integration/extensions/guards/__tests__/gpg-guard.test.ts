@@ -57,7 +57,7 @@ describe("gpgSignHardStop", () => {
 
 describe("GPG_BLOCK_REASON", () => {
   test("is imperative and non-empty", () => {
-    expect(GPG_BLOCK_REASON).toContain("BLOCKED:");
+    expect(GPG_BLOCK_REASON).toContain("GPG signing failure");
     expect(GPG_BLOCK_REASON.length).toBeGreaterThan(50);
   });
 });
