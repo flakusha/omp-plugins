@@ -12,15 +12,19 @@ import type { HookAPI } from "@oh-my-pi/pi-coding-agent/extensibility/hooks";
 // months) — a hard block here has no fallback if the MCP server is down.
 //
 // Only blocks plain filesystem paths inside the process working directory
-// (project root). Two exemptions keep AGENTS.md's documented fallbacks true:
+// (project root). Exemptions keep AGENTS.md's documented fallbacks true:
 // internal URI schemes (memory://, skill://, agent://, history://,
 // artifact://, local://, mcp://, issue://, pr://, omp://, ssh://) and
-// binary/document/archive/sqlite paths are exempt — ctx_read/ctx_search/
-// ctx_glob are source-code tools and don't cover those; blocking them would
-// break image/PDF/notebook/archive/sqlite reads with no working alternative.
-// Paths outside the project root are exempt too — ctx_read/ctx_search/
-// ctx_glob are confined to the project root (+ allow_paths), so native
-// read/grep/glob remain the sanctioned fallback there instead of a dead end.
+// binary/document/archive/sqlite paths — ctx_read/ctx_search/ctx_glob/
+// ctx_patch are source-code tools and don't cover those. Paths outside the
+// project root are exempt too — ctx_* are confined to the project root
+// (+ allow_paths), so the native tools remain the sanctioned fallback there
+// instead of a dead end.
+//
+// The native `edit` tool is routed to `ctx_patch` (anchored, hash-validated
+// patching) under the same exemptions: in-root source-file edits must go
+// through ctx_read(mode="anchored") + ctx_patch so line drift cannot silently
+// corrupt a hunk; everything else keeps the native escape hatches.
 
 const URI_RE = /^[a-z][a-z0-9+.-]*:\/\//i;
 const INTERNAL_SCHEME_RE =
@@ -48,7 +52,15 @@ export const GREP_REASON =
   "Use `mcp__lean_ctx_ctx_search` instead of `grep` — regex/semantic/symbol search with compact results.";
 export const GLOB_REASON =
   "Use `mcp__lean_ctx_ctx_glob` instead of `glob` — respects .gitignore and matches faster.";
+export const EDIT_REASON =
+  "Use `mcp__lean_ctx_ctx_patch` instead of `edit` — anchored, hash-validated patches " +
+  '(run `ctx_read` with mode="anchored" first). `ctx_patch` ops: set_line, replace_lines, ' +
+  "insert_after, delete, replace_unique, replace_symbol, replace_all, create.";
 
+export function editBlockReason(path: string): { block: true; reason: string } | undefined {
+  if (path && (isExempt(path) || isOutsideRoot(path))) return undefined;
+  return { block: true, reason: EDIT_REASON };
+}
 export function readBlockReason(path: string): { block: true; reason: string } | undefined {
   if (isExempt(path) || isOutsideRoot(path)) return undefined;
   let isDir = false;
@@ -75,9 +87,9 @@ export function globBlockReason(path: string): { block: true; reason: string } |
 export default function (pi: HookAPI): void {
   pi.on("tool_call", (event) => {
     const { toolName, input } = event;
-
     if (toolName === "read") return readBlockReason(String(input.path ?? ""));
     if (toolName === "grep") return grepBlockReason(input.path ? String(input.path) : "");
     if (toolName === "glob") return globBlockReason(input.path ? String(input.path) : "");
+    if (toolName === "edit") return editBlockReason(input.path ? String(input.path) : "");
   });
 }

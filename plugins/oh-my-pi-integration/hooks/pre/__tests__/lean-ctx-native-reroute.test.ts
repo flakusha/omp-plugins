@@ -3,6 +3,8 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import defaultHook, {
+  EDIT_REASON,
+  editBlockReason,
   GLOB_REASON,
   GREP_REASON,
   globBlockReason,
@@ -12,6 +14,7 @@ import defaultHook, {
 } from "../lean-ctx-native-reroute";
 
 const INSIDE_FILE = resolve(process.cwd(), "package.json");
+const INSIDE_ROOT = process.cwd();
 
 const tempDirs: string[] = [];
 afterEach(() => {
@@ -54,13 +57,6 @@ describe("readBlockReason", () => {
 });
 
 describe("default hook wiring", () => {
-  class FakeHooks {
-    handler: ((event: { toolName: string; input: Record<string, unknown> }) => unknown) | undefined;
-    on(_event: string, handler: typeof FakeHooks.prototype.handler): void {
-      this.handler = handler;
-    }
-  }
-
   test("routes read/grep/glob tool calls through the block-reason helpers", async () => {
     const hooks = new FakeHooks();
     (defaultHook as unknown as (pi: FakeHooks) => void)(hooks);
@@ -80,5 +76,40 @@ describe("default hook wiring", () => {
     expect(handler({ toolName: "read", input: { path: "logo.png" } })).toBeUndefined();
     expect(handler({ toolName: "bash", input: { command: "ls" } })).toBeUndefined();
     expect(handler({ toolName: "read", input: {} })).toBeUndefined();
+  });
+});
+
+class FakeHooks {
+  handler: ((event: { toolName: string; input: Record<string, unknown> }) => unknown) | undefined;
+  on(_event: string, handler: typeof FakeHooks.prototype.handler): void {
+    this.handler = handler;
+  }
+}
+
+describe("editBlockReason", () => {
+  test("blocks in-root source edits toward ctx_patch", () => {
+    expect(editBlockReason(INSIDE_FILE)).toEqual({ block: true, reason: EDIT_REASON });
+    expect(editBlockReason(join(INSIDE_ROOT, "a.ts"))).toEqual({
+      block: true,
+      reason: EDIT_REASON,
+    });
+  });
+
+  test("keeps exemptions: outside root, internal schemes, non-code files", () => {
+    expect(editBlockReason(join(tmpdir(), "outside.txt"))).toBeUndefined();
+    expect(editBlockReason("memory://abc")).toBeUndefined();
+    expect(editBlockReason(join(INSIDE_ROOT, "logo.png"))).toBeUndefined();
+  });
+
+  test("default hook routes edit tool calls", async () => {
+    const hooks = new FakeHooks();
+    (defaultHook as unknown as (pi: FakeHooks) => void)(hooks);
+    const result = hooks.handler?.({ toolName: "edit", input: { path: INSIDE_FILE } });
+    expect(result).toEqual({ block: true, reason: EDIT_REASON });
+    expect(hooks.handler?.({ toolName: "edit", input: {} })).toEqual({
+      block: true,
+      reason: EDIT_REASON,
+    });
+    expect(hooks.handler?.({ toolName: "write", input: { path: INSIDE_FILE } })).toBeUndefined();
   });
 });

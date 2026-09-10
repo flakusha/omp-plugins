@@ -28,6 +28,7 @@ STOP and route that exact call through the sanctioned tool:
 | `grep`/`rg` (repo search) | `ctx_search` with JSON `{"pattern": "…", "path": "…"}` |
 | `glob` / `find` patterns | `ctx_glob` with JSON `{"pattern": "…"}` |
 | file read | `ctx_read` with JSON `{"path": "…", "mode": "…"}` |
+| `edit` (native) | `ctx_patch` — `ctx_read` with `mode:"anchored"` first, then JSON `{"path": "…", "op": "…"}` (set_line / replace_lines / insert_after / delete / replace_unique / replace_symbol / replace_all / create) |
 
 NEVER retry the native equivalent, reword it, or reach for another native tool
 to dodge the block. A redirect is the sanctioned path, not an error to work
@@ -40,10 +41,11 @@ Notes:
 - `ctx_shell` enforces an allowlist (`bash`, `lean-ctx`, …). A blocked binary
   is a deliberate policy — for trusted one-off verification use the native
   `bash` tool, not a workaround inside `ctx_shell`.
-- `ctx_read`/`ctx_search`/`ctx_glob` are confined to the project root; for
-  paths outside it (e.g. `~/.codex/…`) use the native `read`/`grep`/`glob`
-  tools — those calls are exempt from the lean-ctx redirect there. Inside
-  the project root they are always redirected, so don't start there.
+- `ctx_read`/`ctx_search`/`ctx_glob`/`ctx_patch` are confined to the project
+  root; for paths outside it (e.g. `~/.codex/…`) use the native
+  `read`/`grep`/`glob`/`edit` tools — those calls are exempt from the
+  lean-ctx redirect there. Inside the project root they are always
+  redirected, so don't start there.
 
 ### Wrapper forms — when `bash` is the only surface
 
