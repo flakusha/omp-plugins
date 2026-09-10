@@ -18,6 +18,11 @@
  *    `PI_RETRIEVE_EVERY_TURN=1` to re-retrieve on every turn (default: once
  *    per session, where cross-session reuse matters most).
  *
+ * 4. Receipt carriage: when `<project>/.omp/receipt.toml` exists, each turn
+ *    carries the job ledger as an invisible footer message and applies the
+ *    pruning chores (finished jobs dropped after 3 receipts). Fail-open;
+ *    opt out with `PI_RECEIPT_DISABLE=1`.
+ *
  * Safety model: single simple commands are additionally routed through `rtk`
  * when the installed binary exposes the subcommand. Anything else — including
  * compounds, pipelines, and argv0 wrappers — is compressed via `lean-ctx -c`
@@ -32,6 +37,7 @@ import { isToolCallEventType } from "@oh-my-pi/pi-coding-agent/extensibility/ext
 import { GIT_DESTRUCTIVE_NOTICE, isDestructiveGitCommand } from "./guards/git-destructive-guard";
 import { GPG_BLOCK_REASON, gpgSignHardStop, isGpgTamperCommand } from "./guards/gpg-guard";
 import { isSshTamperCommand, SSH_BLOCK_REASON, sshSockHardStop } from "./guards/ssh-guard";
+import { carryReceipt } from "./receipt/receipt";
 import { formatLintNote, lintablePath } from "./util/lint-feedback";
 
 const DISABLE = () => typeof process !== "undefined" && process.env?.PI_INTEGRATION_DISABLE === "1";
@@ -721,6 +727,18 @@ export default function integrationPlugin(pi: ExtensionAPI): void {
     } catch {
       /* retrieval must never break the loop */
       return undefined;
+    }
+  });
+
+  // ---- 9) receipt carriage: carry <cwd>/.omp/receipt.toml each turn -------
+  // Injects the project's job ledger as an invisible footer message and runs
+  // the pruning chores (see receipt/receipt.ts). Fail-open by construction;
+  // opt out with PI_RECEIPT_DISABLE=1.
+  pi.on("before_agent_start", async (_event, ctx: ExtensionContext) => {
+    try {
+      return await carryReceipt(ctx.cwd);
+    } catch {
+      return undefined; // receipt must never break the loop
     }
   });
 

@@ -8,9 +8,9 @@ project skill — all loadable into any omp profile.
 
 | Piece | Path | Loaded by omp via |
 |---|---|---|
-| Integration extension — rtk/lean-ctx bash rewrite, engram memory auto-save + turn-start retrieval, GPG/SSH hard-stop guards | `plugins/oh-my-pi-integration/extensions/index.ts` (+ `guards/`) | `package.json` → `omp.extensions` |
+| Integration extension — rtk/lean-ctx bash rewrite, engram memory auto-save + turn-start retrieval, receipt carriage, GPG/SSH hard-stop guards | `plugins/oh-my-pi-integration/extensions/index.ts` (+ `guards/`, `receipt/`) | `package.json` → `omp.extensions` |
 | Universal project rules — harness behavior, tool-routing discipline, strict review standards, docs-and-planning audit, parallel-safe tests, config merge precedence, safe-command guards | `plugins/oh-my-pi-integration/rules/` | `~/.omp/agent/rules/` **and** `~/.omp/rules/` (both; root-level is picked up directly by omp) |
-| omp-specific global agent rules (lean-ctx tool-call corrections) | `AGENTS.md` | `agent/AGENTS.md` |
+| omp-specific universal agent rules (lean-ctx tool-call corrections, receipt contract) — one canonical document; each profile's `AGENTS.md` is an installer-managed symlink | `AGENTS.md` | `agent/AGENTS.md` + per-profile symlinks |
 | Agent config scaffold (no credentials) | `agent/config.yml` | `agent/config.yml` |
 
 The bundle also ships a `.omp-plugin/marketplace.json` catalog so the contained
@@ -34,6 +34,13 @@ plugin can be installed directly with `omp plugin install`.
 - **Turn-start retrieval** — when enabled, distills the user prompt into a
   keyword query and injects prior project memories back into the agent loop
   (best-effort, bounded, never blocking).
+- **Receipt carriage** — when `<project>/.omp/receipt.toml` exists, each turn
+  carries the small TOML job ledger (`[[job]]` / `[[issue]]` entries with
+  `state` fields) into the agent loop as an invisible footer, and applies
+  chores: bumps the `[carriage] n` counter, stamps finished jobs with
+  `done_at`, prunes finished jobs after 3 receipts, and drops empty entries —
+  line-oriented, so comments and unknown keys survive. Fail-open throughout;
+  opt out with `PI_RECEIPT_DISABLE=1`.
 - **GPG & SSH hard-stop guards** — when a commit signing or ssh-agent/socket
   failure needs a human (locked GPG key, stale SSH agent), substitutes an
   imperative hard-stop directive and blocks the agent's usual self-recovery
@@ -131,7 +138,7 @@ The installer lays the payloads into:
 - `TARGET/.omp/agent/` — `AGENTS.md`, `config.yml`, `extensions/`, `hooks/pre/`
 - `TARGET/.omp/agent/rules/` — universal project rules (agent-scoped, backward-compat)
 - `TARGET/.omp/rules/` — universal project rules (root-level, picked up directly by omp)
-- `TARGET/.omp/profiles/<name>/agent/` — per-profile config from `profiles/<name>/agent/` in the repo: `config.fragment.yml` is deep-merged over `agent/config.yml` (the base) into a complete `config.yml`; a shipped `config.yml` is installed verbatim instead (full override)
+- `TARGET/.omp/profiles/<name>/agent/` — per-profile config from `profiles/<name>/agent/` in the repo: `config.fragment.yml` is deep-merged over `agent/config.yml` (the base) into a complete `config.yml`; a shipped `config.yml` is installed verbatim instead (full override). `AGENTS.md` is a symlink to the canonical `agent/AGENTS.md` — the universal document ships once with zero per-profile drift
 - `TARGET/.omp/plugins/` — plugin registry
 
 When `TARGET` is itself a profile root (e.g. `~/.omp`), the bundle is laid down
@@ -194,7 +201,8 @@ repository.
 
 ```
 ├── .omp-plugin/marketplace.json   catalog for `omp plugin install`
-├── AGENTS.md                      omp-specific global agent rules (installed to <target>.omp/agent/AGENTS.md)
+├── AGENTS.md                      universal agent rules (installed to <target>.omp/agent/AGENTS.md;
+│                                  profiles get installer-managed symlinks to it)
 ├── agent/config.yml               agent config scaffold (credential-free)
 ├── plugins/oh-my-pi-integration/  the plugin package (extensions/hooks/rules)
 │   └── rules/                     universal project rules (installed to both
@@ -202,7 +210,6 @@ repository.
 ├── profiles/                      per-profile scaffolds (installed to <target>.omp/profiles/<name>/agent/)
 │   ├── glm/agent/config.fragment.yml      zai GLM-5.3 profile fragment (deep-merged over the base)
 │   └── minimax/agent/
-│       ├── AGENTS.md              profile-scoped agent rules
 │       └── config.fragment.yml    MiniMax profile fragment (deep-merged over the base)
 ├── scripts/install.ts             installer for an isolated omp profile
 ├── biome.json                     lint/format config
@@ -214,8 +221,10 @@ repository.
 ## Profiles
 
 OMP supports multiple named profiles under `~/.omp/profiles/`. Each profile has its own
-`agent/config.yml` (model, provider, memory backend) and optionally its own
-`agent/AGENTS.md`. Profile settings override the base `~/.omp/agent/` defaults.
+`agent/config.yml` (model, provider, memory backend); `agent/AGENTS.md` is universal —
+the installer symlinks every profile to the canonical `~/.omp/agent/AGENTS.md`, so the
+same document loads once under any profile. Profile settings override the base
+`~/.omp/agent/` defaults.
 
 The bundle ships a `profiles/` directory in the repo; the installer scaffolds any
 profile it finds there (currently `minimax` and `glm`). Profile configs are
@@ -230,7 +239,9 @@ override). To add a new profile:
 1. Create `profiles/<name>/agent/config.fragment.yml` in the repo — model roles
    and any per-profile overrides (or a full `config.yml` to opt out of the
    base merge).
-2. Optionally add `profiles/<name>/agent/AGENTS.md` for profile-scoped rules.
+2. Optionally add `profiles/<name>/agent/config.yml` for a full config override
+   (agent rules are universal — the installer links the profile to the canonical
+   `AGENTS.md` automatically).
 3. Bootstrap it with `omp --profile <name> -p ""` (omp creates
    `~/.omp/profiles/<name>/agent/` on first invocation), then run
    `bun scripts/install.ts --target ~/.omp --live` — the profile is scaffolded

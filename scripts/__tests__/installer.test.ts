@@ -277,7 +277,30 @@ describe("fix regressions at runInstall level", () => {
     expect(statSync(profileAgent).isDirectory()).toBe(true);
     expect(readFileSync(join(profileAgent, "config.yml"), "utf8")).toMatch(/setupVersion: 2/);
     expect(readFileSync(join(profileAgent, "AGENTS.md"), "utf8").length).toBeGreaterThan(100);
-    expect(readFileSync(join(profileAgent, "AGENTS.md"), "utf8").length).toBeGreaterThan(100);
+  });
+
+  test("ships the receipt extension and symlinks the profile AGENTS.md", async () => {
+    const t = tempDir("p0-receipt-");
+    expect(await runInstall(["--target", t])).toBe(0);
+    expect(existsSync(join(t, ".omp", "agent", "extensions", "receipt", "receipt.ts"))).toBe(true);
+    const link = join(t, ".omp", "profiles", "minimax", "agent", "AGENTS.md");
+    expect(readlinkSync(link)).toBe("../../../agent/AGENTS.md");
+    expect(readFileSync(link, "utf8")).toBe(
+      readFileSync(join(t, ".omp", "agent", "AGENTS.md"), "utf8"),
+    );
+  });
+
+  test("keeps a diverged profile AGENTS.md and swaps it only under --force", async () => {
+    const t = tempDir("p0-agents-diverge-");
+    await runInstall(["--target", t]);
+    const link = join(t, ".omp", "profiles", "minimax", "agent", "AGENTS.md");
+    rmSync(link);
+    writeFileSync(link, "custom profile rules\n");
+    await runInstall(["--target", t]);
+    expect(readFileSync(link, "utf8")).toBe("custom profile rules\n");
+    await runInstall(["--target", t, "--force"]);
+    expect(readFileSync(link, "utf8")).toContain("Global Agent Instructions");
+    expect(readFileSync(`${link}.bak`, "utf8")).toBe("custom profile rules\n");
   });
 
   test("refuses --target under a system path and exits 3 without writing", async () => {

@@ -88,7 +88,9 @@ export const HELP_TEXT = `# install.ts — Install the oh-my-pi integration bund
 #                                                  profiles/<name>/agent/config.fragment.yml,
 #                                                  or shipped verbatim when the profile ships
 #                                                  its own config.yml (full override)
-#   TARGET/.omp/profiles/<name>/agent/AGENTS.md       per-profile agent rules (from repo profiles/<name>/agent/)
+#   TARGET/.omp/profiles/<name>/agent/AGENTS.md       symlink to the canonical
+#                                                  agent/AGENTS.md — one universal
+#                                                  document, zero per-profile drift
 #   TARGET/.omp/profiles/<name>/agent/{rules,hooks,extensions,skills,plugins}
 #                                                  symlinks back to ../<x> of the default agent runtime,
 #                                                  so every profile sees the canonical content without
@@ -451,6 +453,7 @@ const AGENT_PAYLOADS: readonly [string, string][] = [
   ["extensions/guards/gpg-guard.ts", "extensions/guards/gpg-guard.ts"],
   ["extensions/guards/ssh-guard.ts", "extensions/guards/ssh-guard.ts"],
   ["extensions/guards/git-destructive-guard.ts", "extensions/guards/git-destructive-guard.ts"],
+  ["extensions/receipt/receipt.ts", "extensions/receipt/receipt.ts"],
   ["hooks/pre/lean-ctx-native-reroute.ts", "hooks/pre/lean-ctx-native-reroute.ts"],
   ["hooks/pre/harness-evasion-guard.ts", "hooks/pre/harness-evasion-guard.ts"],
 ];
@@ -880,12 +883,8 @@ async function syncProfilePayloads(ctx: InstallCtx): Promise<void> {
       const srcFile = join(srcDir, base);
       if (!isFileFollow(srcFile)) continue;
       if (base === "AGENTS.md") {
-        await syncFile(
-          ctx,
-          srcFile,
-          join(profileAgentDir, base),
-          `${ctx.rlob}profiles/${name}/agent/${base}`,
-        );
+        // Universal AGENTS.md ships once via agent/AGENTS.md + profile
+        // symlinks (syncProfileSymlinks); repo profile copies are retired.
         continue;
       }
       if (base === "config.yml") {
@@ -920,6 +919,48 @@ async function syncProfilePayloads(ctx: InstallCtx): Promise<void> {
   }
 }
 
+/**
+ * Point a profile's `AGENTS.md` at the canonical `agent/AGENTS.md` so every
+ * profile loads the identical universal document with zero drift. A missing
+ * link is created; a regular file with byte-identical content (the previous
+ * per-profile copy) is swapped for the link; a diverged file is kept with a
+ * warning — never clobbered without `--force`; an existing link is untouched.
+ */
+function syncAgentsMdLink(ctx: InstallCtx, profileAgentDir: string): void {
+  const canonical = join(ctx.agentDir, "AGENTS.md");
+  if (!isFileFollow(canonical)) return; // agent payload not laid down
+  const linkPath = join(profileAgentDir, "AGENTS.md");
+  const linkValue = "../../../agent/AGENTS.md";
+  const kind = lstatKind(linkPath);
+  if (kind === "symlink") return;
+  if (kind === "file") {
+    const identical =
+      !ctx.flags.dryRun &&
+      (() => {
+        try {
+          return readFileSync(linkPath, "utf8") === readFileSync(canonical, "utf8");
+        } catch {
+          return false;
+        }
+      })();
+    if (!identical && !ctx.flags.force) {
+      warn(ctx, `profile AGENTS.md diverged from canonical, keeping: ${linkPath}`);
+      return;
+    }
+    if (!ctx.flags.dryRun) {
+      // Force-swap of a diverged file keeps the previous copy as <dst>.bak.
+      if (!identical) renameSync(linkPath, `${linkPath}.bak`);
+      else rmSync(linkPath);
+    }
+  }
+  if (ctx.flags.dryRun) {
+    ctx.deps.out(`  + symlink ${linkPath} -> ${linkValue}`);
+    return;
+  }
+  symlinkSync(linkValue, linkPath);
+  ctx.deps.out(`  + symlink ${linkPath} -> ${linkValue}`);
+}
+
 function syncProfileSymlinks(ctx: InstallCtx): void {
   if (ctx.profiles.length === 0) return;
   for (const name of ctx.profiles) {
@@ -931,6 +972,7 @@ function syncProfileSymlinks(ctx: InstallCtx): void {
       continue;
     }
     ctx.deps.out(`==> profile runtime symlinks: ${name}`);
+    syncAgentsMdLink(ctx, profileAgentDir);
     for (const sub of PROFILE_RUNTIME_SUBDIRS) {
       const linkPath = join(profileAgentDir, sub);
       if (!isDirectory(join(ctx.agentDir, sub))) continue;

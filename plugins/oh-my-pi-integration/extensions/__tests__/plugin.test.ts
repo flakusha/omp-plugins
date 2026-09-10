@@ -189,7 +189,7 @@ describe("integrationPlugin — registration", () => {
       "session.compacting",
       "before_agent_start",
     ]) {
-      expect(pi.handlers.get(event)).toHaveLength(1);
+      expect(pi.handlers.get(event)).toHaveLength(event === "before_agent_start" ? 2 : 1);
     }
     expect(pi.labels).toEqual(["engram-rtk-leanctx"]);
   });
