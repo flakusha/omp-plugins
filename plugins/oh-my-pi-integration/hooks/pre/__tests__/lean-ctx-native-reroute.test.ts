@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import {
+import defaultHook, {
   GLOB_REASON,
   GREP_REASON,
   globBlockReason,
@@ -50,5 +50,35 @@ describe("readBlockReason", () => {
   test("reports the ctx_* destination", () => {
     expect(readBlockReason(INSIDE_FILE)?.reason).toBe(READ_FILE_REASON);
     expect(grepBlockReason("")?.reason).toBe(GREP_REASON);
+  });
+});
+
+describe("default hook wiring", () => {
+  class FakeHooks {
+    handler: ((event: { toolName: string; input: Record<string, unknown> }) => unknown) | undefined;
+    on(_event: string, handler: typeof FakeHooks.prototype.handler): void {
+      this.handler = handler;
+    }
+  }
+
+  test("routes read/grep/glob tool calls through the block-reason helpers", async () => {
+    const hooks = new FakeHooks();
+    (defaultHook as unknown as (pi: FakeHooks) => void)(hooks);
+    expect(hooks.handler).toBeDefined();
+    const handler = hooks.handler!;
+
+    const readBlock = handler({ toolName: "read", input: { path: INSIDE_FILE } });
+    expect(readBlock).toEqual({ block: true, reason: READ_FILE_REASON });
+
+    const grepBlock = handler({ toolName: "grep", input: { path: "src" } });
+    expect(grepBlock).toEqual({ block: true, reason: GREP_REASON });
+
+    const globBlock = handler({ toolName: "glob", input: { path: "" } });
+    expect(globBlock).toEqual({ block: true, reason: GLOB_REASON });
+
+    // exempt + unrelated tools pass through
+    expect(handler({ toolName: "read", input: { path: "logo.png" } })).toBeUndefined();
+    expect(handler({ toolName: "bash", input: { command: "ls" } })).toBeUndefined();
+    expect(handler({ toolName: "read", input: {} })).toBeUndefined();
   });
 });
