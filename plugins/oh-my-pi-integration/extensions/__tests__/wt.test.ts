@@ -149,11 +149,11 @@ describe("wt handler", () => {
     const pi = new FakePi();
     registerWt(pi as unknown as ExtensionAPI);
     const handler = pi.commands.get("wt")?.handler;
-    expect(handler).toBeDefined();
+    if (!handler) throw new Error("wt command not registered");
     const notified: Array<[string, string | undefined]> = [];
     const root = tempDir("wt-handler-");
-    await handler!("", makeCtx(root, notified));
-    await handler!("status", makeCtx(root, notified));
+    await handler("", makeCtx(root, notified));
+    await handler("status", makeCtx(root, notified));
     expect(notified.length).toBe(2);
     expect(pi.sentUserMessages.length).toBe(0);
   });
@@ -163,7 +163,7 @@ describe("wt handler", () => {
     registerWt(pi as unknown as ExtensionAPI);
     const handler = pi.commands.get("wt")?.handler;
     const root = tempDir("wt-handler-");
-    await handler!("list --full", makeCtx(root));
+    await handler("list --full", makeCtx(root));
     expect(pi.sentUserMessages.length).toBe(1);
     expect(pi.sentUserMessages[0]).toContain("wt list --full");
   });
