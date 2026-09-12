@@ -20,6 +20,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@oh-my-pi/pi-coding-agent";
 import { onPath } from "./bookkeep";
+import { argumentItems } from "./completions";
 
 export interface WtEnv {
   /** Session cwd (repo root guess). */
@@ -126,43 +127,75 @@ export function buildWtPrompt(env: WtEnv, sub: string, rest: string): string {
       `Detected environment: ${envLine(env)}. Run \`wt config shell install\` first when wt is newly installed so switch changes directories.`,
     ].join("\n");
   }
-  if (TRACKER[sub] === true) {
-    // === true: Record lookup must not match Object.prototype (e.g. /wt constructor)
-    const cli = env.worktreeCli ? `bun run scripts/worktree/ ${sub}${arg ? ` ${arg}` : ""}` : null;
-    return [
-      `Tracker operation '${sub}' belongs to the repo CLI, not worktrunk (worktrunk has no ticket/issue concept).`,
-      `Detected environment: ${envLine(env)}.`,
-      cli
-        ? `Run from ${env.root}: ${cli}. Cross-reference the git issue with its .plan/tickets/ file (see /bookkeep), and /find-work to discover items.`
-        : `No scripts/worktree CLI in ${env.root}: use git-issue directly${arg ? ` (${arg})` : ""} and keep any .plan/tickets/ file in sync by hand.`,
-    ].join("\n");
-  }
-  if (env.wtOnPath) {
-    return [
-      `Run worktrunk lifecycle '${sub}${arg ? ` ${arg}` : ""}' from ${env.root}: \`wt ${sub}${
-        arg ? ` ${arg}` : ""
-      }\`.`,
-      `Detected environment: ${envLine(env)}.`,
-      env.wtToml
-        ? "Project hooks in .config/wt.toml run automatically (approve on first run); --yes only for automation, --no-hooks only to isolate a hook failure."
-        : "No .config/wt.toml yet — /wt init writes the template (post-start cache sharing, pre-merge check gate, ticket/sync aliases).",
-      "Ticketing stays on the repo tracker (/bookkeep, /find-work); GPG-sign commits per repo convention and finalize through the repo's audited path (/finalize) rather than wt merge when check gates must run.",
-    ].join("\n");
-  }
-  const fallback =
-    "wt is not on PATH (brew install worktrunk / cargo install worktrunk): use plain git worktree commands from the repo root — git worktree add -b <branch> tree/<branch>, git worktree list, git worktree remove <path> — or the repo CLI when present (bun run scripts/worktree/ new|list|remove).";
+  // === true: Record lookup must not match Object.prototype (e.g. /wt constructor)
+  if (TRACKER[sub] === true) return buildWtTrackerPrompt(env, sub, arg);
+  return buildWtLifecyclePrompt(env, sub, arg);
+}
+
+/** Prompt body for tracker verbs — owned by the repo CLI, never worktrunk. */
+function buildWtTrackerPrompt(env: WtEnv, sub: string, arg: string): string {
+  const cli = env.worktreeCli ? `bun run scripts/worktree/ ${sub}${arg ? ` ${arg}` : ""}` : null;
   return [
-    `Worktrunk lifecycle '${sub}' requested but wt is not installed.`,
+    `Tracker operation '${sub}' belongs to the repo CLI, not worktrunk (worktrunk has no ticket/issue concept).`,
     `Detected environment: ${envLine(env)}.`,
-    fallback,
-    "Tracker operations still go through the repo CLI (/bookkeep, /find-work); do not invent ticket state in worktrunk vars.",
+    cli
+      ? `Run from ${env.root}: ${cli}. Cross-reference the git issue with its .plan/tickets/ file (see /bookkeep), and /find-work to discover items.`
+      : `No scripts/worktree CLI in ${env.root}: use git-issue directly${arg ? ` (${arg})` : ""} and keep any .plan/tickets/ file in sync by hand.`,
   ].join("\n");
+}
+
+/** Prompt body for worktrunk lifecycle verbs (wt present or absent). */
+function buildWtLifecyclePrompt(env: WtEnv, sub: string, arg: string): string {
+  if (!env.wtOnPath) {
+    const fallback =
+      "wt is not on PATH (brew install worktrunk / cargo install worktrunk): use plain git worktree commands from the repo root — git worktree add -b <branch> tree/<branch>, git worktree list, git worktree remove <path> — or the repo CLI when present (bun run scripts/worktree/ new|list|remove).";
+    return [
+      `Worktrunk lifecycle '${sub}' requested but wt is not installed.`,
+      `Detected environment: ${envLine(env)}.`,
+      fallback,
+      "Tracker operations still go through the repo CLI (/bookkeep, /find-work); do not invent ticket state in worktrunk vars.",
+    ].join("\n");
+  }
+  return [
+    `Run worktrunk lifecycle '${sub}${arg ? ` ${arg}` : ""}' from ${env.root}: \`wt ${sub}${
+      arg ? ` ${arg}` : ""
+    }\`.`,
+    `Detected environment: ${envLine(env)}.`,
+    env.wtToml
+      ? "Project hooks in .config/wt.toml run automatically (approve on first run); --yes only for automation, --no-hooks only to isolate a hook failure."
+      : "No .config/wt.toml yet — /wt init writes the template (post-start cache sharing, pre-merge check gate, ticket/sync aliases).",
+    "Ticketing stays on the repo tracker (/bookkeep, /find-work); GPG-sign commits per repo convention and finalize through the repo's audited path (/finalize) rather than wt merge when check gates must run.",
+  ].join("\n");
+}
+/** Subcommands `/wt` accepts: lifecycle verbs, tracker verbs, init/status. */
+export const WT_SUBCOMMANDS = [
+  "switch",
+  "list",
+  "merge",
+  "remove",
+  "init",
+  "status",
+  ...Object.keys(TRACKER),
+];
+
+/**
+ * Tab completion for `/wt …`: the first token only — subcommand names.
+ * Later tokens are free-form (branch names, tracker args).
+ */
+export function wtCompletions(argPrefix: string): string[] {
+  const tokens = argPrefix.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length > 1) return [];
+  const partial =
+    tokens.length === 1 && !/\s$/.test(argPrefix) ? (tokens[0] ?? "").toLowerCase() : "";
+  return WT_SUBCOMMANDS.filter((sub) => sub.startsWith(partial));
 }
 
 /** Register `/wt` on the plugin factory's `pi`. */
 export function registerWt(pi: ExtensionAPI): void {
   pi.registerCommand("wt", {
     description: "Worktrunk bridge: /wt <switch|list|merge|remove|ticket|sync|init|status>",
+    getArgumentCompletions: (argumentPrefix: string) =>
+      argumentItems(argumentPrefix, wtCompletions(argumentPrefix)),
     handler: async (args: string, ctx: ExtensionCommandContext) => {
       const argv = args.trim().split(/\s+/).filter(Boolean);
       const env = detectWtEnv(ctx.cwd);

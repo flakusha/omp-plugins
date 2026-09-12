@@ -15,7 +15,8 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { join, relative } from "node:path";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
-import { detectFinalizeEnv } from "./finalize";
+import { argumentItems } from "./completions";
+import { detectFinalizeEnv, existingWorktreeNames } from "./finalize";
 
 export interface WorktreeTarget {
   /** Repo root the worktree belongs to. */
@@ -67,15 +68,41 @@ async function createWorktree(pi: ExtensionAPI, target: WorktreeTarget): Promise
   }
 }
 
+/**
+ * Tab completion for `/worktree …`: the first token only — existing worktree
+ * names. The task text is free-form and not enumerable.
+ */
+export function worktreeCompletions(argPrefix: string, cwd: string | undefined): string[] {
+  const tokens = argPrefix.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length > 1) return [];
+  const partial =
+    tokens.length === 1 && !/\s$/.test(argPrefix) ? (tokens[0] ?? "").toLowerCase() : "";
+  return existingWorktreeNames(cwd).filter((n) => n.toLowerCase().startsWith(partial));
+}
+
 /** Register `/worktree` on the plugin factory's `pi`. */
 export function registerWorktree(pi: ExtensionAPI): void {
   pi.registerCommand("worktree", {
     description: "Create `tree/<name>/` and work on a task there: `/worktree <name> <task...>`",
+    // NOTE: process.cwd() because getArgumentCompletions gets no ctx — assumes TUI cwd == process cwd (see completions.ts).
+    getArgumentCompletions: (argumentPrefix: string) =>
+      argumentItems(argumentPrefix, worktreeCompletions(argumentPrefix, process.cwd())),
     handler: async (args, ctx) => {
       const argv = args.trim().split(/\s+/).filter(Boolean);
       const name = argv[0];
       const task = argv.slice(1).join(" ");
-      if (!name || !task) {
+      if (!name) {
+        // Bare `/worktree` answers read-only: list existing checkouts.
+        const names = existingWorktreeNames(ctx.cwd);
+        ctx.ui.notify(
+          names.length
+            ? `existing worktrees:\n${names.map((n) => `  ${n}`).join("\n")}\nusage: /worktree <name> <task...>`
+            : "usage: /worktree <name> <task...>",
+          "info",
+        );
+        return;
+      }
+      if (!task) {
         ctx.ui.notify("usage: /worktree <name> <task...>", "error");
         return;
       }

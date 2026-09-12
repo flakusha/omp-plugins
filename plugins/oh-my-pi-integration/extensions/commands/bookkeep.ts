@@ -3,17 +3,23 @@
  *
  * Subcommands: `audit <epic|ticket>` (reconcile tracker claims against code),
  * `sync [--fix]` (verify the planning index), `find <query>` (locate items),
- * `issue <request>` (tracker operations via the detected backend).
+ * `issue <request>` (tracker operations via the detected backend),
+ * `list` (enumerate discovered planning items).
  *
  * The handler detects the tracking environment with fs checks only (no turn
  * spent) and bakes the facts into the turn prompt: in-repo `.plan/` + index
  * script first, then the repo worktree tracker CLI, then `gh`, then `jira`.
  * Bare `/bookkeep` answers read-only via `notify` (env summary + usage).
+ *
+ * Tab completions surface subcommand names, audit/sync/issue verb hints, and
+ * planning-item IDs discovered from `.plan/{tickets,epics,backlog}` so the
+ * user does not need to memorise slugs.
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
+import { argumentItems } from "./completions";
 
 export interface BookkeepEnv {
   /** Session cwd (repo root guess). */
@@ -32,6 +38,9 @@ export interface BookkeepEnv {
 
 const PLAN_SCRIPTS = ["plan:sync", "plan:find", "plan:map", "plan:docs"];
 const TRACKER_COMMANDS = ["ticket", "issues", "prs", "gi"];
+const BOOKKEEP_SUBCOMMANDS = ["audit", "sync", "find", "issue", "list"] as const;
+/** Verbs the `issue` subcommand commonly takes; pure suffix hints. */
+const ISSUE_VERBS = ["list", "view", "search", "create", "close", "comment", "assign"];
 
 export function onPath(bin: string, pathEnv?: string): boolean {
   const path = pathEnv ?? process.env.PATH ?? "";
@@ -83,8 +92,88 @@ function indexCommand(env: BookkeepEnv): string | null {
 
 export function bookkeepUsage(env: BookkeepEnv): string {
   return [
-    "bookkeep <audit <epic|ticket>|sync [--fix]|find <query>|issue <request>>",
+    "bookkeep <audit <epic|ticket>|sync [--fix]|find <query>|issue <request>|list>",
     `tracking: .plan ${yesNo(env.planDir)}; index: ${env.planScripts.join(",") || "none"}; worktree-tracker ${yesNo(env.worktreeTracker)}; gh ${yesNo(env.gh)}; jira ${yesNo(env.jira)}`,
+  ].join("\n");
+}
+/**
+ * Status line filter: `**Status:** done`, `** Status: ** = …`, etc.
+ * Anchored at the start of the captured value (after emoji / checkbox /
+ * strikethrough decoration) so prose like `**Status:** Not Started
+ * (planned, **not** done)` does not falsely trip on the trailing word.
+ */
+const DONE_STATUS_RE = /\*\*\s*([^*]+?)\s*\*\*\s*[:=]?\s*(.+)/gi;
+const DONE_LEAD_RE =
+  /^\s*(?:[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]+\s*|\[[ xX]\]\s*|~~?\s*)?(done|complete[ds]?|closed|shipped|applied|finished|resolved|won'?t\s+do|deferred|cancelled|abandoned)\b/iu;
+
+/**
+ * Pure: IDs the user could target for audit/find/issue. Done items filtered.
+ *
+ * Walks `.plan/{tickets,epics,backlog}` for `*.md` files, drops any whose
+ * bold-status line matches DONE_LEAD_RE. Implemented here (rather than via
+ * `planTickets`) because repo tickets use markdown-bold `**Status:**` while
+ * `find-work`'s STATUS_LINE_RE expects plain `status:` — doing it ourselves
+ * keeps `/bookkeep list` aligned with what the user actually wrote.
+ */
+export function discoverPlanningIds(root: string): string[] {
+  if (!existsSync(join(root, ".plan"))) return [];
+  const out: string[] = [];
+  for (const dir of ["tickets", "epics", "backlog"] as const) {
+    const full = join(root, ".plan", dir);
+    if (!existsSync(full)) continue;
+    let entries: string[];
+    try {
+      entries = readdirSync(full).filter((f) => f.endsWith(".md"));
+    } catch {
+      continue;
+    }
+    for (const file of entries) {
+      const id = file.replace(/\.md$/, "");
+      let body: string;
+      try {
+        body = readFileSync(join(full, file), "utf8");
+      } catch {
+        continue;
+      }
+      if (DONE_LEAD_RE.test(doneStatusValue(body))) continue;
+      out.push(id);
+    }
+  }
+  return out;
+}
+
+/**
+ * Status value for a ticket body: the bold line actually labeled `status`
+ * (any case) wins, so a decorative bold line elsewhere cannot shadow the real
+ * status value; otherwise the first bold line's value is used.
+ */
+function doneStatusValue(body: string): string {
+  let first = "";
+  for (const m of body.matchAll(DONE_STATUS_RE)) {
+    const value = (m[2] ?? "").trim();
+    if (!first) first = value;
+    if (/^status$/i.test((m[1] ?? "").trim().replace(/:$/, ""))) return value;
+  }
+  return first;
+}
+/** Turn prompt: enumerate planning items available to audit/find/issue. */
+export function buildListPrompt(env: BookkeepEnv): string {
+  const ids = discoverPlanningIds(env.root);
+  const table = ids.length
+    ? ids.map((id, i) => `  ${i + 1}. ${id}`).join("\n")
+    : "  (none — `.plan/` missing or empty)";
+  const fallbackLine = env.planDir
+    ? "Source: `.plan/{tickets,epics,backlog}` scan; items whose status value starts with a terminal state (done, closed, shipped, …) are filtered out."
+    : `Source fallback: \`.plan/\` missing in ${env.root}` +
+      (env.worktreeTracker ? " → worktree tracker CLI," : "") +
+      (env.gh ? " → gh issue list," : "") +
+      (env.jira ? " → jira search," : "") +
+      " run read-only and report which served the request.";
+  return [
+    `Enumerate planning items discoverable in ${env.root} (read-only, no edits):`,
+    table,
+    fallbackLine,
+    "These IDs are the candidates `audit` accepts. If `.plan/` is absent, fall through to the first available tracker backend (worktree tracker CLI / gh / jira) and report items with the same ID + status shape.",
   ].join("\n");
 }
 
@@ -173,6 +262,7 @@ const BOOKKEEP_ACTIONS: Record<string, (env: BookkeepEnv, rest: string[]) => Boo
   sync: syncAction,
   find: findAction,
   issue: issueAction,
+  list: (env: BookkeepEnv) => ({ prompt: buildListPrompt(env) }),
 };
 
 function resolveBookkeepAction(env: BookkeepEnv, argv: string[]): BookkeepAction {
@@ -184,10 +274,54 @@ function resolveBookkeepAction(env: BookkeepEnv, argv: string[]): BookkeepAction
   return run(env, argv.slice(1));
 }
 
+/**
+ * Tab completion for `/bookkeep …`. First word → subcommands; subcommand
+ * args → verb hints plus discovered planning-item IDs from `.plan/`.
+ *
+ * Pure: takes the env so callers can pre-detect once per render. Filtering
+ * is case-insensitive substring to match how editors narrow a prefix list.
+ */
+export function bookkeepCompletions(env: BookkeepEnv, argPrefix: string): string[] {
+  // Editor sends `find ` (trailing whitespace) when the cursor sits after the
+  // subcommand — keep that empty slot so completions target the new arg.
+  const endsWithSpace = /\s$/.test(argPrefix);
+  const tokens = argPrefix.trim().split(/\s+/).filter(Boolean);
+  const sub = tokens[0]?.toLowerCase();
+  const lastPrefix = (endsWithSpace ? "" : (tokens[tokens.length - 1] ?? "")).toLowerCase();
+  if (!sub) return BOOKKEEP_SUBCOMMANDS.filter((s) => s.startsWith(lastPrefix));
+  const idCompletions = discoverPlanningIds(env.root).filter((id) =>
+    id.toLowerCase().includes(lastPrefix),
+  );
+  switch (sub) {
+    case "audit":
+      return idCompletions;
+    case "sync":
+      return ["--fix"].filter((f) => f.startsWith(lastPrefix));
+    case "find":
+      return idCompletions;
+    case "issue": {
+      // Stage 1: sub alone, or sub + partial second token → verbs.
+      // Stage 2: complete verb + space, or 3+ tokens → IDs.
+      const inVerbStage = tokens.length === 1 || (tokens.length === 2 && !endsWithSpace);
+      return inVerbStage ? ISSUE_VERBS.filter((v) => v.startsWith(lastPrefix)) : idCompletions;
+    }
+    case "list":
+      return [];
+    default:
+      return BOOKKEEP_SUBCOMMANDS.filter((s) => s.startsWith(lastPrefix));
+  }
+}
+
 /** Register `/bookkeep` on the plugin factory's `pi`. */
 export function registerBookkeep(pi: ExtensionAPI): void {
   pi.registerCommand("bookkeep", {
-    description: "Planning hygiene: `/bookkeep <audit|sync|find|issue> ...`",
+    description: "Planning hygiene: `/bookkeep <audit|sync|find|issue|list> ...`",
+    // NOTE: process.cwd() because getArgumentCompletions gets no ctx — assumes TUI cwd == process cwd (see completions.ts).
+    getArgumentCompletions: (argumentPrefix: string) =>
+      argumentItems(
+        argumentPrefix,
+        bookkeepCompletions(detectBookkeepEnv(process.cwd()), argumentPrefix),
+      ),
     handler: async (args, ctx) => {
       const action = resolveBookkeepAction(
         detectBookkeepEnv(ctx.cwd),

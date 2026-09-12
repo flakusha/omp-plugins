@@ -28,6 +28,7 @@ import {
   setEntryState,
 } from "../receipt/receipt";
 import { registerBookkeep } from "./bookkeep";
+import { argumentItems } from "./completions";
 import { registerFinalize } from "./finalize";
 import { registerFindWork } from "./find-work";
 import { registerWorktree } from "./worktree";
@@ -308,10 +309,38 @@ async function recallMemories(
   ctx.ui.notify(`recorded context for '${raw}':\n${text}`, "info");
 }
 
+/**
+ * Tab completion for `/receipt …`. First token: the `done`/`finish` verbs;
+ * second token (after `done <prefix>`): open (non-finished) job ids from
+ * the ledger. Pure sync reads — never throws; returns [] when no ledger.
+ */
+export function receiptCompletions(argPrefix: string, cwd: string | undefined): string[] {
+  const endsWithSpace = /\s$/.test(argPrefix);
+  const all = argPrefix.trim().split(/\s+/).filter(Boolean);
+  const partial = endsWithSpace ? "" : (all[all.length - 1] ?? "").toLowerCase();
+  const complete = endsWithSpace ? all : all.slice(0, -1);
+  if (complete.length === 0) return ["done", "finish"].filter((v) => v.startsWith(partial));
+  const verb = (complete[0] ?? "").toLowerCase();
+  if ((verb !== "done" && verb !== "finish") || complete.length > 1) return [];
+  const text = readLedger(cwd);
+  if (text === undefined) return [];
+  try {
+    return parseReceipt(text)
+      .entries.filter((e) => e.table === "job" && !isFinishedState(e.state) && e.firstKey)
+      .map((e) => e.firstKey as string)
+      .filter((id) => id.toLowerCase().startsWith(partial));
+  } catch {
+    return [];
+  }
+}
+
 /** Register `/receipt`, `/verify`, `/recall`, `/find-work`, `/finalize`, `/bookkeep`, `/worktree`, `/wt` on the plugin factory's `pi`. */
 export function registerCommands(pi: ExtensionAPI): void {
   pi.registerCommand("receipt", {
     description: "Show the project job ledger; `/receipt done <id>` marks a job finished",
+    // NOTE: process.cwd() because getArgumentCompletions gets no ctx — assumes TUI cwd == process cwd (see completions.ts).
+    getArgumentCompletions: (argumentPrefix: string) =>
+      argumentItems(argumentPrefix, receiptCompletions(argumentPrefix, process.cwd())),
     handler: async (args, ctx) => {
       const argv = args.trim().split(/\s+/).filter(Boolean);
       if (argv[0] === "done" || argv[0] === "finish") {

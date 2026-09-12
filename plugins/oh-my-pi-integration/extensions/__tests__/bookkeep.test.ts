@@ -4,22 +4,39 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@oh-my-pi/pi-coding-agent";
 import {
+  bookkeepCompletions,
   bookkeepUsage,
   buildAuditPrompt,
   buildFindPrompt,
   buildIssuePrompt,
+  buildListPrompt,
   buildSyncPrompt,
   detectBookkeepEnv,
+  discoverPlanningIds,
   registerBookkeep,
 } from "../commands/bookkeep";
 
 type CommandHandler = (args: string, ctx: ExtensionCommandContext) => Promise<void>;
 
 class FakePi {
-  commands = new Map<string, { description?: string; handler: CommandHandler }>();
+  commands = new Map<
+    string,
+    {
+      description?: string;
+      handler: CommandHandler;
+      getArgumentCompletions?: (arg: string) => string[] | null;
+    }
+  >();
   sentUserMessages: string[] = [];
 
-  registerCommand(name: string, opts: { description?: string; handler: CommandHandler }): void {
+  registerCommand(
+    name: string,
+    opts: {
+      description?: string;
+      handler: CommandHandler;
+      getArgumentCompletions?: (arg: string) => string[] | null;
+    },
+  ): void {
     this.commands.set(name, opts);
   }
 
@@ -56,6 +73,23 @@ function scaffoldPlanRepo(root: string): void {
     join(root, "package.json"),
     JSON.stringify({ scripts: { "plan:sync": "sync", "plan:find": "find" } }),
   );
+}
+function scaffoldPlanItems(root: string): void {
+  for (const dir of ["tickets", "epics", "backlog"] as const)
+    mkdirSync(join(root, ".plan", dir), { recursive: true });
+  writeFileSync(
+    join(root, ".plan/tickets/FEAT-add-bookkeep-list.md"),
+    "# FEAT: add bookkeep list\n\n**Status:** Not Started\n",
+  );
+  writeFileSync(
+    join(root, ".plan/epics/EPIC-ship-giwt.md"),
+    "# EPIC: ship giwt\n\n**Status:** In Progress\n",
+  );
+  writeFileSync(
+    join(root, ".plan/backlog/DRAFT-investigate-foo.md"),
+    "# DRAFT: investigate foo\n\n**Status:** Not Started\n",
+  );
+  writeFileSync(join(root, ".plan/backlog/DONE-old.md"), "# OLD\n\n**Status:** done\n");
 }
 
 function scaffoldBins(withJira: boolean): void {
@@ -159,13 +193,13 @@ describe("prompt builders", () => {
   });
 });
 
-describe("bookkeep handler", () => {
-  function setup(_cwd: string): { pi: FakePi; notified: Array<[string, string | undefined]> } {
-    const pi = new FakePi();
-    registerBookkeep(pi as unknown as ExtensionAPI);
-    return { pi, notified: [] as Array<[string, string | undefined]> };
-  }
+function setup(_cwd: string): { pi: FakePi; notified: Array<[string, string | undefined]> } {
+  const pi = new FakePi();
+  registerBookkeep(pi as unknown as ExtensionAPI);
+  return { pi, notified: [] as Array<[string, string | undefined]> };
+}
 
+describe("bookkeep handler", () => {
   test("bare invoke shows usage without spending a turn", async () => {
     const { pi, notified } = setup(tempDir("bk-hbare-"));
     await pi.commands.get("bookkeep")?.handler("", makeCtx(tempDir("bk-hbare2-"), notified));
@@ -232,5 +266,161 @@ describe("bookkeep handler", () => {
     expect(notified[0]?.[0]).toContain("unknown subcommand");
     expect(notified[0]?.[1]).toBe("error");
     expect(pi.sentUserMessages).toHaveLength(0);
+  });
+});
+
+describe("discoverPlanningIds / buildListPrompt", () => {
+  test("returns empty when .plan/ missing", () => {
+    expect(discoverPlanningIds(tempDir("bk-disc0-"))).toEqual([]);
+  });
+
+  test("returns slug IDs from .plan/{tickets,epics,backlog} and filters done", () => {
+    const root = tempDir("bk-disc-");
+    scaffoldPlanItems(root);
+    const ids = discoverPlanningIds(root).sort();
+    expect(ids).toEqual(["DRAFT-investigate-foo", "EPIC-ship-giwt", "FEAT-add-bookkeep-list"]);
+    expect(ids).not.toContain("DONE-old");
+  });
+
+  test("status line with 'done' inside prose keeps the item", () => {
+    // Regression: `**Status:** Not Started (planned, **not** done)` must not
+    // trip the terminal-state filter on the trailing word inside parens.
+    const root = tempDir("bk-discnotdone-");
+    for (const dir of ["tickets", "epics", "backlog"] as const)
+      mkdirSync(join(root, ".plan", dir), { recursive: true });
+    writeFileSync(
+      join(root, ".plan/tickets/FEAT-not-done.md"),
+      "# FEAT: not done\n\n**Status:** Not Started (planned, **not** done)\n",
+    );
+    expect(discoverPlanningIds(root)).toEqual(["FEAT-not-done"]);
+  });
+
+  test("emoji and checkbox decorations on terminal status still filter", () => {
+    const root = tempDir("bk-discemoji-");
+    for (const dir of ["tickets", "epics", "backlog"] as const)
+      mkdirSync(join(root, ".plan", dir), { recursive: true });
+    writeFileSync(join(root, ".plan/tickets/A-emoji.md"), "# A\n\n**Status:** \u2705 done\n");
+    writeFileSync(join(root, ".plan/tickets/B-check.md"), "# B\n\n**Status:** [x] done\n");
+    writeFileSync(join(root, ".plan/tickets/C-strike.md"), "# C\n\n**Status:** ~~done~~\n");
+    writeFileSync(join(root, ".plan/tickets/D-open.md"), "# D\n\n**Status:** \u2B1C Not Started\n");
+    expect(discoverPlanningIds(root)).toEqual(["D-open"]);
+  });
+
+  test("decorative bold line before Status does not shadow the status value", () => {
+    // Regression: `**Epic:** … closed-loop …` must not drop an In-Progress
+    // ticket just because an earlier bold line's value contains a done-word.
+    const root = tempDir("bk-discshadow-");
+    for (const dir of ["tickets", "epics", "backlog"] as const)
+      mkdirSync(join(root, ".plan", dir), { recursive: true });
+    writeFileSync(
+      join(root, ".plan/tickets/A-shadow.md"),
+      "# A\n\n**Epic:** shipping the closed-loop refactor\n\n**Status:** In Progress\n",
+    );
+    expect(discoverPlanningIds(root)).toEqual(["A-shadow"]);
+  });
+
+  test("list prompt enumerates discovered IDs", () => {
+    const root = tempDir("bk-listp-");
+    scaffoldPlanRepo(root);
+    scaffoldPlanItems(root);
+    const prompt = buildListPrompt(detectBookkeepEnv(root));
+    expect(prompt).toContain("FEAT-add-bookkeep-list");
+    expect(prompt).toContain("EPIC-ship-giwt");
+    expect(prompt).toContain("DRAFT-investigate-foo");
+    expect(prompt).not.toContain("DONE-old");
+    expect(prompt).toContain("read-only");
+  });
+
+  test("list prompt without .plan/ explains the tracker fallback", () => {
+    const prompt = buildListPrompt(detectBookkeepEnv(tempDir("bk-listno-")));
+    expect(prompt).toContain("missing or empty");
+    expect(prompt).toContain("tracker backend");
+  });
+});
+
+describe("bookkeepCompletions", () => {
+  test("empty prefix returns all subcommands", () => {
+    const root = tempDir("bk-cmp-");
+    scaffoldPlanRepo(root);
+    const items = bookkeepCompletions(detectBookkeepEnv(root), "");
+    expect(items).toContain("audit");
+    expect(items).toContain("sync");
+    expect(items).toContain("find");
+    expect(items).toContain("issue");
+    expect(items).toContain("list");
+  });
+
+  test("partial prefix narrows subcommands", () => {
+    const env = detectBookkeepEnv(tempDir("bk-cmp1-"));
+    expect(bookkeepCompletions(env, "f")).toEqual(["find"]);
+  });
+
+  test("audit <prefix> returns plan IDs", () => {
+    const root = tempDir("bk-cmp2-");
+    scaffoldPlanItems(root);
+    expect(bookkeepCompletions(detectBookkeepEnv(root), "audit EPIC")).toContain("EPIC-ship-giwt");
+  });
+
+  test("sync <prefix> suggests --fix", () => {
+    const env = detectBookkeepEnv(tempDir("bk-cmp3-"));
+    expect(bookkeepCompletions(env, "sync -")).toEqual(["--fix"]);
+    expect(bookkeepCompletions(env, "sync f")).toEqual([]);
+  });
+
+  test("find <prefix> returns plan IDs and ignores done items", () => {
+    const root = tempDir("bk-cmp4-");
+    scaffoldPlanItems(root);
+    const items = bookkeepCompletions(detectBookkeepEnv(root), "find ");
+    expect(items).toContain("FEAT-add-bookkeep-list");
+    expect(items).not.toContain("DONE-old");
+  });
+
+  test("issue <prefix> returns issue verbs; issue <verb> <id> returns plan IDs", () => {
+    const root = tempDir("bk-cmp5-");
+    scaffoldPlanItems(root);
+    expect(bookkeepCompletions(detectBookkeepEnv(root), "issue ")).toContain("close");
+    expect(bookkeepCompletions(detectBookkeepEnv(root), "issue close FEAT")).toContain(
+      "FEAT-add-bookkeep-list",
+    );
+  });
+
+  test("list <prefix> returns nothing further", () => {
+    const root = tempDir("bk-cmp6-");
+    scaffoldPlanItems(root);
+    expect(bookkeepCompletions(detectBookkeepEnv(root), "list ")).toEqual([]);
+  });
+
+  test("no .plan/ means no ID completions", () => {
+    const env = detectBookkeepEnv(tempDir("bk-cmp7-"));
+    expect(bookkeepCompletions(env, "audit ")).toEqual([]);
+  });
+});
+
+describe("bookkeep list handler", () => {
+  test("/bookkeep list starts the discovery turn", async () => {
+    const root = tempDir("bk-hlist-");
+    scaffoldPlanRepo(root);
+    scaffoldPlanItems(root);
+    const { pi } = setup(root);
+    await pi.commands.get("bookkeep")?.handler("list", makeCtx(root));
+    expect(pi.sentUserMessages).toHaveLength(1);
+    expect(pi.sentUserMessages[0]).toContain("FEAT-add-bookkeep-list");
+    expect(pi.sentUserMessages[0]).toContain("EPIC-ship-giwt");
+    expect(pi.sentUserMessages[0]).toContain("DRAFT-investigate-foo");
+    expect(pi.sentUserMessages[0]).not.toContain("DONE-old");
+  });
+
+  test("/bookkeep wires getArgumentCompletions that delegates to bookkeepCompletions", async () => {
+    const { pi } = setup(tempDir("bk-hcmp-"));
+    const cmd = pi.commands.get("bookkeep");
+    if (!cmd) throw new Error("bookkeep command not registered");
+    expect(cmd.getArgumentCompletions).toBeDefined();
+    // Completions are TUI items: the suggestion lives on `label`.
+    const labels = (cmd.getArgumentCompletions?.("") ?? []).map((item) => item.label);
+    // Subcommand listing always works regardless of repo state.
+    expect(labels).toEqual(expect.arrayContaining(["audit", "sync", "find", "issue", "list"]));
+    // Done items are filtered even when the editor uses the real cwd.
+    const items = (cmd.getArgumentCompletions?.("audit ") ?? []).map((item) => item.label);
+    for (const id of items) expect(id.toLowerCase()).not.toContain("done");
   });
 });

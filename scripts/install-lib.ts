@@ -460,6 +460,7 @@ const AGENT_PAYLOADS: readonly [string, string][] = [
   ["extensions/commands/worktree.ts", "extensions/commands/worktree.ts"],
   ["extensions/commands/find-work.ts", "extensions/commands/find-work.ts"],
   ["extensions/commands/wt.ts", "extensions/commands/wt.ts"],
+  ["extensions/commands/completions.ts", "extensions/commands/completions.ts"],
   ["extensions/util/worktree-base.ts", "extensions/util/worktree-base.ts"],
   ["extensions/util/lint-feedback.ts", "extensions/util/lint-feedback.ts"],
   ["extensions/guards/gpg-guard.ts", "extensions/guards/gpg-guard.ts"],

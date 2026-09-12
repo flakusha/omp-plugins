@@ -133,14 +133,16 @@ describe("worktree handler", () => {
     return pi;
   }
 
-  test("missing name or task is a usage error", async () => {
+  test("bare command answers read-only; missing task is a usage error", async () => {
     const pi = setup();
     const notified: Array<[string, string | undefined]> = [];
     const cwd = tempDir("wt-hu-");
     await pi.commands.get("worktree")?.handler("", makeCtx(cwd, notified));
     await pi.commands.get("worktree")?.handler("lonely-name", makeCtx(cwd, notified));
     expect(notified).toHaveLength(2);
-    expect(notified.every(([, level]) => level === "error")).toBe(true);
+    expect(notified[0]?.[1]).toBe("info");
+    expect(notified[0]?.[0]).toContain("usage: /worktree <name> <task...>");
+    expect(notified[1]?.[1]).toBe("error");
     expect(pi.execCalls).toHaveLength(0);
     expect(pi.sentUserMessages).toHaveLength(0);
   });

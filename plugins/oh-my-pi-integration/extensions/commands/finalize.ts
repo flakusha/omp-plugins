@@ -9,9 +9,10 @@
  * step before anything destructive. Commands never shell out a merge.
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@oh-my-pi/pi-coding-agent";
+import { argumentItems } from "./completions";
 
 export interface FinalizeEnv {
   /** Repo root (session cwd, or its ancestor above the worktree dir). */
@@ -63,6 +64,34 @@ export function detectFinalizeEnv(cwd: string | undefined): FinalizeEnv {
   return { root, worktreeCli: hasWorktreeCli(root), worktreeDir, inWorktree, branchGuess };
 }
 
+/**
+ * Sync fs listing of existing worktree names (container dir entries).
+ * Pure reads only — never throws; returns [] when no container exists.
+ */
+export function existingWorktreeNames(cwd: string | undefined): string[] {
+  const env = detectFinalizeEnv(cwd);
+  if (!env.worktreeDir) return [];
+  try {
+    return readdirSync(join(env.root, env.worktreeDir), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
+      .map((entry) => entry.name);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Tab completion for `/finalize …`: `status` plus existing worktree names
+ * (the branch argument). Later tokens are not enumerable.
+ */
+export function finalizeCompletions(argPrefix: string, cwd: string | undefined): string[] {
+  const tokens = argPrefix.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length > 1) return [];
+  const partial =
+    tokens.length === 1 && !/\s$/.test(argPrefix) ? (tokens[0] ?? "").toLowerCase() : "";
+  return ["status", ...existingWorktreeNames(cwd)].filter((v) => v.startsWith(partial));
+}
+
 /** Build the turn prompt that performs the audited finalize. */
 export function buildFinalizePrompt(env: FinalizeEnv, branch: string): string {
   const mergeStep = env.worktreeCli
@@ -95,6 +124,9 @@ async function showFinalizeStatus(pi: ExtensionAPI, ctx: ExtensionCommandContext
 export function registerFinalize(pi: ExtensionAPI): void {
   pi.registerCommand("finalize", {
     description: "Audit, merge and remove a worktree branch; `/finalize status` lists worktrees",
+    // NOTE: process.cwd() because getArgumentCompletions gets no ctx — assumes TUI cwd == process cwd (see completions.ts).
+    getArgumentCompletions: (argumentPrefix: string) =>
+      argumentItems(argumentPrefix, finalizeCompletions(argumentPrefix, process.cwd())),
     handler: async (args, ctx) => {
       const argv = args.trim().split(/\s+/).filter(Boolean);
       if (argv[0] === "status") {

@@ -454,6 +454,19 @@ describe("planTickets", () => {
     expect(e9).toMatchObject({ title: "E-9", kind: "epic", domain: "epics" });
   });
 
+  test("bold **Status:** lines are recognized and filtered like plain ones", () => {
+    const dir = tempDir("fw-plan-bold-");
+    mkdirSync(join(dir, ".plan", "tickets"), { recursive: true });
+    writeFileSync(
+      join(dir, ".plan", "tickets", "B-1.md"),
+      "# Bold open\n**Status:** In Progress\n",
+    );
+    writeFileSync(join(dir, ".plan", "tickets", "B-2.md"), "# Bold done\n**Status:** done\n");
+    const ids = planTickets(dir).map((t) => t.id);
+    expect(ids).toContain("B-1");
+    expect(ids).not.toContain("B-2");
+  });
+
   test("missing .plan dir yields nothing", () => {
     expect(planTickets(tempDir("fw-noplan-"))).toEqual([]);
   });

@@ -39,6 +39,7 @@ import type {
 import type { ReceiptDoc } from "../receipt/receipt";
 import { DEFAULT_STATE, parseReceipt } from "../receipt/receipt";
 import { onPath } from "./bookkeep";
+import { argumentItems } from "./completions";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -146,7 +147,7 @@ export const RECEIPT_ID_PREFIX_RE = /^([BFEI])(-\d+)?$/i;
 /** `1. something` / `1 something` / `#12 something` list lines. */
 export const NUMBERED_LINE_RE = /^\s*(?:#?(\d+)[.)]?\s+)(\S.*)$/;
 export const HEADING_RE = /^#\s+(.+)$/;
-export const STATUS_LINE_RE = /^\s*(?:[-*>]\s*)?status\s*[:=]\s*(.+)$/i;
+export const STATUS_LINE_RE = /^\s*(?:[-*>]\s*)?(?:\*\*)?\s*status\s*[:=]\s*(.+?)\s*(?:\*\*)?\s*$/i;
 export const STATUS_DONE_RE = /\b(done|complete[ds]?|closed|shipped|applied|finished|resolved)\b/i;
 export const KEY_VALUE_RE = /^\s*([A-Za-z][\w-]*)\s*=\s*(.+)$/;
 
@@ -849,12 +850,64 @@ async function runFindWork(
   await presentFindWork(pi, ctx, root, parsed, tickets);
 }
 
+/** The exact `list-*` sugar variants the parser accepts (usage-hint order). */
+export const FIND_WORK_SUGAR = [
+  "list-order",
+  "list-letters",
+  "list-priorities",
+  "list-types",
+  "list-batches",
+  "list-bugs",
+  "list-features",
+  "list-epics",
+  "list-tasks",
+] as const;
+
+/** Canonical option-region vocabulary (first token also allows mode words). */
+const OPTION_KEYWORDS = [
+  ...MODE_KEYWORDS,
+  "order",
+  "letters",
+  "priorities",
+  "types",
+  "batches",
+  "bugs",
+  "features",
+  "epics",
+  "tasks",
+];
+
+/**
+ * Tab completion for `/find-work …`. The option region is enumerable —
+ * mode/scheme/grouping/kind keywords plus `list-*` sugar — while the
+ * directive is free text. Once the completed tokens form a directive
+ * (parse moved into the query region), completion stops.
+ */
+export function findWorkCompletions(argPrefix: string): string[] {
+  const endsWithSpace = /\s$/.test(argPrefix);
+  const all = argPrefix.trim().split(/\s+/).filter(Boolean);
+  const partial =
+    endsWithSpace || all.length === 0 ? "" : (all[all.length - 1] ?? "").toLowerCase();
+  const complete = endsWithSpace ? all : all.slice(0, -1);
+  const { args, error } = parseFindWorkArgs(complete);
+  if (error || args.query) return [];
+  const vocab =
+    partial === "list" || partial.startsWith("list-")
+      ? [...FIND_WORK_SUGAR]
+      : complete.length === 0
+        ? OPTION_KEYWORDS
+        : OPTION_KEYWORDS.filter((word) => !(MODE_KEYWORDS as readonly string[]).includes(word));
+  return vocab.filter((word) => word.startsWith(partial));
+}
+
 /** Register `/find-work` on the plugin factory's `pi`. */
 export function registerFindWork(pi: ExtensionAPI): void {
   pi.registerCommand("find-work", {
     description:
       "Find actionable tickets across trackers: " +
       "/find-work [list|table|ask] [order|letters|priorities|types] [batches] [bugs|features|epics|tasks] [directive...]",
+    getArgumentCompletions: (argumentPrefix: string) =>
+      argumentItems(argumentPrefix, findWorkCompletions(argumentPrefix)),
     handler: async (args, ctx) => {
       await runFindWork(pi, ctx as AskCapableContext, args.trim().split(/\s+/).filter(Boolean));
     },
