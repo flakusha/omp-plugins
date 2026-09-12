@@ -20,7 +20,7 @@
  */
 
 import { appendFileSync, existsSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 
 /** Container dir names a repo may already use for worktrees (checked in order). */
 const CONTAINERS = ["tree", ".worktrees"] as const;
@@ -63,21 +63,64 @@ function isDir(p: string): boolean {
 export function findGitRoot(cwd: string | undefined): string | null {
   const here = cwd ?? process.cwd();
   const parts = here.split("/").filter(Boolean);
-  let cur = "";
-  for (const part of parts) {
-    cur = `${cur}/${part}`;
+  // Bottom-up: the NEAREST enclosing .git owns the checkout. A top-down walk
+  // returns an outer repo for nested checkouts (clones, copied worktree
+  // copies), which mis-routed their worktrees into the outer repo's
+  // container — the recursion engine behind nested /wt copies.
+  for (let i = parts.length; i >= 1; i--) {
+    const cur = `/${parts.slice(0, i).join("/")}`;
     if (existsSync(join(cur, ".git"))) return cur;
   }
   return null;
 }
 
 /**
- * Repo root for session cwd: ancestor above a worktree container segment when
- * cwd sits inside `tree/<name>`/`.worktrees/<name>` (so a second `/wt` creates
- * a sibling under the parent repo), else the nearest git root.
+ * Primary repo root that owns `gitRoot`: a full checkout (`.git` dir) owns
+ * itself; a linked worktree (`.git` file with `gitdir: <path>`) resolves
+ * through the worktree's `commondir` to the shared git dir's parent repo, so
+ * worktrees created from inside a worktree become siblings of their origin
+ * instead of nesting inside it. Null when the metadata cannot be parsed
+ * (callers fall back to path-segment heuristics).
+ */
+export function primaryRepoRoot(gitRoot: string): string | null {
+  const dotGit = join(gitRoot, ".git");
+  if (isDir(dotGit)) return gitRoot;
+  let gitdir: string;
+  try {
+    const m = /^gitdir:\s*(.+?)\s*$/.exec(readFileSync(dotGit, "utf8"));
+    if (!m?.[1]) return null;
+    gitdir = isAbsolute(m[1]) ? m[1] : join(gitRoot, m[1]);
+  } catch {
+    return null;
+  }
+  try {
+    const common = readFileSync(join(gitdir, "commondir"), "utf8").trim();
+    return dirname(resolve(join(gitdir, common)));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Repo root for session cwd, derived from git metadata (not path segments):
+ * the nearest `.git` owning the cwd resolves to its primary repo, so
+ *  - cwd inside `<repo>/tree/<name>` (linked worktree) → base `<repo>/tree`
+ *    (a second `/wt` creates a sibling under the parent repo, never a nested
+ *    copy inside the worktree),
+ *  - cwd inside a nested full checkout (clone, copied repo) → that checkout's
+ *    own container (no leak into an outer repo's `tree/`).
+ * Falls back to the legacy path-segment anchor only when worktree metadata
+ * is unparseable.
  */
 export function resolveWorktreeBase(cwd: string | undefined): WorktreeBase | null {
   const here = cwd ?? process.cwd();
+  const gitRoot = findGitRoot(here);
+  if (!gitRoot) return null;
+  const primary = primaryRepoRoot(gitRoot);
+  if (primary) {
+    const container = CONTAINERS.find((c) => isDir(join(primary, c))) ?? "tree";
+    return { root: primary, container, dir: join(primary, container) };
+  }
   const parts = here.split("/").filter(Boolean);
   const at = findAnchorIndex(parts);
   if (at >= 0) {
@@ -85,10 +128,8 @@ export function resolveWorktreeBase(cwd: string | undefined): WorktreeBase | nul
     const container = parts[at] ?? "tree";
     return { root, container, dir: join(root, container) };
   }
-  const root = findGitRoot(here);
-  if (!root) return null;
-  const container = CONTAINERS.find((c) => isDir(join(root, c))) ?? "tree";
-  return { root, container, dir: join(root, container) };
+  const container = CONTAINERS.find((c) => isDir(join(gitRoot, c))) ?? "tree";
+  return { root: gitRoot, container, dir: join(gitRoot, container) };
 }
 
 /**

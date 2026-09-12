@@ -6,6 +6,7 @@ import {
   createWorktreeBaseApplier,
   ensureExcluded,
   findGitRoot,
+  primaryRepoRoot,
   resolveWorktreeBase,
 } from "../util/worktree-base";
 
@@ -33,6 +34,14 @@ function sub(root: string, ...parts: string[]): string {
   return dir;
 }
 
+/** Wire `checkout` up as a linked worktree named `name` of `mainRoot`. */
+function linkWorktree(checkout: string, mainRoot: string, name: string): void {
+  const gitdir = join(mainRoot, ".git", "worktrees", name);
+  mkdirSync(gitdir, { recursive: true });
+  writeFileSync(join(gitdir, "commondir"), "../..\n");
+  writeFileSync(join(checkout, ".git"), `gitdir: ${gitdir}\n`);
+}
+
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
@@ -47,6 +56,13 @@ describe("findGitRoot", () => {
     const root = tempDir("wtb-file-");
     writeFileSync(join(root, ".git"), "gitdir: /elsewhere\n");
     expect(findGitRoot(root)).toBe(root);
+  });
+
+  test("prefers the nearest nested repo over an outer repo", () => {
+    const outer = makeRepo();
+    const inner = sub(outer, "vendor", "pkg");
+    mkdirSync(join(inner, ".git"));
+    expect(findGitRoot(sub(inner, "src"))).toBe(inner);
   });
 
   test("returns null outside any repo", () => {
@@ -73,6 +89,27 @@ describe("resolveWorktreeBase", () => {
       root,
       container: "tree",
       dir: join(root, "tree"),
+    });
+  });
+
+  test("linked worktree inside the container resolves to the primary repo (recursion guard)", () => {
+    const mainRoot = makeRepo("tree");
+    const checkout = sub(mainRoot, "tree", "feature-x");
+    linkWorktree(checkout, mainRoot, "feature-x");
+    const expected = { root: mainRoot, container: "tree", dir: join(mainRoot, "tree") };
+    expect(resolveWorktreeBase(checkout)).toEqual(expected);
+    expect(resolveWorktreeBase(sub(checkout, "deep", "deeper"))).toEqual(expected);
+    expect(primaryRepoRoot(checkout)).toBe(mainRoot);
+  });
+
+  test("nested full checkout owns its own base (no leak into the outer container)", () => {
+    const outer = makeRepo("tree");
+    const inner = sub(outer, "tree", "inner-clone");
+    mkdirSync(join(inner, ".git"), { recursive: true });
+    expect(resolveWorktreeBase(inner)).toEqual({
+      root: inner,
+      container: "tree",
+      dir: join(inner, "tree"),
     });
   });
 
