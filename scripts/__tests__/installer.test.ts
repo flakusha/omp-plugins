@@ -283,6 +283,18 @@ describe("fix regressions at runInstall level", () => {
     const t = tempDir("p0-receipt-");
     expect(await runInstall(["--target", t])).toBe(0);
     expect(existsSync(join(t, ".omp", "agent", "extensions", "receipt", "receipt.ts"))).toBe(true);
+    expect(existsSync(join(t, ".omp", "agent", "extensions", "commands", "commands.ts"))).toBe(
+      true,
+    );
+    expect(existsSync(join(t, ".omp", "agent", "extensions", "commands", "finalize.ts"))).toBe(
+      true,
+    );
+    expect(existsSync(join(t, ".omp", "agent", "extensions", "commands", "bookkeep.ts"))).toBe(
+      true,
+    );
+    expect(existsSync(join(t, ".omp", "agent", "extensions", "commands", "worktree.ts"))).toBe(
+      true,
+    );
     const link = join(t, ".omp", "profiles", "minimax", "agent", "AGENTS.md");
     expect(readlinkSync(link)).toBe("../../../agent/AGENTS.md");
     expect(readFileSync(link, "utf8")).toBe(

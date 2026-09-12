@@ -34,6 +34,13 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import type { ExtensionAPI, ExtensionContext, ToolResultEvent } from "@oh-my-pi/pi-coding-agent";
 import { isToolCallEventType } from "@oh-my-pi/pi-coding-agent/extensibility/extensions";
+import {
+  distillQuery,
+  formatRetrieval,
+  projectFor,
+  RETRIEVE_LIMIT,
+  registerCommands,
+} from "./commands/commands";
 import { GIT_DESTRUCTIVE_NOTICE, isDestructiveGitCommand } from "./guards/git-destructive-guard";
 import { GPG_BLOCK_REASON, gpgSignHardStop, isGpgTamperCommand } from "./guards/gpg-guard";
 import { isSshTamperCommand, SSH_BLOCK_REASON, sshSockHardStop } from "./guards/ssh-guard";
@@ -354,11 +361,6 @@ export default function integrationPlugin(pi: ExtensionAPI): void {
   // Per-session buffer of notable mutations for this turn.
   const buffer: string[] = [];
 
-  const projectFor = (cwd: string | undefined): string => {
-    if (!cwd) return "omp";
-    return cwd.split("/").filter(Boolean).pop() || "omp";
-  };
-
   /** Push a memory to engram (best-effort, fire-and-forget with timeout). */
   function saveMemory(title: string, body: string, type: string, cwd: string | undefined) {
     const proj = projectFor(cwd);
@@ -557,133 +559,7 @@ export default function integrationPlugin(pi: ExtensionAPI): void {
   const EVERY_TURN = () =>
     typeof process !== "undefined" && process.env?.PI_RETRIEVE_EVERY_TURN === "1";
   const RETRIEVE_TIMEOUT_MS = 2500;
-  const RETRIEVE_LIMIT = 6; // max memories to recall
-  const RETRIEVE_MAX_CHARS = 1800; // hard cap on the injected context block
   let retrievedThisSession = false;
-
-  // Function words that add no search signal (static membership table).
-  const STOPWORDS: Record<string, true> = {
-    the: true,
-    a: true,
-    an: true,
-    is: true,
-    are: true,
-    was: true,
-    were: true,
-    be: true,
-    been: true,
-    being: true,
-    to: true,
-    of: true,
-    in: true,
-    on: true,
-    for: true,
-    and: true,
-    or: true,
-    but: true,
-    not: true,
-    no: true,
-    you: true,
-    your: true,
-    we: true,
-    our: true,
-    i: true,
-    it: true,
-    its: true,
-    this: true,
-    that: true,
-    with: true,
-    as: true,
-    at: true,
-    by: true,
-    from: true,
-    they: true,
-    them: true,
-    he: true,
-    she: true,
-    their: true,
-    there: true,
-    these: true,
-    those: true,
-    what: true,
-    when: true,
-    where: true,
-    why: true,
-    how: true,
-    do: true,
-    does: true,
-    did: true,
-    done: true,
-    would: true,
-    could: true,
-    should: true,
-    can: true,
-    will: true,
-    may: true,
-    might: true,
-    just: true,
-    also: true,
-    more: true,
-    most: true,
-    about: true,
-    into: true,
-    over: true,
-    under: true,
-    again: true,
-    // biome-ignore lint/suspicious/noThenProperty: keyword stopword; table is only index-accessed, never awaited.
-    then: true,
-    than: true,
-    so: true,
-    if: true,
-    which: true,
-    who: true,
-    whom: true,
-  };
-
-  /**
-   * Distill a prompt into a short keyword query (≤N significant tokens). The
-   * engram CLI search is keyword-sensitive — a verbose prompt matches nothing
-   * while a couple of key terms do — so keep only meaningful content words.
-   */
-  function distillQuery(prompt: string, max: number): string {
-    const seen = new Set<string>();
-    const tokens: string[] = [];
-    for (const raw of prompt.toLowerCase().split(/[^a-z0-9]+/)) {
-      const t = raw.trim();
-      if (t.length < 3) continue;
-      if (STOPWORDS[t]) continue;
-      if (seen.has(t)) continue;
-      seen.add(t);
-      tokens.push(t);
-      if (tokens.length >= max) break;
-    }
-    return tokens.join(" ");
-  }
-
-  /**
-   * Compact engram search output into a short, model-directed block.
-   * Returns the text to inject, or null when nothing useful was found.
-   */
-  function formatRetrieval(stdout: string): string | null {
-    const lines: string[] = [];
-    for (const raw of stdout.split(/\r?\n/)) {
-      const line = raw.trim();
-      if (!line || /^\s*(?:Found|no memories found|wall time|session\s*completed\.?)/i.test(line))
-        continue;
-      // Match the engram CLI block header: "[1] #611 (session_summary) — title"
-      if (/^\[\d+\]\s+#\d+/.test(line)) {
-        const m = line.match(/—\s*(.*)$/);
-        lines.push(m?.[1] ?? line);
-        continue;
-      }
-      lines.push(line);
-    }
-    if (lines.length === 0) return null;
-    let joined = lines.join("\n").trim();
-    if (joined.length > RETRIEVE_MAX_CHARS)
-      joined = `${joined.slice(0, RETRIEVE_MAX_CHARS)}\n…(truncated)`;
-    return joined;
-  }
 
   // Injects prior-session context before the agent loop. Best-effort and
   // bounded: a failure/timeout returns undefined so the turn is never blocked.
@@ -741,6 +617,11 @@ export default function integrationPlugin(pi: ExtensionAPI): void {
       return undefined; // receipt must never break the loop
     }
   });
+
+  // ---- 10) global slash commands (/receipt, /verify, /recall) ----
+  // Handlers close over `pi` (command ctx carries no AgentAPI); registered
+  // at load so they resolve in every session of every profile.
+  registerCommands(pi);
 
   pi.setLabel("engram-rtk-leanctx");
 }

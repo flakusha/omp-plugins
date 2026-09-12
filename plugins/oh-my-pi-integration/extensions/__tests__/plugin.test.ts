@@ -78,6 +78,8 @@ class FakePi {
   scripted = new Map<string, Array<{ stdout?: string }>>();
   throwCommands = new Set<string>();
   labels: string[] = [];
+  commands = new Map<string, { description?: string; handler: Handler }>();
+  sentUserMessages: string[] = [];
 
   on(event: string, handler: Handler): void {
     const list = this.handlers.get(event) ?? [];
@@ -94,6 +96,14 @@ class FakePi {
 
   setLabel(label: string): void {
     this.labels.push(label);
+  }
+
+  registerCommand(name: string, opts: { description?: string; handler: Handler }): void {
+    this.commands.set(name, opts);
+  }
+
+  async sendUserMessage(content: string): Promise<void> {
+    this.sentUserMessages.push(content);
   }
 
   script(command: string, responses: Array<{ stdout?: string }>): void {
@@ -192,6 +202,14 @@ describe("integrationPlugin — registration", () => {
       expect(pi.handlers.get(event)).toHaveLength(event === "before_agent_start" ? 2 : 1);
     }
     expect(pi.labels).toEqual(["engram-rtk-leanctx"]);
+    expect([...pi.commands.keys()].sort()).toEqual([
+      "bookkeep",
+      "finalize",
+      "recall",
+      "receipt",
+      "verify",
+      "worktree",
+    ]);
   });
 
   test("registers nothing when PI_INTEGRATION_DISABLE=1", () => {
@@ -199,6 +217,7 @@ describe("integrationPlugin — registration", () => {
     const pi = new FakePi();
     integrationPlugin(pi as unknown as ExtensionAPI);
     expect(pi.handlers.size).toBe(0);
+    expect(pi.commands.size).toBe(0);
   });
 });
 

@@ -2,7 +2,14 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { carry, carryReceipt, parseReceipt, RECEIPT_KEEP, renderFooter } from "../receipt/receipt";
+import {
+  carry,
+  carryReceipt,
+  parseReceipt,
+  RECEIPT_KEEP,
+  renderFooter,
+  setEntryState,
+} from "../receipt/receipt";
 
 const tempDirs: string[] = [];
 function tempDir(prefix: string): string {
@@ -188,5 +195,24 @@ describe("carryReceipt — IO wiring", () => {
     writeFileSync(join(cwd, ".omp", "receipt.toml"), text);
     expect(await carryReceipt(cwd, {})).toBeUndefined();
     expect(readFileSync(join(cwd, ".omp", "receipt.toml"), "utf8")).toBe(text);
+  });
+});
+
+describe("setEntryState", () => {
+  test("rewrites the state line in place, preserving comments", () => {
+    const next = setEntryState(EXAMPLE, "F-02", "finished");
+    expect(next).toContain('F-02 = "improve database performance"\nstate = "finished"');
+    expect(next).toContain("# Feature");
+    expect(next).toContain('state = "postponed"');
+  });
+
+  test("appends a state line when the block has none", () => {
+    const next = setEntryState(EXAMPLE, "B-00", "finished");
+    expect(next).toContain('B-00 = "access to live db was restricted"\nstate = "finished"');
+  });
+
+  test("matches ids case-insensitively, returns undefined for unknown ids", () => {
+    expect(setEntryState(EXAMPLE, "f-02", "finished")).toContain('state = "finished"');
+    expect(setEntryState(EXAMPLE, "F-99", "finished")).toBeUndefined();
   });
 });
