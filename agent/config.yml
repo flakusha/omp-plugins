@@ -7,7 +7,7 @@ advisor:
   syncBacklog: "3"
   immuneTurns: 1
 prewalk:
-  enabled: true
+  enabled: false
 contextPromotion:
   enabled: false
 memory:

@@ -8,7 +8,7 @@ project skill — all loadable into any omp profile.
 
 | Piece | Path | Loaded by omp via |
 |---|---|---|
-| Integration extension — rtk/lean-ctx bash rewrite, engram memory auto-save + turn-start retrieval, receipt carriage, GPG/SSH hard-stop guards | `plugins/oh-my-pi-integration/extensions/index.ts` (+ `guards/`, `receipt/`) | `package.json` → `omp.extensions` |
+| Integration extension — rtk/lean-ctx bash rewrite, engram memory auto-save + turn-start retrieval, receipt carriage, GPG/SSH hard-stop guards, global `/receipt` `/verify` `/recall` `/finalize` `/bookkeep` `/worktree` commands | `plugins/oh-my-pi-integration/extensions/index.ts` (+ `guards/`, `receipt/`, `commands/`) | `package.json` → `omp.extensions` |
 | Universal project rules — harness behavior, tool-routing discipline, strict review standards, docs-and-planning audit, parallel-safe tests, config merge precedence, safe-command guards | `plugins/oh-my-pi-integration/rules/` | `~/.omp/agent/rules/` **and** `~/.omp/rules/` (both; root-level is picked up directly by omp) |
 | omp-specific universal agent rules (receipt contract) — one canonical document; each profile's `AGENTS.md` is an installer-managed symlink | `AGENTS.md` | `agent/AGENTS.md` + per-profile symlinks |
 | Agent config scaffold (no credentials) | `agent/config.yml` | `agent/config.yml` |

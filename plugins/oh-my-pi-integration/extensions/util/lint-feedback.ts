@@ -29,7 +29,5 @@ export function formatLintNote(file: string, stdout: string): string | undefined
   if (diags.length === 0) return undefined;
   const shown = diags.slice(0, 6).map((line) => `- ${line.trim()}`);
   if (diags.length > 6) shown.push(`- …${diags.length - 6} more`);
-  return (
-    `\n[biome] ${file}: ${diags.length} lint issue(s) — fix before proceeding:\n` + shown.join("\n")
-  );
+  return `\n[biome] ${file}: ${diags.length} lint issue(s) — fix before proceeding:\n${shown.join("\n")}`;
 }

@@ -251,10 +251,33 @@ export function carry(text: string, keep = RECEIPT_KEEP): CarryResult {
 }
 
 /** Atomic text replace (tmp + rename). */
-function atomicWrite(path: string, text: string): void {
+export function atomicWrite(path: string, text: string): void {
   const tmp = `${path}.tmp`;
   writeFileSync(tmp, text);
   renameSync(tmp, path);
+}
+
+/**
+ * Set an entry's `state` line, preserving layout and comments: rewrite the
+ * existing `state = …` line in place, or append one when the block has none.
+ * Matches the entry by its first key (case-insensitive). Returns the updated
+ * text, or undefined when no entry carries that id.
+ */
+export function setEntryState(text: string, id: string, state: string): string | undefined {
+  const doc = parseReceipt(text);
+  const want = id.trim().toLowerCase();
+  const entry = doc.entries.find((e) => e.firstKey?.toLowerCase() === want);
+  if (!entry) return undefined;
+  const lines = [...doc.lines];
+  for (let i = entry.start + 1; i <= entry.end; i++) {
+    const m = /^(\s*)state\s*=\s*.*$/.exec(lines[i] ?? "");
+    if (m) {
+      lines[i] = `${m[1]}state = "${state}"`;
+      return lines.join("\n");
+    }
+  }
+  lines.splice(entry.end + 1, 0, `state = "${state}"`);
+  return lines.join("\n");
 }
 
 /**
