@@ -16,7 +16,10 @@
 //     adjacency is broken by the option.
 
 import { describe, expect, test } from "bun:test";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
+  bashWriteReason,
   EVASION_REASON,
   evasionReason,
   GIT_MUTATING_REASON,
@@ -24,6 +27,7 @@ import {
   splitCommandSegments,
   stripChainPrefix,
   stripGitOptionPrefix,
+  WRITE_TARGET_REASON,
 } from "../harness-evasion-guard";
 
 describe("splitCommandSegments", () => {
@@ -393,5 +397,49 @@ describe("evasionReason", () => {
     // SHELL_PASSTHROUGH) followed by `-c`, but the inner payload
     // `protocol.version=2` is not in quotes, so group 3/4/5 don't fire.
     expect(evasionReason("git -c protocol.version=2 push origin main")).toBe(GIT_MUTATING_REASON);
+  });
+});
+
+describe("bashWriteReason", () => {
+  const OUTSIDE = join(tmpdir(), "esc.txt");
+
+  test("blocks redirection targets outside the project root", () => {
+    expect(bashWriteReason(`echo hi > ${OUTSIDE}`)).toBe(WRITE_TARGET_REASON);
+    expect(bashWriteReason(`echo hi >> ${OUTSIDE}`)).toBe(WRITE_TARGET_REASON);
+    expect(bashWriteReason(`echo hi 2> ${OUTSIDE}`)).toBe(WRITE_TARGET_REASON);
+    expect(bashWriteReason(`echo hi &> ${OUTSIDE}`)).toBe(WRITE_TARGET_REASON);
+    expect(bashWriteReason("echo hi > ~/esc.txt")).toBe(WRITE_TARGET_REASON);
+    expect(bashWriteReason(`cd /tmp && echo x > ${OUTSIDE}`)).toBe(WRITE_TARGET_REASON);
+  });
+
+  test("blocks tee file arguments outside the project root", () => {
+    expect(bashWriteReason(`sort f | tee ${OUTSIDE}`)).toBe(WRITE_TARGET_REASON);
+    expect(bashWriteReason(`sort f | tee -a ${OUTSIDE}`)).toBe(WRITE_TARGET_REASON);
+    expect(bashWriteReason("sudo tee /etc/hostname")).toBe(WRITE_TARGET_REASON);
+    // wrapper payloads are caught by evasionReason's inner-payload recursion,
+    // not by the per-segment bashWriteReason scan
+    expect(evasionReason(`lean-ctx -c "echo x > ${OUTSIDE}"`)).toBe(WRITE_TARGET_REASON);
+  });
+
+  test("allows in-root, /dev-sink, and fd-dup targets", () => {
+    expect(bashWriteReason("echo x > .tmp/out.txt")).toBeUndefined();
+    expect(bashWriteReason("echo x > out.txt")).toBeUndefined();
+    expect(bashWriteReason("echo x >> ./.tmp/log")).toBeUndefined();
+    expect(bashWriteReason("bun test > /dev/null 2>&1")).toBeUndefined();
+    expect(bashWriteReason("sort f | tee out.txt")).toBeUndefined();
+    expect(bashWriteReason("sort f | tee")).toBeUndefined();
+    expect(
+      bashWriteReason(`sort f | tee -a ${join(process.cwd(), ".tmp", "log")}`),
+    ).toBeUndefined();
+  });
+
+  test("ignores quoted redirection characters", () => {
+    expect(bashWriteReason('echo "a > b" > in-root.txt')).toBeUndefined();
+    expect(bashWriteReason(`echo "a > b" > ${OUTSIDE}`)).toBe(WRITE_TARGET_REASON);
+  });
+
+  test("does not regress existing evasion verdicts", () => {
+    expect(evasionReason("bun test > /dev/null")).toBeUndefined();
+    expect(evasionReason(`lean-ctx -c "echo x > ${OUTSIDE}"`)).toBe(WRITE_TARGET_REASON);
   });
 });

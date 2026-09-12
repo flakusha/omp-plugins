@@ -43,6 +43,8 @@
 // `--include-untracked`) stay allowed — they cannot sweep other agents'
 // in-flight work, mirroring the bashInterceptor rule.
 
+import { homedir } from "node:os";
+import { isAbsolute, relative, resolve } from "node:path";
 import type { HookAPI } from "@oh-my-pi/pi-coding-agent/extensibility/hooks";
 
 /** Binaries with dedicated harness tools / interceptors (config.yml bashInterceptor). */
@@ -547,12 +549,159 @@ function shellStringFlagReason(cmd: string): string | undefined {
   return undefined;
 }
 
+// ---- out-of-root write-target guard ----------------------------------------
+//
+// Policy: agents must not write to system folders. The structured `write`
+// tool is already gated to in-root `.tmp/` scratch (lean-ctx-native-reroute);
+// this closes the same shape arriving through bash: unquoted redirection
+// targets (`>`, `>>`, `2>`, `&>`, …) and `tee` file arguments that resolve
+// OUTSIDE the project root. `/dev/null`-family sinks and fd dups (`2>&1`)
+// are exempt; in-root targets (including `.tmp/` scratch) stay allowed, so
+// test pipelines and the installer flow are unaffected. Static-analysis
+// limits apply: targets hidden in `$(...)`/process substitution are not
+// resolved.
+
+export const WRITE_TARGET_REASON =
+  "bash writes outside the project root are blocked — scratch files belong in an in-root `.tmp/` dir; " +
+  "for existing out-of-root files use the native `edit` tool, for installs the project installer.";
+
+const DEV_SINK_RE = /^\/dev\/(?:null|stdout|stderr|stdin|fd\/\d+)$/;
+
+function outsideRoot(abs: string): boolean {
+  const rel = relative(process.cwd(), abs);
+  return rel !== "" && (rel.startsWith("..") || isAbsolute(rel));
+}
+
+function isBlockedWriteTarget(raw: string): boolean {
+  const target = raw.startsWith("~") ? resolve(homedir(), raw.slice(1)) : resolve(raw);
+  if (DEV_SINK_RE.test(target)) return false;
+  return outsideRoot(target);
+}
+
+/** Quote-aware word split of a segment (quotes stripped, escapes resolved). */
+function words(seg: string): string[] {
+  const out: string[] = [];
+  let cur = "";
+  let q: string | null = null;
+  for (let i = 0; i < seg.length; i++) {
+    const ch = seg[i] ?? "";
+    if (q) {
+      if (ch === q) q = null;
+      else cur += ch;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      q = ch;
+      continue;
+    }
+    if (ch === "\\" && i + 1 < seg.length) {
+      cur += seg[i + 1] ?? "";
+      i++;
+      continue;
+    }
+    if (/\s/.test(ch)) {
+      if (cur) out.push(cur);
+      cur = "";
+      continue;
+    }
+    cur += ch;
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
+/**
+ * Unquoted redirection write targets in one command segment:
+ * `>f` `>>f` `2>f` `&>f` `1>>f`. Quoted `>` chars never match; fd dups
+ * (`>&1`, `2>&-`) are skipped — they never touch the filesystem.
+ */
+function redirectTargets(seg: string): string[] {
+  const targets: string[] = [];
+  let i = 0;
+  while (i < seg.length) {
+    const ch = seg[i];
+    if (ch === "'" || ch === '"') {
+      const q = ch;
+      i++;
+      while (i < seg.length && seg[i] !== q) i++;
+      i++;
+      continue;
+    }
+    if (ch === "\\") {
+      i += 2;
+      continue;
+    }
+    if (ch !== ">") {
+      i++;
+      continue;
+    }
+    let j = i + 1;
+    if (seg[j] === ">") j++;
+    if (seg[j] === "&") {
+      const after = seg[j + 1] ?? "";
+      if (/\d/.test(after) || after === "-") {
+        i = j + 2; // fd dup (`>&1`, `2>&-`) — no filesystem target
+        continue;
+      }
+      j++; // `&>file` — both streams into a file
+    }
+    while (j < seg.length && /\s/.test(seg[j] ?? "")) j++;
+    // Target word: quote-aware; ends at unquoted whitespace/separator.
+    let word = "";
+    let wq: string | null = null;
+    while (j < seg.length) {
+      const c = seg[j] ?? "";
+      if (wq) {
+        if (c === wq) wq = null;
+        else word += c;
+        j++;
+        continue;
+      }
+      if (c === "'" || c === '"') {
+        wq = c;
+        j++;
+        continue;
+      }
+      if (/\s/.test(c) || ";|&<>".includes(c)) break;
+      word += c;
+      j++;
+    }
+    if (word) targets.push(word);
+    i = Math.max(j, i + 1);
+  }
+  return targets;
+}
+
+/**
+ * Block bash file writes landing outside the project root: redirection
+ * targets and `tee` file arguments. Complements the `write`-tool gate —
+ * without this, `echo x > ~/file` smuggles the same write past it.
+ */
+export function bashWriteReason(cmd: string): string | undefined {
+  for (const seg of splitCommandSegments(cmd)) {
+    for (const target of redirectTargets(seg)) {
+      if (isBlockedWriteTarget(target)) return WRITE_TARGET_REASON;
+    }
+    const tokens = words(seg);
+    const teeIdx = tokens.findIndex((t) => t === "tee" || t.endsWith("/tee"));
+    if (teeIdx >= 0) {
+      for (const tok of tokens.slice(teeIdx + 1)) {
+        if (tok.startsWith("-")) continue;
+        if (isBlockedWriteTarget(tok)) return WRITE_TARGET_REASON;
+      }
+    }
+  }
+  return undefined;
+}
+
 export function evasionReason(cmd: string): string | undefined {
   if (!cmd || cmd.startsWith("#")) return undefined;
   const shellFlag = shellStringFlagReason(cmd);
   if (shellFlag) return shellFlag;
   const git = gitMutatingReason(cmd);
   if (git) return git;
+  const write = bashWriteReason(cmd);
+  if (write) return write;
   return nonGitEvasion(splitCommandSegments(cmd));
 }
 export default function (pi: HookAPI): void {
