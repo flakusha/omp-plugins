@@ -10,7 +10,7 @@ project skill — all loadable into any omp profile.
 |---|---|---|
 | Integration extension — rtk/lean-ctx bash rewrite, engram memory auto-save + turn-start retrieval, receipt carriage, GPG/SSH hard-stop guards | `plugins/oh-my-pi-integration/extensions/index.ts` (+ `guards/`, `receipt/`) | `package.json` → `omp.extensions` |
 | Universal project rules — harness behavior, tool-routing discipline, strict review standards, docs-and-planning audit, parallel-safe tests, config merge precedence, safe-command guards | `plugins/oh-my-pi-integration/rules/` | `~/.omp/agent/rules/` **and** `~/.omp/rules/` (both; root-level is picked up directly by omp) |
-| omp-specific universal agent rules (lean-ctx tool-call corrections, receipt contract) — one canonical document; each profile's `AGENTS.md` is an installer-managed symlink | `AGENTS.md` | `agent/AGENTS.md` + per-profile symlinks |
+| omp-specific universal agent rules (receipt contract) — one canonical document; each profile's `AGENTS.md` is an installer-managed symlink | `AGENTS.md` | `agent/AGENTS.md` + per-profile symlinks |
 | Agent config scaffold (no credentials) | `agent/config.yml` | `agent/config.yml` |
 
 The bundle also ships a `.omp-plugin/marketplace.json` catalog so the contained
@@ -201,8 +201,11 @@ repository.
 
 ```
 ├── .omp-plugin/marketplace.json   catalog for `omp plugin install`
-├── AGENTS.md                      universal agent rules (installed to <target>.omp/agent/AGENTS.md;
+├── AGENTS.md                      universal agent rules: receipt contract
+│                                  (installed to <target>.omp/agent/AGENTS.md;
 │                                  profiles get installer-managed symlinks to it)
+├── agent/APPEND_SYSTEM.md         harness routing norm, appended to the system prompt
+│                                  (installed to <target>.omp/agent/; profiles link it)
 ├── agent/config.yml               agent config scaffold (credential-free)
 ├── plugins/oh-my-pi-integration/  the plugin package (extensions/hooks/rules)
 │   └── rules/                     universal project rules (installed to both
