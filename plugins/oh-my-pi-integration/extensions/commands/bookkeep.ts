@@ -33,8 +33,8 @@ export interface BookkeepEnv {
 const PLAN_SCRIPTS = ["plan:sync", "plan:find", "plan:map", "plan:docs"];
 const TRACKER_COMMANDS = ["ticket", "issues", "prs", "gi"];
 
-function onPath(bin: string): boolean {
-  const path = process.env.PATH ?? "";
+export function onPath(bin: string, pathEnv?: string): boolean {
+  const path = pathEnv ?? process.env.PATH ?? "";
   return path.split(":").some((dir) => {
     try {
       return existsSync(join(dir, bin));
