@@ -81,6 +81,8 @@ export const HELP_TEXT = `# install.ts — Install the oh-my-pi integration bund
 #   TARGET/.omp/agent/APPEND_SYSTEM.md                harness routing norm (appended to the system prompt,
 #                                                  profiles link it — keeps the default template)
 #   TARGET/.omp/agent/extensions/index.ts              integration extension
+#   TARGET/.omp/agent/extensions/commands/*.ts         slash commands (/receipt /verify /recall
+#                                                  /find-work /finalize /bookkeep /worktree /wt)
 #   TARGET/.omp/agent/extensions/guards/{gpg,ssh}-guard.ts
 #   TARGET/.omp/agent/hooks/pre/lean-ctx-native-reroute.ts
 #   TARGET/.omp/agent/hooks/pre/harness-evasion-guard.ts
@@ -456,6 +458,9 @@ const AGENT_PAYLOADS: readonly [string, string][] = [
   ["extensions/commands/finalize.ts", "extensions/commands/finalize.ts"],
   ["extensions/commands/bookkeep.ts", "extensions/commands/bookkeep.ts"],
   ["extensions/commands/worktree.ts", "extensions/commands/worktree.ts"],
+  ["extensions/commands/find-work.ts", "extensions/commands/find-work.ts"],
+  ["extensions/commands/wt.ts", "extensions/commands/wt.ts"],
+  ["extensions/util/worktree-base.ts", "extensions/util/worktree-base.ts"],
   ["extensions/util/lint-feedback.ts", "extensions/util/lint-feedback.ts"],
   ["extensions/guards/gpg-guard.ts", "extensions/guards/gpg-guard.ts"],
   ["extensions/guards/ssh-guard.ts", "extensions/guards/ssh-guard.ts"],

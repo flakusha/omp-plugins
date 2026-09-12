@@ -46,6 +46,7 @@ import { GPG_BLOCK_REASON, gpgSignHardStop, isGpgTamperCommand } from "./guards/
 import { isSshTamperCommand, SSH_BLOCK_REASON, sshSockHardStop } from "./guards/ssh-guard";
 import { carryReceipt } from "./receipt/receipt";
 import { formatLintNote, lintablePath } from "./util/lint-feedback";
+import { createWorktreeBaseApplier } from "./util/worktree-base";
 
 const DISABLE = () => typeof process !== "undefined" && process.env?.PI_INTEGRATION_DISABLE === "1";
 
@@ -616,6 +617,30 @@ export default function integrationPlugin(pi: ExtensionAPI): void {
     } catch {
       return undefined; // receipt must never break the loop
     }
+  });
+
+  // ---- 11) /wt in-repo placement: point OMP_WORKTREE_DIR at <repo>/<container> ----
+  // The built-in /wt (dispatched before extension commands) resolves its base
+  // from OMP_WORKTREE_DIR ?? worktree.base ?? <profileRoot>/wt; only the env
+  // var accepts a per-repo path, so set it whenever the session cwd is inside
+  // a git repo. Refreshed on session_start and on every submitted input so a
+  // /move between repos re-points (or unsets) our own value. Fail-open.
+  const applyWorktreeBase = createWorktreeBaseApplier();
+  pi.on("session_start", (_event, ctx: ExtensionContext) => {
+    try {
+      applyWorktreeBase(ctx.cwd);
+    } catch {
+      /* placement must never break the loop */
+    }
+    return undefined;
+  });
+  pi.on("input", (_event, ctx: ExtensionContext) => {
+    try {
+      applyWorktreeBase(ctx.cwd);
+    } catch {
+      /* placement must never break the loop */
+    }
+    return undefined;
   });
 
   // ---- 10) global slash commands (/receipt, /verify, /recall) ----
