@@ -15,8 +15,11 @@ import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import {
   assembleProfileConfig,
+  extensionCacheFiles,
   fileSha,
+  findExtensionCacheDirs,
   InstallerError,
+  invalidateExtensionCaches,
   mergeInterceptorPatterns,
   normalizePatternLine,
   parseArgs,
@@ -584,5 +587,60 @@ describe("--clean-bak (stale backup sweep)", () => {
     const bak = await parkBak(t);
     await runInstall(["--target", t]);
     expect(existsSync(bak)).toBe(true);
+  });
+});
+
+describe("extension transpile-cache invalidation", () => {
+  const seedDb = (cacheDir: string): void => {
+    mkdirSync(cacheDir, { recursive: true });
+    for (const suffix of ["", "-wal", "-shm"]) {
+      writeFileSync(join(cacheDir, `legacy-pi-extension-cache.db${suffix}`), "stale");
+    }
+  };
+
+  test("extensionCacheFiles lists db and wal/shm siblings", () => {
+    expect(extensionCacheFiles(join("/c"))).toEqual([
+      join("/c", "legacy-pi-extension-cache.db"),
+      join("/c", "legacy-pi-extension-cache.db-wal"),
+      join("/c", "legacy-pi-extension-cache.db-shm"),
+    ]);
+  });
+
+  test("findExtensionCacheDirs discovers agent and profile caches", () => {
+    const omp = tempDir("cache-omp-");
+    seedDb(join(omp, "agent", "cache"));
+    seedDb(join(omp, "profiles", "glm", "cache"));
+    mkdirSync(join(omp, "profiles", "bare"), { recursive: true });
+    const dirs = findExtensionCacheDirs(omp).sort();
+    expect(dirs).toEqual(
+      [join(omp, "agent", "cache"), join(omp, "profiles", "glm", "cache")].sort(),
+    );
+  });
+
+  test("invalidateExtensionCaches removes db siblings, keeps unrelated caches", () => {
+    const omp = tempDir("cache-rm-");
+    const glmCache = join(omp, "profiles", "glm", "cache");
+    seedDb(glmCache);
+    mkdirSync(join(glmCache, "fastembed"), { recursive: true });
+    writeFileSync(join(glmCache, "fastembed", "model.bin"), "x");
+    expect(invalidateExtensionCaches(omp)).toHaveLength(3);
+    expect(existsSync(join(glmCache, "fastembed", "model.bin"))).toBe(true);
+    expect(invalidateExtensionCaches(omp)).toEqual([]);
+  });
+
+  test("invalidateExtensionCaches tolerates missing trees", () => {
+    expect(invalidateExtensionCaches(tempDir("cache-none-"))).toEqual([]);
+  });
+
+  test("runInstall invalidates stale caches on extension changes, not on no-op reruns", async () => {
+    const t = tempDir("cache-install-");
+    const cacheDir = join(t, ".omp", "profiles", "glm", "cache");
+    seedDb(cacheDir);
+    await runInstall(["--target", t]);
+    expect(existsSync(join(cacheDir, "legacy-pi-extension-cache.db"))).toBe(false);
+    mkdirSync(cacheDir, { recursive: true });
+    writeFileSync(join(cacheDir, "legacy-pi-extension-cache.db"), "fresh");
+    await runInstall(["--target", t]);
+    expect(readFileSync(join(cacheDir, "legacy-pi-extension-cache.db"), "utf8")).toBe("fresh");
   });
 });

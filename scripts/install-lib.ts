@@ -1178,6 +1178,58 @@ function printSummary(ctx: InstallCtx): void {
 
 // ---- startup gates (order matches install.sh) -----------------------------
 
+// ---- stale extension transpile-cache invalidation ---------------------------
+
+/**
+ * Cache artifacts of omp's legacy extension transpiler, kept per profile and
+ * per agent root. A running omp process holds them open; the next process
+ * rebuilds them from the shipped sources, so removal IS the invalidation.
+ */
+export function extensionCacheFiles(cacheDir: string): string[] {
+  return ["", "-wal", "-shm"].map((suffix) =>
+    join(cacheDir, `legacy-pi-extension-cache.db${suffix}`),
+  );
+}
+
+/**
+ * Existing transpile-cache directories under an omp root: the agent root's
+ * cache plus every profile's own cache dir (when present).
+ */
+export function findExtensionCacheDirs(ompRoot: string): string[] {
+  const dirs = [join(ompRoot, "agent", "cache")];
+  let profileEntries: Dirent[] = [];
+  try {
+    profileEntries = readdirSync(join(ompRoot, "profiles"), { withFileTypes: true });
+  } catch {
+    return dirs.filter(isDirectory);
+  }
+  for (const entry of profileEntries) {
+    if (entry.isDirectory()) dirs.push(join(ompRoot, "profiles", entry.name, "cache"));
+  }
+  return dirs.filter(isDirectory);
+}
+
+/**
+ * Delete stale transpile-cache dbs so a freshly started omp process loads the
+ * just-installed extension sources instead of a cached compile of older code.
+ * Best-effort and fail-open: returns the paths actually removed.
+ */
+export function invalidateExtensionCaches(ompRoot: string): string[] {
+  const removed: string[] = [];
+  for (const dir of findExtensionCacheDirs(ompRoot)) {
+    for (const file of extensionCacheFiles(dir)) {
+      try {
+        if (lstatKind(file) !== "file") continue;
+        rmSync(file, { force: true });
+        removed.push(file);
+      } catch {
+        // cache removal must never fail the install
+      }
+    }
+  }
+  return removed;
+}
+
 /** Refuse unsafe --target values. Returns null when safe, else a reason. */
 export function checkDangerousTarget(target: string, home: string): string | null {
   if (target === "" || target === "/") return "target is the filesystem root or empty";
@@ -1302,12 +1354,27 @@ export async function runInstall(argv: string[], deps: RunDeps = defaultDeps()):
   deps.out(`    source : ${repoRoot}`);
   const gate = runGates(ctx);
   if (gate !== null) return gate;
+  const manifestBefore = new Map(ctx.manifest);
   await syncAgentPayloads(ctx);
   await syncRules(ctx);
   await syncProfilePayloads(ctx);
   syncProfileSymlinks(ctx);
   syncPluginPackage(ctx);
   await reconcile(ctx);
+  const extensionsChanged = [...ctx.manifest.entries()].some(
+    ([rel, sha]) =>
+      (rel.includes("extensions/") || rel.includes("hooks/")) && manifestBefore.get(rel) !== sha,
+  );
+  if (extensionsChanged) {
+    if (ctx.flags.dryRun) {
+      deps.out("  ! would invalidate stale extension transpile caches");
+    } else {
+      const removed = invalidateExtensionCaches(ompRoot);
+      if (removed.length > 0) {
+        deps.out(`  ! invalidated stale extension transpile caches (${removed.length} file(s))`);
+      }
+    }
+  }
   if (ctx.flags.cleanBak) cleanBackups(ctx);
   saveManifest(ctx);
   printSummary(ctx);
