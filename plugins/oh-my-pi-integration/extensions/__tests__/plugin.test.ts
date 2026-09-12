@@ -205,10 +205,12 @@ describe("integrationPlugin — registration", () => {
     expect([...pi.commands.keys()].sort()).toEqual([
       "bookkeep",
       "finalize",
+      "find-work",
       "recall",
       "receipt",
       "verify",
       "worktree",
+      "wt",
     ]);
   });
 

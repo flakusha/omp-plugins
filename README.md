@@ -8,7 +8,7 @@ project skill — all loadable into any omp profile.
 
 | Piece | Path | Loaded by omp via |
 |---|---|---|
-| Integration extension — rtk/lean-ctx bash rewrite, engram memory auto-save + turn-start retrieval, receipt carriage, GPG/SSH hard-stop guards, global `/receipt` `/verify` `/recall` `/finalize` `/bookkeep` `/worktree` commands | `plugins/oh-my-pi-integration/extensions/index.ts` (+ `guards/`, `receipt/`, `commands/`) | `package.json` → `omp.extensions` |
+| Integration extension — rtk/lean-ctx bash rewrite, engram memory auto-save + turn-start retrieval, receipt carriage, GPG/SSH hard-stop guards, global `/receipt` `/verify` `/recall` `/find-work` `/finalize` `/bookkeep` `/worktree` `/wt` commands | `plugins/oh-my-pi-integration/extensions/index.ts` (+ `guards/`, `receipt/`, `commands/`) | `package.json` → `omp.extensions` |
 | Universal project rules — harness behavior, tool-routing discipline, strict review standards, docs-and-planning audit, parallel-safe tests, config merge precedence, safe-command guards | `plugins/oh-my-pi-integration/rules/` | `~/.omp/agent/rules/` **and** `~/.omp/rules/` (both; root-level is picked up directly by omp) |
 | omp-specific universal agent rules (receipt contract) — one canonical document; each profile's `AGENTS.md` is an installer-managed symlink | `AGENTS.md` | `agent/AGENTS.md` + per-profile symlinks |
 | Agent config scaffold (no credentials) | `agent/config.yml` | `agent/config.yml` |
@@ -41,6 +41,13 @@ plugin can be installed directly with `omp plugin install`.
   `done_at`, prunes finished jobs after 3 receipts, and drops empty entries —
   line-oriented, so comments and unknown keys survive. Fail-open throughout;
   opt out with `PI_RECEIPT_DISABLE=1`.
+- **`/find-work` command** — discovers open work items across the receipt
+  ledger, `.plan/` docs, GitHub (`gh`), and `git-issue`, and presents them as a
+  flat `list` (`1,2,3`, `A,B,C`, `P1,P2,P3`, or `B1,F1,E1` schemes, with
+  `batches` grouping and bug/feature/epic/task filters), a markdown `table`, or
+  an interactive `ask` dialog grouped by domain; `ask` hands the selected
+  batch (and any trailing directive, e.g. `/find-work ask propose the next
+  batch of fixes`) to an agent turn. jira/glab are resolved inside that turn.
 - **GPG & SSH hard-stop guards** — when a commit signing or ssh-agent/socket
   failure needs a human (locked GPG key, stale SSH agent), substitutes an
   imperative hard-stop directive and blocks the agent's usual self-recovery

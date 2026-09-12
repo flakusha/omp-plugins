@@ -82,15 +82,17 @@ some useful detail
 `;
 
 describe("registerCommands", () => {
-  test("registers receipt, verify, recall, finalize, bookkeep, and worktree with descriptions", () => {
+  test("registers receipt, verify, recall, find-work, finalize, bookkeep, and worktree with descriptions", () => {
     const commands = registered();
     expect([...commands.keys()].sort()).toEqual([
       "bookkeep",
       "finalize",
+      "find-work",
       "recall",
       "receipt",
       "verify",
       "worktree",
+      "wt",
     ]);
     for (const { description } of commands.values()) {
       expect(description).toBeString();

@@ -1,6 +1,6 @@
 /**
  * Global slash commands for the oh-my-pi-integration plugin (`/receipt`,
- * `/verify`, `/recall`, `/finalize`, `/bookkeep`, `/worktree`).
+ * `/verify`, `/recall`, `/find-work`, `/finalize`, `/bookkeep`, `/worktree`, `/wt`).
  *
  * Registered from the plugin factory (see index.ts), so they ship with the
  * extension payload and resolve in the default agent and every profile.
@@ -29,7 +29,9 @@ import {
 } from "../receipt/receipt";
 import { registerBookkeep } from "./bookkeep";
 import { registerFinalize } from "./finalize";
+import { registerFindWork } from "./find-work";
 import { registerWorktree } from "./worktree";
+import { registerWt } from "./wt";
 
 export function projectFor(cwd: string | undefined): string {
   if (!cwd) return "omp";
@@ -306,7 +308,7 @@ async function recallMemories(
   ctx.ui.notify(`recorded context for '${raw}':\n${text}`, "info");
 }
 
-/** Register `/receipt`, `/verify`, `/recall`, `/finalize`, `/bookkeep` on the plugin factory's `pi`. */
+/** Register `/receipt`, `/verify`, `/recall`, `/find-work`, `/finalize`, `/bookkeep`, `/worktree`, `/wt` on the plugin factory's `pi`. */
 export function registerCommands(pi: ExtensionAPI): void {
   pi.registerCommand("receipt", {
     description: "Show the project job ledger; `/receipt done <id>` marks a job finished",
@@ -342,7 +344,9 @@ export function registerCommands(pi: ExtensionAPI): void {
     },
   });
 
+  registerFindWork(pi);
   registerFinalize(pi);
   registerBookkeep(pi);
   registerWorktree(pi);
+  registerWt(pi);
 }
