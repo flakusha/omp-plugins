@@ -619,11 +619,14 @@ export default function integrationPlugin(pi: ExtensionAPI): void {
     }
   });
 
-  // ---- 11) /wt in-repo placement: point OMP_WORKTREE_DIR at <repo>/<container> ----
+  // ---- 11) /wt out-of-repo placement: OMP_WORKTREE_DIR → <repoParent>/<repo>-worktrees ----
   // The built-in /wt (dispatched before extension commands) resolves its base
   // from OMP_WORKTREE_DIR ?? worktree.base ?? <profileRoot>/wt; only the env
   // var accepts a per-repo path, so set it whenever the session cwd is inside
-  // a git repo. Refreshed on session_start and on every submitted input so a
+  // a git repo. The base is a sibling of the primary repo root — never inside
+  // it (an in-repo container recursed: the /wt clone backend copies the full
+  // working tree, so worktrees contained copies of prior worktrees).
+  // Refreshed on session_start and on every submitted input so a
   // /move between repos re-points (or unsets) our own value. Fail-open.
   const applyWorktreeBase = createWorktreeBaseApplier();
   pi.on("session_start", (_event, ctx: ExtensionContext) => {

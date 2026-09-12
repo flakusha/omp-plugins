@@ -1,36 +1,37 @@
 /**
- * `/wt` in-repo placement — keep built-in worktrees inside the project root.
+ * `/wt` out-of-repo placement — keep built-in worktrees OUTSIDE the repo, in
+ * a sibling folder of the repo root.
  *
  * The built-in `/wt` (and task isolation / `github pr_checkout`) resolve the
  * worktree base as `OMP_WORKTREE_DIR env ?? worktree.base setting ?? <profile
  * root>/wt`. The setting rejects relative paths, so per-repo placement can
  * only come from the env var. This module sets `OMP_WORKTREE_DIR` to
- * `<repoRoot>/<container>` (container `tree` or `.worktrees`, matching the
- * repo's convention — same targets the `/worktree` command uses) so worktrees
- * land where every policy layer (lean-ctx roots, write gate, guards) can see
- * them, instead of under `~/.omp/...`, which agent tooling cannot reach.
+ * `<repoParent>/<repoName>-worktrees` — a sibling directory of the repo —
+ * because keeping the container INSIDE the repo (`<repo>/tree/`) proved
+ * unfixable: the clone-first /wt backend copies the full working tree
+ * (`keepChanges`), so an in-repo container made every worktree contain
+ * copies of prior worktrees, and sessions inside `<repo>/<container>/…`
+ * re-created worktrees recursively. Outside the repo the copies can never
+ * include the container, breaking the loop structurally; the sibling
+ * location also removes `.git/info/exclude` hacks and git-status pollution.
  *
- * Opt out: `PI_WORKTREE_IN_REPO=0` (or the plugin-wide
- * `PI_INTEGRATION_DISABLE=1`). An externally-set `OMP_WORKTREE_DIR` is never
+ * Opt out: `PI_WORKTREE_IN_REPO=0` (historical name) or the plugin-wide
+ * `PI_INTEGRATION_DISABLE=1`. An externally-set `OMP_WORKTREE_DIR` is never
  * overridden; only values this module set itself are updated or unset when
  * the session moves (e.g. after `/move`, refreshed on `session_start`/`input`
- * events). Exclusion of the container from `git status` is ensured
- * best-effort via `.git/info/exclude` — never `.gitignore`, no repo pollution.
- * Fail-open by construction: any fs/git surprise leaves the env untouched.
+ * events). Fail-open by construction: any fs surprise leaves the env
+ * untouched.
  */
 
-import { appendFileSync, existsSync, readFileSync, statSync } from "node:fs";
-import { dirname, isAbsolute, join, resolve } from "node:path";
-
-/** Container dir names a repo may already use for worktrees (checked in order). */
-const CONTAINERS = ["tree", ".worktrees"] as const;
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 
 export interface WorktreeBase {
-  /** Repo root the worktrees belong to. */
+  /** Primary repo root the worktrees belong to. */
   root: string;
-  /** Container dir name (`tree` or `.worktrees`). */
+  /** Sibling container dir name (`<repoName>-worktrees`). */
   container: string;
-  /** Absolute base dir for worktrees. */
+  /** Absolute base dir for worktrees, OUTSIDE the repo. */
   dir: string;
 }
 
@@ -38,15 +39,6 @@ export type ApplyResult =
   | { kind: "set"; dir: string }
   | { kind: "unset" }
   | { kind: "skipped"; reason: "disabled" | "no-repo" | "user-preset" };
-
-/** Index of a worktree container segment in a split path, or -1. */
-function findAnchorIndex(parts: string[]): number {
-  for (let i = parts.length - 2; i >= 0; i--) {
-    const part = parts[i];
-    if (part === "tree" || part === ".worktrees") return i;
-  }
-  return -1;
-}
 
 function isDir(p: string): boolean {
   try {
@@ -102,58 +94,29 @@ export function primaryRepoRoot(gitRoot: string): string | null {
 }
 
 /**
- * Repo root for session cwd, derived from git metadata (not path segments):
- * the nearest `.git` owning the cwd resolves to its primary repo, so
- *  - cwd inside `<repo>/tree/<name>` (linked worktree) → base `<repo>/tree`
- *    (a second `/wt` creates a sibling under the parent repo, never a nested
- *    copy inside the worktree),
- *  - cwd inside a nested full checkout (clone, copied repo) → that checkout's
- *    own container (no leak into an outer repo's `tree/`).
- * Falls back to the legacy path-segment anchor only when worktree metadata
- * is unparseable.
+ * Worktree base for session cwd, derived from git metadata (not path
+ * segments): the nearest `.git` owning the cwd resolves to its primary repo,
+ * and the base is that repo's OUT-OF-REPO sibling container
+ * `<repoParent>/<repoName>-worktrees`. Consequences:
+ *  - cwd inside a linked worktree (e.g. `<repo>/tree/<name>`) → base beside
+ *    the PRIMARY repo — a second `/wt` creates a sibling of the origin,
+ *    never a nested copy;
+ *  - cwd inside a nested full checkout (clone, copied repo) → that
+ *    checkout's own sibling (no leak into an outer repo);
+ *  - the base can never sit inside a worktree, so the clone-first backend's
+ *    full-tree copies can never contain the container — recursion is
+ *    structurally impossible.
  */
 export function resolveWorktreeBase(cwd: string | undefined): WorktreeBase | null {
   const here = cwd ?? process.cwd();
   const gitRoot = findGitRoot(here);
   if (!gitRoot) return null;
   const primary = primaryRepoRoot(gitRoot);
-  if (primary) {
-    const container = CONTAINERS.find((c) => isDir(join(primary, c))) ?? "tree";
-    return { root: primary, container, dir: join(primary, container) };
-  }
-  const parts = here.split("/").filter(Boolean);
-  const at = findAnchorIndex(parts);
-  if (at >= 0) {
-    const root = `/${parts.slice(0, at).join("/")}`;
-    const container = parts[at] ?? "tree";
-    return { root, container, dir: join(root, container) };
-  }
-  const container = CONTAINERS.find((c) => isDir(join(gitRoot, c))) ?? "tree";
-  return { root: gitRoot, container, dir: join(gitRoot, container) };
-}
-
-/**
- * Ensure `<container>/` is ignored via `<root>/.git/info/exclude` (never
- * `.gitignore` — local-only, zero repo pollution). Returns true when the file
- * was written, false when absent/skipped (e.g. `.git` is a worktree file, or
- * the exclusion already exists). Concurrent double-append is benign.
- */
-export function ensureExcluded(root: string, container: string): boolean {
-  const gitDir = join(root, ".git");
-  if (!isDir(gitDir)) return false;
-  const exclude = join(gitDir, "info", "exclude");
-  try {
-    const needle = `${container}/`;
-    if (existsSync(exclude)) {
-      for (const line of readFileSync(exclude, "utf8").split("\n")) {
-        if (line.trim() === needle) return false;
-      }
-    }
-    appendFileSync(exclude, `${needle}\n`, "utf8");
-    return true;
-  } catch {
-    return false;
-  }
+  if (!primary) return null;
+  const parent = dirname(primary);
+  if (parent === primary) return null; // repo rooted at "/" has no sibling
+  const container = `${basename(primary)}-worktrees`;
+  return { root: primary, container, dir: join(parent, container) };
 }
 
 export type WorktreeBaseApplier = (
@@ -192,7 +155,6 @@ export function createWorktreeBaseApplier(): WorktreeBaseApplier {
     }
     env.OMP_WORKTREE_DIR = base.dir;
     setByUs = true;
-    ensureExcluded(base.root, base.container);
     return { kind: "set", dir: base.dir };
   };
   return apply;

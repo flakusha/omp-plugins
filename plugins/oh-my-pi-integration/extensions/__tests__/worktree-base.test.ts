@@ -1,10 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import {
   createWorktreeBaseApplier,
-  ensureExcluded,
   findGitRoot,
   primaryRepoRoot,
   resolveWorktreeBase,
@@ -20,12 +19,16 @@ function tempDir(prefix: string): string {
   return dir;
 }
 
-function makeRepo(withContainer?: "tree" | ".worktrees"): string {
+function makeRepo(): string {
   const root = tempDir("wtb-repo-");
   mkdirSync(join(root, ".git", "info"), { recursive: true });
   writeFileSync(join(root, ".git", "HEAD"), "ref: refs/heads/main\n");
-  if (withContainer) mkdirSync(join(root, withContainer));
   return root;
+}
+
+/** Expected out-of-repo sibling base for a repo root. */
+function sibling(repo: string): string {
+  return join(dirname(repo), `${basename(repo)}-worktrees`);
 }
 
 function sub(root: string, ...parts: string[]): string {
@@ -71,45 +74,37 @@ describe("findGitRoot", () => {
 });
 
 describe("resolveWorktreeBase", () => {
-  test("defaults to tree/ and prefers an existing .worktrees dir", () => {
+  test("defaults to the out-of-repo sibling dir of the repo", () => {
     const plain = makeRepo();
     expect(resolveWorktreeBase(plain)).toEqual({
       root: plain,
-      container: "tree",
-      dir: join(plain, "tree"),
-    });
-    const wt = makeRepo(".worktrees");
-    expect(resolveWorktreeBase(wt)?.container).toBe(".worktrees");
-  });
-
-  test("anchors to the parent repo from inside tree/<name>", () => {
-    const root = makeRepo();
-    const inside = sub(root, "tree", "some-branch");
-    expect(resolveWorktreeBase(inside)).toEqual({
-      root,
-      container: "tree",
-      dir: join(root, "tree"),
+      container: `${basename(plain)}-worktrees`,
+      dir: sibling(plain),
     });
   });
 
-  test("linked worktree inside the container resolves to the primary repo (recursion guard)", () => {
-    const mainRoot = makeRepo("tree");
+  test("links a legacy in-repo container to the primary repo's sibling (recursion guard)", () => {
+    const mainRoot = makeRepo();
     const checkout = sub(mainRoot, "tree", "feature-x");
     linkWorktree(checkout, mainRoot, "feature-x");
-    const expected = { root: mainRoot, container: "tree", dir: join(mainRoot, "tree") };
+    const expected = {
+      root: mainRoot,
+      container: `${basename(mainRoot)}-worktrees`,
+      dir: sibling(mainRoot),
+    };
     expect(resolveWorktreeBase(checkout)).toEqual(expected);
     expect(resolveWorktreeBase(sub(checkout, "deep", "deeper"))).toEqual(expected);
     expect(primaryRepoRoot(checkout)).toBe(mainRoot);
   });
 
-  test("nested full checkout owns its own base (no leak into the outer container)", () => {
-    const outer = makeRepo("tree");
-    const inner = sub(outer, "tree", "inner-clone");
+  test("nested full checkout owns its own sibling (no leak into the outer repo)", () => {
+    const outer = makeRepo();
+    const inner = sub(outer, "vendor", "inner-clone");
     mkdirSync(join(inner, ".git"), { recursive: true });
     expect(resolveWorktreeBase(inner)).toEqual({
       root: inner,
-      container: "tree",
-      dir: join(inner, "tree"),
+      container: `${basename(inner)}-worktrees`,
+      dir: sibling(inner),
     });
   });
 
@@ -118,30 +113,14 @@ describe("resolveWorktreeBase", () => {
   });
 });
 
-describe("ensureExcluded", () => {
-  test("appends once and is idempotent", () => {
-    const root = makeRepo();
-    expect(ensureExcluded(root, "tree")).toBe(true);
-    expect(ensureExcluded(root, "tree")).toBe(false);
-    const exclude = readFileSync(join(root, ".git", "info", "exclude"), "utf8");
-    expect(exclude.match(/^tree\/$/gm)?.length).toBe(1);
-  });
-
-  test("skips when .git is a worktree file, not a dir", () => {
-    const root = tempDir("wtb-wtfile-");
-    writeFileSync(join(root, ".git"), "gitdir: /elsewhere\n");
-    expect(ensureExcluded(root, "tree")).toBe(false);
-  });
-});
-
 describe("createWorktreeBaseApplier", () => {
   test("sets the env var and reuses its own value idempotently", () => {
     const root = makeRepo();
     const env: Record<string, string | undefined> = {};
     const applier = createWorktreeBaseApplier();
-    expect(applier(root, env)).toEqual({ kind: "set", dir: join(root, "tree") });
-    expect(applier(root, env)).toEqual({ kind: "set", dir: join(root, "tree") });
-    expect(env.OMP_WORKTREE_DIR).toBe(join(root, "tree"));
+    expect(applier(root, env)).toEqual({ kind: "set", dir: sibling(root) });
+    expect(applier(root, env)).toEqual({ kind: "set", dir: sibling(root) });
+    expect(env.OMP_WORKTREE_DIR).toBe(sibling(root));
   });
 
   test("never overrides a user-preset value", () => {
@@ -160,8 +139,8 @@ describe("createWorktreeBaseApplier", () => {
     const env: Record<string, string | undefined> = {};
     const applier = createWorktreeBaseApplier();
     applier(a, env);
-    expect(applier(b, env)).toEqual({ kind: "set", dir: join(b, "tree") });
-    expect(env.OMP_WORKTREE_DIR).toBe(join(b, "tree"));
+    expect(applier(b, env)).toEqual({ kind: "set", dir: sibling(b) });
+    expect(env.OMP_WORKTREE_DIR).toBe(sibling(b));
     expect(applier(tempDir("wtb-norepo3-"), env)).toEqual({ kind: "unset" });
     expect(env.OMP_WORKTREE_DIR).toBeUndefined();
   });
@@ -178,12 +157,5 @@ describe("createWorktreeBaseApplier", () => {
       });
       expect(env.OMP_WORKTREE_DIR).toBeUndefined();
     }
-  });
-
-  test("excludes the container when it sets the env var", () => {
-    const root = makeRepo();
-    createWorktreeBaseApplier()(root, {});
-    const exclude = readFileSync(join(root, ".git", "info", "exclude"), "utf8");
-    expect(exclude).toContain("tree/");
   });
 });
