@@ -78,6 +78,8 @@ export const HELP_TEXT = `# install.ts — Install the oh-my-pi integration bund
 # Laydown (relative to TARGET):
 #   TARGET/.omp/agent/AGENTS.md                      omp-specific global agent rules
 #   TARGET/.omp/agent/config.yml                       agent config scaffold
+#   TARGET/.omp/agent/APPEND_SYSTEM.md                harness routing norm (appended to the system prompt,
+#                                                  profiles link it — keeps the default template)
 #   TARGET/.omp/agent/extensions/index.ts              integration extension
 #   TARGET/.omp/agent/extensions/guards/{gpg,ssh}-guard.ts
 #   TARGET/.omp/agent/hooks/pre/lean-ctx-native-reroute.ts
@@ -88,9 +90,10 @@ export const HELP_TEXT = `# install.ts — Install the oh-my-pi integration bund
 #                                                  profiles/<name>/agent/config.fragment.yml,
 #                                                  or shipped verbatim when the profile ships
 #                                                  its own config.yml (full override)
-#   TARGET/.omp/profiles/<name>/agent/AGENTS.md       symlink to the canonical
-#                                                  agent/AGENTS.md — one universal
-#                                                  document, zero per-profile drift
+#   TARGET/.omp/profiles/<name>/agent/{AGENTS.md,APPEND_SYSTEM.md}
+#                                                  symlinks to the canonical
+#                                                  agent/ copies — one universal
+#                                                  document each, zero per-profile drift
 #   TARGET/.omp/profiles/<name>/agent/{rules,hooks,extensions,skills,plugins}
 #                                                  symlinks back to ../<x> of the default agent runtime,
 #                                                  so every profile sees the canonical content without
@@ -830,6 +833,12 @@ async function syncAgentPayloads(ctx: InstallCtx): Promise<void> {
     join(ctx.agentDir, "config.yml"),
     `${ctx.rlob}agent/config.yml`,
   );
+  await syncFile(
+    ctx,
+    join(ctx.repoRoot, "agent", "APPEND_SYSTEM.md"),
+    join(ctx.agentDir, "APPEND_SYSTEM.md"),
+    `${ctx.rlob}agent/APPEND_SYSTEM.md`,
+  );
   for (const [srcRel, dstRel] of AGENT_PAYLOADS) {
     await syncFile(
       ctx,
@@ -920,17 +929,18 @@ async function syncProfilePayloads(ctx: InstallCtx): Promise<void> {
 }
 
 /**
- * Point a profile's `AGENTS.md` at the canonical `agent/AGENTS.md` so every
- * profile loads the identical universal document with zero drift. A missing
- * link is created; a regular file with byte-identical content (the previous
- * per-profile copy) is swapped for the link; a diverged file is kept with a
- * warning — never clobbered without `--force`; an existing link is untouched.
+ * Point a profile's canonical file (`AGENTS.md`, `APPEND_SYSTEM.md`) at the
+ * default `agent/` copy so every profile loads the identical document with
+ * zero drift. A missing link is created; a regular file with byte-identical
+ * content (a previous per-profile copy) is swapped for the link; a diverged
+ * file is kept with a warning — never clobbered without `--force`; an
+ * existing link is untouched.
  */
-function syncAgentsMdLink(ctx: InstallCtx, profileAgentDir: string): void {
-  const canonical = join(ctx.agentDir, "AGENTS.md");
+function syncCanonicalFileLink(ctx: InstallCtx, profileAgentDir: string, fileName: string): void {
+  const canonical = join(ctx.agentDir, fileName);
   if (!isFileFollow(canonical)) return; // agent payload not laid down
-  const linkPath = join(profileAgentDir, "AGENTS.md");
-  const linkValue = "../../../agent/AGENTS.md";
+  const linkPath = join(profileAgentDir, fileName);
+  const linkValue = `../../../agent/${fileName}`;
   const kind = lstatKind(linkPath);
   if (kind === "symlink") return;
   if (kind === "file") {
@@ -944,7 +954,7 @@ function syncAgentsMdLink(ctx: InstallCtx, profileAgentDir: string): void {
         }
       })();
     if (!identical && !ctx.flags.force) {
-      warn(ctx, `profile AGENTS.md diverged from canonical, keeping: ${linkPath}`);
+      warn(ctx, `profile ${fileName} diverged from canonical, keeping: ${linkPath}`);
       return;
     }
     if (!ctx.flags.dryRun) {
@@ -972,7 +982,9 @@ function syncProfileSymlinks(ctx: InstallCtx): void {
       continue;
     }
     ctx.deps.out(`==> profile runtime symlinks: ${name}`);
-    syncAgentsMdLink(ctx, profileAgentDir);
+    for (const fileName of ["AGENTS.md", "APPEND_SYSTEM.md"]) {
+      syncCanonicalFileLink(ctx, profileAgentDir, fileName);
+    }
     for (const sub of PROFILE_RUNTIME_SUBDIRS) {
       const linkPath = join(profileAgentDir, sub);
       if (!isDirectory(join(ctx.agentDir, sub))) continue;

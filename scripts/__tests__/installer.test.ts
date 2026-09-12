@@ -289,6 +289,29 @@ describe("fix regressions at runInstall level", () => {
       readFileSync(join(t, ".omp", "agent", "AGENTS.md"), "utf8"),
     );
   });
+  test("ships APPEND_SYSTEM.md and symlinks it into profiles", async () => {
+    const t = tempDir("p0-append-");
+    expect(await runInstall(["--target", t])).toBe(0);
+    const canonical = readFileSync(join(t, ".omp", "agent", "APPEND_SYSTEM.md"), "utf8");
+    expect(canonical.trim().length).toBeGreaterThan(0);
+    expect(canonical).toContain("ctx_patch");
+    const link = join(t, ".omp", "profiles", "minimax", "agent", "APPEND_SYSTEM.md");
+    expect(readlinkSync(link)).toBe("../../../agent/APPEND_SYSTEM.md");
+    expect(readFileSync(link, "utf8")).toBe(canonical);
+  });
+
+  test("keeps a diverged profile APPEND_SYSTEM.md and swaps it only under --force", async () => {
+    const t = tempDir("p0-append-diverge-");
+    await runInstall(["--target", t]);
+    const link = join(t, ".omp", "profiles", "minimax", "agent", "APPEND_SYSTEM.md");
+    rmSync(link);
+    writeFileSync(link, "custom profile append\n");
+    await runInstall(["--target", t]);
+    expect(readFileSync(link, "utf8")).toBe("custom profile append\n");
+    await runInstall(["--target", t, "--force"]);
+    expect(readFileSync(link, "utf8")).toContain("ctx_patch");
+    expect(readFileSync(`${link}.bak`, "utf8")).toBe("custom profile append\n");
+  });
 
   test("keeps a diverged profile AGENTS.md and swaps it only under --force", async () => {
     const t = tempDir("p0-agents-diverge-");
