@@ -25,6 +25,14 @@ import type { HookAPI } from "@oh-my-pi/pi-coding-agent/extensibility/hooks";
 // patching) under the same exemptions: in-root source-file edits must go
 // through ctx_read(mode="anchored") + ctx_patch so line drift cannot silently
 // corrupt a hunk; everything else keeps the native escape hatches.
+//
+// The native `write` tool is gated to the repo scratchpad: native writes are
+// allowed only inside the project root under a `.tmp/` directory (the
+// documented scratch convention, any depth — `./.tmp/x`, `a/.tmp/x`,
+// `a/b/.tmp/x`). In-root non-scratch creation routes to `ctx_patch`
+// (op: create); files outside the project root are blocked too — out-of-root
+// writes go through trusted bash/installer flows instead of ad-hoc native
+// writes. URI/binary exemptions still apply (ctx_patch can't create those).
 
 const URI_RE = /^[a-z][a-z0-9+.-]*:\/\//i;
 const INTERNAL_SCHEME_RE =
@@ -88,6 +96,28 @@ export function globBlockReason(path: string): { block: true; reason: string } |
   return { block: true, reason: GLOB_REASON };
 }
 
+export const WRITE_REASON =
+  "Use `mcp__lean_ctx_ctx_patch` (op: `create`) instead of `write` — anchored, hash-validated creation. " +
+  "Throwaway files belong in an in-root `.tmp/` scratch dir, where native `write` is allowed.";
+export const WRITE_OUTSIDE_REASON =
+  "Native `write` is allowed only for in-root `.tmp/` scratch files. For files outside the project root " +
+  "use the native `bash` tool or the project installer.";
+
+function isUnderTmpDir(path: string): boolean {
+  const rel = relative(process.cwd(), resolve(path));
+  if (!rel || rel.startsWith("..") || isAbsolute(rel)) return false;
+  return rel.split(/[\\/]/).includes(".tmp");
+}
+
+export function writeBlockReason(path: string): { block: true; reason: string } | undefined {
+  if (!path || isExempt(path)) return undefined;
+  if (isUnderTmpDir(path)) return undefined;
+  return {
+    block: true,
+    reason: isOutsideRoot(path) ? WRITE_OUTSIDE_REASON : WRITE_REASON,
+  };
+}
+
 export default function (pi: HookAPI): void {
   pi.on("tool_call", (event) => {
     const { toolName, input } = event;
@@ -95,5 +125,6 @@ export default function (pi: HookAPI): void {
     if (toolName === "grep") return grepBlockReason(input.path ? String(input.path) : "");
     if (toolName === "glob") return globBlockReason(input.path ? String(input.path) : "");
     if (toolName === "edit") return editBlockReason(input.path ? String(input.path) : "");
+    if (toolName === "write") return writeBlockReason(input.path ? String(input.path) : "");
   });
 }

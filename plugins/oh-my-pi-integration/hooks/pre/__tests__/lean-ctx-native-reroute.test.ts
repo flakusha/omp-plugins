@@ -11,6 +11,9 @@ import defaultHook, {
   grepBlockReason,
   READ_FILE_REASON,
   readBlockReason,
+  WRITE_OUTSIDE_REASON,
+  WRITE_REASON,
+  writeBlockReason,
 } from "../lean-ctx-native-reroute";
 
 const INSIDE_FILE = resolve(process.cwd(), "package.json");
@@ -119,6 +122,57 @@ describe("editBlockReason", () => {
       block: true,
       reason: EDIT_REASON,
     });
-    expect(hooks.handler?.({ toolName: "write", input: { path: INSIDE_FILE } })).toBeUndefined();
+    expect(hooks.handler?.({ toolName: "write", input: { path: INSIDE_FILE } })).toEqual({
+      block: true,
+      reason: WRITE_REASON,
+    });
+    expect(
+      hooks.handler?.({ toolName: "write", input: { path: join(INSIDE_ROOT, ".tmp", "x.txt") } }),
+    ).toBeUndefined();
+  });
+});
+
+describe("writeBlockReason", () => {
+  test("blocks in-root non-scratch creation toward ctx_patch", () => {
+    expect(writeBlockReason(INSIDE_FILE)).toEqual({ block: true, reason: WRITE_REASON });
+    expect(writeBlockReason(join(INSIDE_ROOT, "a.ts"))).toEqual({
+      block: true,
+      reason: WRITE_REASON,
+    });
+    // traversal out of the scratch dir resolves back to a non-scratch root file
+    expect(writeBlockReason(join(INSIDE_ROOT, ".tmp", "..", "escape.txt"))).toEqual({
+      block: true,
+      reason: WRITE_REASON,
+    });
+  });
+
+  test("allows in-root .tmp scratch files at any depth", () => {
+    expect(writeBlockReason(join(INSIDE_ROOT, ".tmp", "probe.txt"))).toBeUndefined();
+    expect(writeBlockReason(join(INSIDE_ROOT, "pkg", ".tmp", "probe.txt"))).toBeUndefined();
+    expect(writeBlockReason(join(INSIDE_ROOT, "pkg", "sub", ".tmp", "probe.txt"))).toBeUndefined();
+    expect(writeBlockReason(join(INSIDE_ROOT, ".tmp", "nested", "probe.txt"))).toBeUndefined();
+  });
+
+  test("blocks writes outside the project root", () => {
+    expect(writeBlockReason(join(tmpdir(), "outside.txt"))).toEqual({
+      block: true,
+      reason: WRITE_OUTSIDE_REASON,
+    });
+  });
+
+  test("keeps exemptions: internal schemes, binary/doc extensions, empty path", () => {
+    expect(writeBlockReason(join(INSIDE_ROOT, "logo.png"))).toBeUndefined();
+    expect(writeBlockReason("memory://abc")).toBeUndefined();
+    expect(writeBlockReason("")).toBeUndefined();
+  });
+
+  test("default hook routes write tool calls", async () => {
+    const hooks = new FakeHooks();
+    (defaultHook as unknown as (pi: FakeHooks) => void)(hooks);
+    expect(hooks.handler?.({ toolName: "write", input: { path: INSIDE_FILE } })).toEqual({
+      block: true,
+      reason: WRITE_REASON,
+    });
+    expect(hooks.handler?.({ toolName: "write", input: {} })).toBeUndefined();
   });
 });
