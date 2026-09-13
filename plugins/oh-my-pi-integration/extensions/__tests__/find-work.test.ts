@@ -467,6 +467,21 @@ describe("planTickets", () => {
     expect(ids).not.toContain("B-2");
   });
 
+  test("bold **Status**: with colon outside bold is recognized and filtered", () => {
+    // Repo ticket format (loop-lore): the markdown bold closes BEFORE the
+    // colon. Regression: STATUS_LINE_RE used to miss it entirely, so done
+    // tickets leaked into /find-work.
+    const dir = tempDir("fw-plan-bold-colon-out-");
+    mkdirSync(join(dir, ".plan", "tickets"), { recursive: true });
+    writeFileSync(
+      join(dir, ".plan", "tickets", "C-1.md"),
+      "# Open colon-out\n**Status**: In Progress\n",
+    );
+    writeFileSync(join(dir, ".plan", "tickets", "C-2.md"), "# Done colon-out\n**Status**: done\n");
+    const ids = planTickets(dir).map((t) => t.id);
+    expect(ids).toContain("C-1");
+    expect(ids).not.toContain("C-2");
+  });
   test("missing .plan dir yields nothing", () => {
     expect(planTickets(tempDir("fw-noplan-"))).toEqual([]);
   });

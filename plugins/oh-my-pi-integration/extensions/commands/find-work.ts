@@ -147,7 +147,8 @@ export const RECEIPT_ID_PREFIX_RE = /^([BFEI])(-\d+)?$/i;
 /** `1. something` / `1 something` / `#12 something` list lines. */
 export const NUMBERED_LINE_RE = /^\s*(?:#?(\d+)[.)]?\s+)(\S.*)$/;
 export const HEADING_RE = /^#\s+(.+)$/;
-export const STATUS_LINE_RE = /^\s*(?:[-*>]\s*)?(?:\*\*)?\s*status\s*[:=]\s*(.+?)\s*(?:\*\*)?\s*$/i;
+export const STATUS_LINE_RE =
+  /^\s*(?:[-*>]\s*)?(?:\*\*)?\s*status\s*(?:\*\*)?\s*[:=]\s*(.+?)\s*(?:\*\*)?\s*$/i;
 export const STATUS_DONE_RE = /\b(done|complete[ds]?|closed|shipped|applied|finished|resolved)\b/i;
 export const KEY_VALUE_RE = /^\s*([A-Za-z][\w-]*)\s*=\s*(.+)$/;
 

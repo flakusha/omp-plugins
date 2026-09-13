@@ -111,9 +111,10 @@ const DONE_LEAD_RE =
  *
  * Walks `.plan/{tickets,epics,backlog}` for `*.md` files, drops any whose
  * bold-status line matches DONE_LEAD_RE. Implemented here (rather than via
- * `planTickets`) because repo tickets use markdown-bold `**Status:**` while
- * `find-work`'s STATUS_LINE_RE expects plain `status:` — doing it ourselves
- * keeps `/bookkeep list` aligned with what the user actually wrote.
+ * `planTickets`) because `find-work` matches any status line but filters on
+ * a plain substring test, while `/bookkeep` must anchor the terminal-state
+ * word at the START of the decorated value (emoji/checkbox/strikethrough) so
+ * prose like "planned, **not** done" keeps the item listed.
  */
 export function discoverPlanningIds(root: string): string[] {
   if (!existsSync(join(root, ".plan"))) return [];
