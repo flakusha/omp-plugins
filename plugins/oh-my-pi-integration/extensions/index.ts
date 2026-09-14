@@ -1,15 +1,13 @@
 /**
- * Oh My Pi integration plugin — engram + rtk + lean-ctx.
+ * Oh My Pi integration plugin — engram.
  *
  * Scope: `~/.omp` only. This extension:
- *  1. Rewrites simple bash tool commands through `rtk` (output-trimming) or
- *     `lean-ctx -c` (compression) so agent tool output costs less context.
- *  2. Auto-saves concise memories to engram on mutations and at turn/session
+ *  1. Auto-saves concise memories to engram on mutations and at turn/session
  *     end.
  *
  * Opt out entirely with env `PI_INTEGRATION_DISABLE=1`.
  *
- * 3. Turn-start retrieval: when `PI_INTEGRATION_RETRIEVE=1`, at the start of
+ * 2. Turn-start retrieval: when `PI_INTEGRATION_RETRIEVE=1`, at the start of
  *    a turn the plugin searches engram for prior recorded memories for this
  *    project and injects a bounded context block into the agent loop, so the
  *    agent can reuse an already-recorded solution instead of re-deriving it.
@@ -18,19 +16,12 @@
  *    `PI_RETRIEVE_EVERY_TURN=1` to re-retrieve on every turn (default: once
  *    per session, where cross-session reuse matters most).
  *
- * 4. Receipt carriage: when `<project>/.omp/receipt.toml` exists, each turn
+ * 3. Receipt carriage: when `<project>/.omp/receipt.toml` exists, each turn
  *    carries the job ledger as an invisible footer message and applies the
  *    pruning chores (finished jobs dropped after 3 receipts). Fail-open;
  *    opt out with `PI_RECEIPT_DISABLE=1`.
- *
- * Safety model: single simple commands are additionally routed through `rtk`
- * when the installed binary exposes the subcommand. Anything else — including
- * compounds, pipelines, and argv0 wrappers — is compressed via `lean-ctx -c`
- * (whole command as one argv). Commands already routing through lean-ctx are
- * never re-wrapped, and PTY/async tool calls are never rewritten.
  */
 
-import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import type { ExtensionAPI, ExtensionContext, ToolResultEvent } from "@oh-my-pi/pi-coding-agent";
 import { isToolCallEventType } from "@oh-my-pi/pi-coding-agent/extensibility/extensions";
@@ -49,295 +40,6 @@ import { formatLintNote, lintablePath } from "./util/lint-feedback";
 import { createWorktreeBaseApplier } from "./util/worktree-base";
 
 const DISABLE = () => typeof process !== "undefined" && process.env?.PI_INTEGRATION_DISABLE === "1";
-
-/**
- * Read-only rtk subcommands whose filtering semantics are known-safe to route
- * through the `rtk` binary (output trimming that does not drop data the agent
- * needs). This curated set is the AUTHORITY for what we will ever route via
- * `rtk`; the installed rtk binary's actual subcommand list is discovered at
- * runtime (below) so routing stays in sync without emitting `rtk <missing>`.
- */
-const RTK_SAFE_SUBCOMMANDS: Record<string, true> = {
-  read: true,
-  ls: true,
-  tree: true,
-  git: true,
-  find: true,
-  grep: true,
-  rg: true,
-  wc: true,
-  diff: true,
-  log: true,
-  env: true,
-  json: true,
-  summary: true,
-  deps: true,
-  docker: true,
-  kubectl: true,
-  test: true,
-  psql: true,
-};
-
-/**
- * Parse the subcommand names from `rtk --help` output. rtk prints a Commands
- * block of `  <name>  <description>` lines; flags (`  -h, --help`) and other
- * indented option lines do not start with a lowercase letter and are skipped.
- */
-export function parseRtkSubcommands(helpText: string): Set<string> {
-  const names = new Set<string>();
-  for (const line of helpText.split("\n")) {
-    const m = /^ {2}([a-z][a-z0-9-]*)[\t ]{2,}/.exec(line);
-    if (m?.[1]) names.add(m[1]);
-  }
-  return names;
-}
-
-/**
- * Pure routing decision: should `cmd`'s binary be rewritten through `rtk`?
- * - Only binaries in the curated SAFE set are ever routed.
- * - If the installed rtk was not discoverable, we never emit `rtk <missing>`
- *   (the generic lean-ctx branch compresses instead).
- * - If rtk is present but its subcommand list could not be enumerated, fall
- *   back to trust the curated SAFE set.
- * - Otherwise route only when the installed rtk actually exposes `bin`.
- */
-export function routeRtk(bin: string, discovered: Set<string>, rtkAvailable: boolean): boolean {
-  if (!RTK_SAFE_SUBCOMMANDS[bin]) return false;
-  if (!rtkAvailable) return false;
-  if (discovered.size === 0) return true; // enumerable-rtk unavailable → trust curated set
-  return discovered.has(bin);
-}
-
-type RtkInfo = { available: boolean; subcommands: Set<string> };
-
-/** Lazily discover the installed rtk once per process (cheap `--help`). */
-let _rtkInfo: RtkInfo | null = null;
-function rtkInfo(): RtkInfo {
-  if (_rtkInfo) return _rtkInfo;
-  _rtkInfo = loadRtkInfo();
-  return _rtkInfo;
-}
-
-function loadRtkInfo(): RtkInfo {
-  try {
-    const res = spawnSync("rtk", ["--help"], { encoding: "utf8", timeout: 5000 });
-    if (res.error || res.status !== 0 || !res.stdout) {
-      return { available: false, subcommands: new Set() };
-    }
-    return { available: true, subcommands: parseRtkSubcommands(res.stdout) };
-  } catch {
-    return { available: false, subcommands: new Set() };
-  }
-}
-
-/**
- * Shell constructs that break naive command rewriting: separators, pipelines,
- * redirects, command substitution, grouping. If any appear, we skip the rewrite.
- */
-const SHELL_CONTROL = /[|;&<>`$(){}\\\n]/;
-
-// Any `lean-ctx` token in the command — as the binary, behind env-var
-// assignments, or inside an argument — means the command is already routed
-// (or quotes one). Re-wrapping it would synthesize the banned double-wrap
-// `lean-ctx -c "lean-ctx -c \"…\""` (bashInterceptor hard-ban + AGENTS.md
-// single-wrap invariant), so such commands pass through untouched.
-const LEAN_CTX_TOKEN_RE = /(^|[\s"'=])lean-ctx\b/;
-
-/** A simple command is a single command word plus plain args. */
-export function isSimpleCommand(cmd: string): boolean {
-  if (!cmd || cmd.length === 0) return false;
-  if (cmd.trim() !== cmd) return false; // no leading/trailing whitespace groups
-  if (SHELL_CONTROL.test(cmd)) return false; // no shell metachars / separators
-  if (/^(sudo|env|nohup|time|nice)\s+/.test(cmd)) return false; // wrappers change argv0
-  return true;
-}
-
-/** First whitespace-delimited token (the binary name). */
-function firstToken(cmd: string): string {
-  const m = cmd.match(/^([^\s]+)/);
-  return m?.[1] ?? "";
-}
-
-/**
- * Native-binary → rtk-subcommand bridge. Handles the read-family
- * (`cat`/`head`/`tail`/`less`/`more`), which `routeRtk` does NOT cover (rtk
- * proxies them through `rtk read`, not `rtk cat`). Returns the rewritten
- * command string, or `undefined` when no safe mapping exists.
- *
- * Argument translation rules (intentionally narrow; anything ambiguous returns
- * undefined so the upstream `routeRtk` / `lean-ctx -c` paths handle it):
- *   cat [flags] <files...>  → rtk read [flags] <files...>     (cat -n / -E / -A kept when rtk read supports them; -A / -E rejected)
- *   head [-n N | -N] [file] → rtk read [--max-lines N] [file]
- *   tail [-n N | -N] [file] → rtk read [--tail-lines N] [file]
- *   less [-N] <file>        → rtk read [-N] <file>
- *   more <file>             → rtk read <file>
- *
- * Rejected (returns undefined → upstream fallback):
- *   - cat -A / -E / -T / -v (rtk read does not expose show-special-chars)
- *   - head -c N (byte count, not line count)
- *   - tail -c N (byte count)
- *   - head/tail --help, --version (info commands; not file reads)
- *   - any args containing '=' (env-var-style, ambiguous)
- *
- * --------------------------------------------------------------------------
- * ARCHITECTURAL CEILING: this function rewrites to another `bash` invocation.
- * It does NOT route to MCP. Hooks cannot reshape `toolName` (`bash` stays
- * `bash`), and `ExtensionContext` does not expose MCP client APIs to
- * extensions — so the dispatch layer can compress via rtk but cannot route
- * a `bash "cat file"` call to `mcp__lean_ctx_ctx_read`. The two ways to get
- * MCP routing for read-family commands are:
- *   1. Prompt-time: agent calls the built-in `read` tool directly (see rule
- *      `bash-read-family-prefer-read-tool`), which then triggers
- *      `lean-ctx-native-reroute` → `xd://mcp__lean_ctx_ctx_read`.
- *   2. Upstream: omp exposes MCP client to extensions so this function can
- *      dispatch directly. Tracked as an upstream issue.
- * Until then, this is the maximum compression achievable at the hook layer.
- * --------------------------------------------------------------------------
-/** Flags rtk read does NOT expose on `cat`. */
-const CAT_UNSUPPORTED = new Set([
-  "-A",
-  "-B",
-  "-E",
-  "-T",
-  "-v",
-  "--show-all",
-  "--show-ends",
-  "--show-tabs",
-  "--show-nonprinting",
-]);
-
-/** `cat [flags] <files...>` -> `rtk read [flags] <files...>`. */
-function handleCat(args: string[]): string | undefined {
-  for (const a of args) {
-    const isSafeFlag = a === "-n" || a === "--" || a === "-";
-    if (a.startsWith("-") && !isSafeFlag && CAT_UNSUPPORTED.has(a)) return undefined;
-  }
-  return ["rtk", "read", ...args.filter((a) => a !== "-n")].join(" ");
-}
-
-/** `less`/`more` -> `rtk read`; `-N` (less line numbers) maps to `-n`. */
-function handleLessMore(args: string[]): string {
-  return ["rtk", "read", ...args.map((a) => (a === "-N" ? "-n" : a))].join(" ");
-}
-
-type HeadTailAction =
-  | { kind: "count"; count: string }
-  | { kind: "reject" }
-  | { kind: "passthrough" };
-
-/** Classify one head/tail arg into an action. Pure, no side effects. */
-function classifyHeadTailArg(a: string, fileSeen: boolean): HeadTailAction {
-  if (a === "-c" || a === "--bytes") return { kind: "reject" };
-  if (a === "--help" || a === "--version" || a === "-h" || a === "-V") return { kind: "reject" };
-  if (a === "-n" || a === "--lines") return { kind: "count", count: "PENDING" };
-  const m = /^[-+]?(\d+)$/.exec(a);
-  if (m?.[1] && !fileSeen) return { kind: "count", count: m[1] };
-  if (a.startsWith("-")) return { kind: "reject" };
-  return { kind: "passthrough" };
-}
-
-/** Consume a `-n N` / `--lines N` pair; returns the validated count or undefined. */
-function readCountArg(args: string[], i: number): { count: string; nextI: number } | undefined {
-  const n = args[i + 1];
-  if (!n || !/^\d+$/.test(n)) return undefined;
-  return { count: n, nextI: i + 1 };
-}
-
-/** `head [-n N | -N] [file]` -> `rtk read [--max-lines N] [file]`. */
-function handleHeadTail(bin: "head" | "tail", args: string[]): string | undefined {
-  const flag = bin === "head" ? "--max-lines" : "--tail-lines";
-  const out: string[] = ["rtk", "read"];
-  let count: string | undefined;
-  let fileSeen = false;
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    if (a === undefined) continue;
-    const action = classifyHeadTailArg(a, fileSeen);
-    if (action.kind === "reject") return undefined;
-    if (action.kind === "passthrough") {
-      fileSeen = true;
-      out.push(a);
-      continue;
-    }
-    // action.kind === "count"
-    if (action.count !== "PENDING") {
-      count = action.count;
-      continue;
-    }
-    const pair = readCountArg(args, i);
-    if (!pair) return undefined;
-    count = pair.count;
-    i = pair.nextI;
-  }
-  if (count !== undefined) out.splice(2, 0, flag, count);
-  return out.join(" ");
-}
-
-export function nativeToRtk(cmd: string): string | undefined {
-  // isSimpleCommand above guarantees whitespace-separated plain args.
-  const [bin, ...args] = cmd.split(/\s+/);
-  if (bin === "cat") return handleCat(args);
-  if (bin === "less" || bin === "more") return handleLessMore(args);
-  if (bin === "head" || bin === "tail") return handleHeadTail(bin, args);
-  return undefined;
-}
-
-/**
- * Decide the rewritten command, or return the original when nothing applies.
- * Binary availability is checked for lean-ctx (a compression wrapper) so we
- * never block or alter commands on machines without it. `rtk` is only applied
- * when we know its subcommand exists in the rtk surface.
- */
-export function rewriteCommand(
-  cmd: string,
-  pty: boolean | undefined,
-  isAsync: boolean | undefined,
-): string {
-  if (pty || isAsync) return cmd; // never touch interactive / background
-  // Single-wrap invariant: a command that already routes through lean-ctx
-  // (or embeds the token) must pass through untouched — wrapping it would
-  // synthesize the banned `lean-ctx -c "lean-ctx -c \"…\""` form, which
-  // bashInterceptor then hard-blocks as an agent violation.
-  if (LEAN_CTX_TOKEN_RE.test(cmd)) return cmd;
-
-  if (isSimpleCommand(cmd)) {
-    // 0) Native-binary → rtk-subcommand bridge (cat/head/tail/less/more → rtk read).
-    //    Runs before routeRtk because those binaries are NOT in RTK_SAFE_SUBCOMMANDS
-    //    (the safe set keys on rtk subcommands, not native binaries). This path
-    //    picks them up directly without falling through to `lean-ctx -c "cat …"`.
-    const bridged = nativeToRtk(cmd);
-    if (bridged) return bridged;
-
-    // 1) rtk output-trimming: route through the installed rtk binary.
-    //    `routeRtk` gates on the curated SAFE set AND the discovered subcommand
-    //    list, so we never emit `rtk <missing>` on a machine without the binary
-    //    (falls through to lean-ctx, which still compresses).
-    const { available, subcommands } = rtkInfo();
-    if (routeRtk(firstToken(cmd), subcommands, available)) {
-      return `rtk ${cmd}`;
-    }
-  }
-
-  // 2) lean-ctx compression for anything else — including compounds,
-  //    pipelines, and argv0-wrapper commands. `lean-ctx -c` takes the whole
-  //    command as ONE argv (JSON.stringify), so shell constructs are safe
-  //    here; only the `rtk <cmd>` prefix above needs the simple-command
-  //    restriction. Only when lean-ctx is present.
-  if (leanCtxAvailable()) {
-    return `lean-ctx -c ${JSON.stringify(cmd)}`;
-  }
-
-  return cmd;
-}
-
-/** Presence cache: lean-ctx is checked once per process via PATH. */
-let _leanCtx: boolean | null = null;
-function leanCtxAvailable(): boolean {
-  if (_leanCtx !== null) return _leanCtx;
-  const pathEnv = (process.env as { PATH?: string }).PATH ?? "";
-  _leanCtx = pathEnv.split(":").some((dir) => dir && existsSync(`${dir}/lean-ctx`));
-  return _leanCtx;
-}
 
 /** Extract a short human note from a built-in tool result for the memory buffer. */
 function toolNote(event: {
@@ -373,18 +75,6 @@ export default function integrationPlugin(pi: ExtensionAPI): void {
       /* engram save must never break the agent loop */
     }
   }
-
-  // ---- 1) bash tool-call rewrite (rtk / lean-ctx) ----
-  pi.on("tool_call", (event) => {
-    if (!isToolCallEventType("bash", event)) return;
-    const { command, pty, async: isAsync } = event.input;
-    if (!command || command.startsWith("#")) return;
-
-    const rewritten = rewriteCommand(command, pty, isAsync);
-    if (rewritten === command) return;
-
-    return { input: { ...event.input, command: rewritten } };
-  });
 
   // ---- 4) GPG signing hard-stop guard ----
   // Agents habitually try to "discover gpg config" / restart gpg-agent after a
@@ -651,5 +341,5 @@ export default function integrationPlugin(pi: ExtensionAPI): void {
   // at load so they resolve in every session of every profile.
   registerCommands(pi);
 
-  pi.setLabel("engram-rtk-leanctx");
+  pi.setLabel("engram");
 }

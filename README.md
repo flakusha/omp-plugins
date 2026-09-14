@@ -8,7 +8,7 @@ project skill — all loadable into any omp profile.
 
 | Piece | Path | Loaded by omp via |
 |---|---|---|
-| Integration extension — rtk/lean-ctx bash rewrite, engram memory auto-save + turn-start retrieval, receipt carriage, GPG/SSH hard-stop guards, global `/receipt` `/verify` `/recall` `/find-work` `/finalize` `/bookkeep` `/worktree` `/wt` commands | `plugins/oh-my-pi-integration/extensions/index.ts` (+ `guards/`, `receipt/`, `commands/`) | `package.json` → `omp.extensions` |
+| Integration extension — engram memory auto-save + turn-start retrieval, receipt carriage, GPG/SSH hard-stop guards, global `/receipt` `/verify` `/recall` `/find-work` `/finalize` `/bookkeep` `/worktree` `/wt` commands | `plugins/oh-my-pi-integration/extensions/index.ts` (+ `guards/`, `receipt/`, `commands/`) | `package.json` → `omp.extensions` |
 | Universal project rules — harness behavior, tool-routing discipline, strict review standards, docs-and-planning audit, parallel-safe tests, config merge precedence, safe-command guards | `plugins/oh-my-pi-integration/rules/` | `~/.omp/agent/rules/` **and** `~/.omp/rules/` (both; root-level is picked up directly by omp) |
 | omp-specific universal agent rules (receipt contract) — one canonical document; each profile's `AGENTS.md` is an installer-managed symlink | `AGENTS.md` | `agent/AGENTS.md` + per-profile symlinks |
 | Agent config scaffold (no credentials) | `agent/config.yml` | `agent/config.yml` |
@@ -18,16 +18,6 @@ plugin can be installed directly with `omp plugin install`.
 
 ### What the extension does
 
-- **Bash tool-call rewrite** — rewrites `bash` tool calls to use `rtk`
-  (output trimming) or `lean-ctx -c` (compression) so agent tool output costs
-  less context. Simple commands route through `rtk` when the installed binary
-  exposes a curated safe subcommand; anything else — compounds, pipelines,
-  argv0 wrappers — is compressed via `lean-ctx -c` (whole command as one
-  argv). Commands already routing through lean-ctx are never re-wrapped
-  (single-wrap invariant), and PTY or async calls are passed through
-  untouched. rtk subcommands are discovered at runtime from the installed
-  binary (`rtk --help`) — version drift or a missing rtk falls through to
-  lean-ctx.
 - **Engram memory persistence** — buffers notable mutations each turn and saves
   them to [engram](https://engram.sh) at turn end and session shutdown, so later
   sessions can reuse recorded solutions.

@@ -94,7 +94,7 @@ describe("normalizePatternLine", () => {
 
   test("strips surrounding double and single quotes", () => {
     expect(normalizePatternLine('- pattern: "^\\s*git\\s+stash"')).toBe("^\\s*git\\s+stash");
-    expect(normalizePatternLine("- pattern: '^\\s*lean-ctx\\s+-c'")).toBe("^\\s*lean-ctx\\s+-c");
+    expect(normalizePatternLine("- pattern: '^\\s*git\\s+stash'")).toBe("^\\s*git\\s+stash");
     expect(normalizePatternLine('- pattern:  "  padded  "  ')).toBe("padded");
   });
 
@@ -309,7 +309,7 @@ describe("fix regressions at runInstall level", () => {
     expect(await runInstall(["--target", t])).toBe(0);
     const canonical = readFileSync(join(t, ".omp", "agent", "APPEND_SYSTEM.md"), "utf8");
     expect(canonical.trim().length).toBeGreaterThan(0);
-    expect(canonical).toContain("ctx_patch");
+    expect(canonical).toContain("hub");
     const link = join(t, ".omp", "profiles", "minimax", "agent", "APPEND_SYSTEM.md");
     expect(readlinkSync(link)).toBe("../../../agent/APPEND_SYSTEM.md");
     expect(readFileSync(link, "utf8")).toBe(canonical);
@@ -324,7 +324,7 @@ describe("fix regressions at runInstall level", () => {
     await runInstall(["--target", t]);
     expect(readFileSync(link, "utf8")).toBe("custom profile append\n");
     await runInstall(["--target", t, "--force"]);
-    expect(readFileSync(link, "utf8")).toContain("ctx_patch");
+    expect(readFileSync(link, "utf8")).toContain("hub");
     expect(readFileSync(`${link}.bak`, "utf8")).toBe("custom profile append\n");
   });
 

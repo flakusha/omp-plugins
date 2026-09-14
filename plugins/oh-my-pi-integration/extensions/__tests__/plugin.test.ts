@@ -190,7 +190,7 @@ describe("integrationPlugin — registration", () => {
   test("registers every handler and the plugin label", () => {
     const pi = new FakePi();
     integrationPlugin(pi as unknown as ExtensionAPI);
-    expect(pi.handlers.get("tool_call")).toHaveLength(3);
+    expect(pi.handlers.get("tool_call")).toHaveLength(2);
     expect(pi.handlers.get("tool_result")).toHaveLength(5);
     for (const event of [
       "turn_start",
@@ -201,7 +201,7 @@ describe("integrationPlugin — registration", () => {
     ]) {
       expect(pi.handlers.get(event)).toHaveLength(event === "before_agent_start" ? 2 : 1);
     }
-    expect(pi.labels).toEqual(["engram-rtk-leanctx"]);
+    expect(pi.labels).toEqual(["engram"]);
     expect([...pi.commands.keys()].sort()).toEqual([
       "bookkeep",
       "finalize",
@@ -224,24 +224,6 @@ describe("integrationPlugin — registration", () => {
 });
 
 describe("integrationPlugin — tool_call wiring", () => {
-  test("rewrites a bare cat through the rtk bridge", async () => {
-    const pi = new FakePi();
-    integrationPlugin(pi as unknown as ExtensionAPI);
-    const results = await pi.emit("tool_call", bashCallEvent("cat a.txt"), makeCtx("/repo"));
-    const rewritten = results.filter(
-      (r) =>
-        r !== null &&
-        typeof r === "object" &&
-        "input" in r &&
-        r.input !== null &&
-        typeof r.input === "object" &&
-        "command" in r.input,
-    );
-    expect(rewritten).toHaveLength(1);
-    const input = (rewritten[0] as { input: { command: string } }).input;
-    expect(input.command).toBe("rtk read a.txt");
-  });
-
   test("blocks gpg-agent tampering", async () => {
     const pi = new FakePi();
     integrationPlugin(pi as unknown as ExtensionAPI);

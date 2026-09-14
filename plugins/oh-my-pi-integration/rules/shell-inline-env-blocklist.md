@@ -33,7 +33,7 @@ right shape is one of:
 | Persist globally | `git config --global core.editor true` (writes `~/.gitconfig`) |
 | One-shot via git's flag | `git -c core.editor=true ...` (the `-c KEY=VALUE` form is NOT the same as inline env; it is git's own flag and is allowed) |
 | One-shot via env, when needed | Pass `env: {"KEY": "value"}` to the tool, NOT inline `KEY=value` |
-| Complex sequence needing env | Write a re-executable `./.tmp/<name>.{sh,js,py}` and invoke via `lean-ctx -c "cd <repo> && bun <name>.js"` |
+| Complex sequence needing env | Write a re-executable `./.tmp/<name>.{sh,js,py}` and invoke it (e.g. `env KEY=val bun ./.tmp/<name>.js` via the tool's `env:` field) |
 
 ## What NOT to do
 
