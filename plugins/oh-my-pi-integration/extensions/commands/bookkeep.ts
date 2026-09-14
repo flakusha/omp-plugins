@@ -104,17 +104,18 @@ export function bookkeepUsage(env: BookkeepEnv): string {
  */
 const DONE_STATUS_RE = /\*\*\s*([^*]+?)\s*\*\*\s*[:=]?\s*(.+)/gi;
 const DONE_LEAD_RE =
-  /^\s*(?:[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]+\s*|\[[ xX]\]\s*|~~?\s*)?(done|complete[ds]?|closed|shipped|applied|finished|resolved|won'?t\s+do|deferred|cancelled|abandoned)\b/iu;
+  /^\s*(?:[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]+\s*|\[[^\]]*\]\s*|~~?\s*)?(done|fixed|complete[ds]?|closed|shipped|applied|finished|resolved|won'?t\s+(?:fix|do)|not-a-bug|deferred|cancelled|abandoned)\b/iu;
 
 /**
  * Pure: IDs the user could target for audit/find/issue. Done items filtered.
  *
  * Walks `.plan/{tickets,epics,backlog}` for `*.md` files, drops any whose
  * bold-status line matches DONE_LEAD_RE. Implemented here (rather than via
- * `planTickets`) because `find-work` matches any status line but filters on
- * a plain substring test, while `/bookkeep` must anchor the terminal-state
- * word at the START of the decorated value (emoji/checkbox/strikethrough) so
- * prose like "planned, **not** done" keeps the item listed.
+ * `planTickets`) because `find-work` matches any status line anywhere in the
+ * first 4 KiB, while `/bookkeep` only honors the bold line actually labeled
+ * `status`. Both anchor the terminal-state word at the START of the decorated
+ * value (emoji/bracket tag/strikethrough) so prose like "planned, **not**
+ * done" or "In Progress (… fixed …)" keeps the item listed.
  */
 export function discoverPlanningIds(root: string): string[] {
   if (!existsSync(join(root, ".plan"))) return [];

@@ -148,8 +148,9 @@ export const RECEIPT_ID_PREFIX_RE = /^([BFEI])(-\d+)?$/i;
 export const NUMBERED_LINE_RE = /^\s*(?:#?(\d+)[.)]?\s+)(\S.*)$/;
 export const HEADING_RE = /^#\s+(.+)$/;
 export const STATUS_LINE_RE =
-  /^\s*(?:[-*>]\s*)?(?:\*\*)?\s*status\s*(?:\*\*)?\s*[:=]\s*(.+?)\s*(?:\*\*)?\s*$/i;
-export const STATUS_DONE_RE = /\b(done|complete[ds]?|closed|shipped|applied|finished|resolved)\b/i;
+  /^\s*(?:[-*>]\s*)?(?:\*\*)?\s*status\s*(?:\*\*)?\s*[:=]\s*(?:\*\*)?\s*(.+?)\s*(?:\*\*)?\s*$/i;
+export const STATUS_DONE_RE =
+  /^\s*(?:[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]+\s*|\[[^\]]*\]\s*|~~?\s*)*(done|fixed|complete[ds]?|closed|shipped|applied|finished|resolved|won'?t\s+(?:fix|do)|not-a-bug)\b/iu;
 export const KEY_VALUE_RE = /^\s*([A-Za-z][\w-]*)\s*=\s*(.+)$/;
 
 export const DEFAULT_PRIORITY = "P3";
@@ -554,6 +555,7 @@ export function planTickets(root: string): WorkTicket[] {
     } catch {
       continue;
     }
+    files.sort(); // deterministic order — readdirSync returns fs-hash order
     for (const file of files) {
       if (!file.endsWith(".md")) continue;
       const ticket = planFileTicket(join(root, ".plan", dir), file, dir, kind);
@@ -622,8 +624,8 @@ interface ExecLike {
 
 /**
  * Fetch tickets from every handler-fetchable source. Per-source failures
- * become warnings; the rest of the sources still contribute. Result is
- * capped at MAX_TICKETS with a truncation warning.
+ * become warnings; the rest of the sources still contribute. Uncapped —
+ * the caller filters and caps (see presentFindWork).
  */
 export async function fetchTickets(
   pi: ExecLike,
@@ -669,10 +671,6 @@ export async function fetchTickets(
     warnings.push("worktree tracker CLI detected — resolve via `/bookkeep` or an ask turn");
   }
 
-  if (tickets.length > MAX_TICKETS) {
-    warnings.push(`showing first ${MAX_TICKETS} of ${tickets.length} items`);
-    return { tickets: tickets.slice(0, MAX_TICKETS), warnings };
-  }
   return { tickets, warnings };
 }
 
@@ -799,7 +797,7 @@ async function presentFindWork(
   tickets: WorkTicket[],
 ): Promise<void> {
   const sources = detectWorkSources(root);
-  const filtered = filterTickets(
+  let filtered = filterTickets(
     tickets,
     // In ask mode the query is the turn directive, never a result filter.
     parsed.mode === "ask" ? { ...parsed, query: "" } : parsed,
@@ -815,6 +813,10 @@ async function presentFindWork(
     const suffix = parsed.query ? ` matching '${parsed.query}'` : "";
     ctx.ui.notify(`no open work items found${suffix}`, "info");
     return;
+  }
+  if (filtered.length > MAX_TICKETS) {
+    ctx.ui.notify(`showing first ${MAX_TICKETS} of ${filtered.length} matching items`, "warning");
+    filtered = filtered.slice(0, MAX_TICKETS);
   }
   const labeled = labelTickets(filtered, parsed.scheme);
   if (parsed.mode === "ask") {

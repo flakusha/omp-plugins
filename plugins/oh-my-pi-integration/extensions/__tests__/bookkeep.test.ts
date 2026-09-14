@@ -306,6 +306,22 @@ describe("discoverPlanningIds / buildListPrompt", () => {
     expect(discoverPlanningIds(root)).toEqual(["D-open"]);
   });
 
+  test("fixed / not-a-bug / won't fix lead statuses filter; negated + prose stay", () => {
+    const root = tempDir("bk-discfixed-");
+    for (const dir of ["tickets", "epics", "backlog"] as const)
+      mkdirSync(join(root, ".plan", dir), { recursive: true });
+    writeFileSync(join(root, ".plan/tickets/A-fixed.md"), "# A\n\n**Status:** fixed-in-worktree\n");
+    writeFileSync(join(root, ".plan/tickets/B-nab.md"), "# B\n\n**Status:** not-a-bug\n");
+    writeFileSync(join(root, ".plan/tickets/C-wontfix.md"), "# C\n\n**Status:** won't fix\n");
+    writeFileSync(join(root, ".plan/tickets/E-oktag.md"), "# E\n\n**Status:** [OK] Fixed (f32d0a45)\n");
+    writeFileSync(join(root, ".plan/tickets/D-open.md"), "# D\n\n**Status:** not-yet-implemented\n");
+    writeFileSync(
+      join(root, ".plan/tickets/F-inprog.md"),
+      "# F\n\n**Status:** 🔄 In Progress (fixed by backfill later)\n",
+    );
+    expect(discoverPlanningIds(root).sort()).toEqual(["D-open", "F-inprog"].sort());
+  });
+
   test("decorative bold line before Status does not shadow the status value", () => {
     // Regression: `**Epic:** … closed-loop …` must not drop an In-Progress
     // ticket just because an earlier bold line's value contains a done-word.

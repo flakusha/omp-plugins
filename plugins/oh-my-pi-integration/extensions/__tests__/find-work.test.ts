@@ -482,6 +482,38 @@ describe("planTickets", () => {
     expect(ids).toContain("C-1");
     expect(ids).not.toContain("C-2");
   });
+
+  test("fixed / not-a-bug / won't fix lead statuses terminal; negated + prose stay open", () => {
+    // FW-03 regression: loop-lore `**Status**: fixed-in-worktree` and
+    // `✅ Fixed (commit …)` tickets leaked; `fixed` was missing entirely.
+    const dir = tempDir("fw-plan-fixed-");
+    mkdirSync(join(dir, ".plan", "tickets"), { recursive: true });
+    writeFileSync(
+      join(dir, ".plan", "tickets", "B-3.md"),
+      "# Fixed in worktree\n**Status**: fixed-in-worktree\n",
+    );
+    writeFileSync(join(dir, ".plan", "tickets", "B-4.md"), "# Not a bug\n**Status**: not-a-bug\n");
+    writeFileSync(join(dir, ".plan", "tickets", "B-6.md"), "# Declined\n**Status**: won't fix\n");
+    writeFileSync(
+      join(dir, ".plan", "tickets", "B-7.md"),
+      "# Fixed with emoji\n**Status**: ✅ Fixed (ccac5b9d server)\n",
+    );
+    writeFileSync(
+      join(dir, ".plan", "tickets", "B-8.md"),
+      "# Fixed with ok tag\n**Status**: [OK] Fixed (f32d0a45)\n",
+    );
+    // Traps: negated word forms and the word `fixed` inside prose must stay.
+    writeFileSync(
+      join(dir, ".plan", "tickets", "B-5.md"),
+      "# Still open\n**Status**: not-yet-implemented\n",
+    );
+    writeFileSync(
+      join(dir, ".plan", "tickets", "B-9.md"),
+      "# In progress prose\n**Status**: 🔄 In Progress (converges fixed by backfill later)\n",
+    );
+    const ids = planTickets(dir).map((t) => t.id);
+    expect(ids).toEqual(["B-5", "B-9"]);
+  });
   test("missing .plan dir yields nothing", () => {
     expect(planTickets(tempDir("fw-noplan-"))).toEqual([]);
   });
@@ -566,7 +598,7 @@ describe("fetchTickets", () => {
     expect(warnings.some((w) => w.includes("worktree tracker CLI"))).toBe(true);
   });
 
-  test("results cap at MAX_TICKETS with a truncation warning", async () => {
+  test("fetchTickets returns uncapped results without a truncation warning", async () => {
     const many = Array.from({ length: MAX_TICKETS + 5 }, (_, i) => ticket({ id: `#${i}` }));
     const pi = new FakePi();
     pi.scripted.push({ stdout: JSON.stringify(many) });
@@ -579,10 +611,8 @@ describe("fetchTickets", () => {
       glab: false,
       trackerCli: false,
     });
-    expect(tickets).toHaveLength(MAX_TICKETS);
-    expect(warnings.join("\n")).toContain(
-      `showing first ${MAX_TICKETS} of ${MAX_TICKETS + 5} items`,
-    );
+    expect(tickets).toHaveLength(MAX_TICKETS + 5);
+    expect(warnings).toHaveLength(0);
   });
 });
 
@@ -841,5 +871,69 @@ describe("/find-work handler", () => {
   test("description is a non-empty usage string", () => {
     const commands = registered();
     expect(commands.get("find-work")?.description).toContain("/find-work [list|table|ask]");
+  });
+
+  test("list mode truncates after filtering with an accurate warning", async () => {
+    const dir = tempDir("fw-h-cap-");
+    mkdirSync(join(dir, ".omp"), { recursive: true });
+    const jobs = Array.from(
+      { length: MAX_TICKETS + 5 },
+      (_, i) => `[[job]]\nB-${String(i).padStart(2, "0")} = "fix thing ${i}"\n`,
+    ).join("");
+    writeFileSync(join(dir, ".omp", "receipt.toml"), jobs);
+    const notified: Array<[string, string | undefined]> = [];
+    const pi = new FakePi();
+    registerFindWork(pi as unknown as ExtensionAPI);
+    await run(pi, "", makeCtx(dir, notified));
+    expect(notified[0]).toEqual([
+      `showing first ${MAX_TICKETS} of ${MAX_TICKETS + 5} matching items`,
+      "warning",
+    ]);
+    expect(notified[1]?.[0]).toContain(`found ${MAX_TICKETS} open work item(s)`);
+  });
+
+  test("ask bugs surfaces filtered bugs beyond the raw cap instead of the agent fallback", async () => {
+    const dir = tempDir("fw-h-askbugs-");
+    const ticketsDir = join(dir, ".plan", "tickets");
+    mkdirSync(ticketsDir, { recursive: true });
+    for (let i = 0; i < MAX_TICKETS + 5; i++) {
+      writeFileSync(join(ticketsDir, `FEAT-${String(i).padStart(3, "0")}.md`), `# FEAT: filler ${i}\n`);
+    }
+    writeFileSync(join(ticketsDir, "BUG-real-crash.md"), "# BUG: real crash\n\n**Status**: open\n");
+    writeFileSync(join(ticketsDir, "BUG-other-crash.md"), "# BUG: other crash\n");
+    let askedQuestions: unknown;
+    const askDialog: AskDialog = async (questions) => {
+      askedQuestions = questions;
+      return undefined;
+    };
+    const pi = new FakePi();
+    registerFindWork(pi as unknown as ExtensionAPI);
+    await run(pi, "ask bugs", makeCtx(dir, [], askDialog));
+    // Pre-fix regression: the raw first-40 slice was fs-order (all FEAT here),
+    // so the bug filter emptied the list and ask mode fell back to the
+    // agent-search turn instead of showing a dialog.
+    expect(askedQuestions).toBeDefined();
+    const qs = askedQuestions as Array<{ options: Array<{ label: string }> }>;
+    const labels = qs.flatMap((q) => q.options.map((o) => o.label));
+    expect(labels).toHaveLength(2);
+    expect(labels.every((l) => l.includes("BUG-"))).toBe(true);
+    expect(pi.sentUserMessages).toHaveLength(0);
+  });
+
+  test("plan scan is name-sorted so truncation samples deterministically", async () => {
+    const dir = tempDir("fw-h-sort-");
+    const ticketsDir = join(dir, ".plan", "tickets");
+    mkdirSync(ticketsDir, { recursive: true });
+    for (const name of ["TASK-zeta", "TASK-alpha", "TASK-mid"]) {
+      writeFileSync(join(ticketsDir, `${name}.md`), `# ${name.replace("-", " ")}\n`);
+    }
+    const notified: Array<[string, string | undefined]> = [];
+    const pi = new FakePi();
+    registerFindWork(pi as unknown as ExtensionAPI);
+    await run(pi, "", makeCtx(dir, notified));
+    const out = notified[0]?.[0] ?? "";
+    expect(out.indexOf("1. TASK-alpha")).toBeGreaterThan(-1);
+    expect(out.indexOf("2. TASK-mid")).toBeGreaterThan(out.indexOf("1. TASK-alpha"));
+    expect(out.indexOf("3. TASK-zeta")).toBeGreaterThan(out.indexOf("2. TASK-mid"));
   });
 });
