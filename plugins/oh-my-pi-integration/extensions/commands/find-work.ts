@@ -797,11 +797,14 @@ async function presentFindWork(
   tickets: WorkTicket[],
 ): Promise<void> {
   const sources = detectWorkSources(root);
-  let filtered = filterTickets(
-    tickets,
-    // In ask mode the query is the turn directive, never a result filter.
-    parsed.mode === "ask" ? { ...parsed, query: "" } : parsed,
-  );
+  let filtered = filterTickets(tickets, parsed);
+  if (parsed.mode === "ask" && parsed.query && filtered.length === 0) {
+    // The directive has no lexical overlap with the roster (e.g. prose like
+    // "propose fixes"): keep the dialog, but say so instead of silently
+    // presenting unrelated priority-order tickets as topic candidates.
+    ctx.ui.notify(`no open items match '${parsed.query}' — showing unfiltered`, "info");
+    filtered = filterTickets(tickets, { ...parsed, query: "" });
+  }
   if (filtered.length === 0) {
     // Ask mode with nothing fetched still serves the user: sources the
     // handler cannot exec (jira, glab, tracker CLI) are resolved by the

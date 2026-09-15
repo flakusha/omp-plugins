@@ -840,8 +840,44 @@ describe("/find-work handler", () => {
     registerFindWork(pi as unknown as ExtensionAPI);
     await run(pi, "ask find anything", makeCtx(tempDir("fw-h-emptyask-"), notified));
     expect(pi.sentUserMessages).toHaveLength(1);
-    expect(pi.sentUserMessages[0]).toContain("User directive: find anything");
-    expect(notified).toHaveLength(0);
+    expect(notified[0]?.[0]).toContain("no open items match 'find anything'");
+  });
+
+  test("ask mode filters dialog candidates by the query (FW-04)", async () => {
+    const dir = tempDir("fw-h-asktopic-");
+    mkdirSync(join(dir, ".omp"), { recursive: true });
+    writeFileSync(
+      join(dir, ".omp", "receipt.toml"),
+      '[[job]]\nB-01 = "fix the crash"\n\n[[job]]\nC-01 = "characters page layout"\n',
+    );
+    let askedLabels: string[] = [];
+    const askDialog: AskDialog = async (questions) => {
+      askedLabels = (questions as Array<{ options: Array<{ label: string }> }>).flatMap((q) =>
+        q.options.map((o) => o.label),
+      );
+      return undefined;
+    };
+    const notified: Array<[string, string | undefined]> = [];
+    const pi = new FakePi();
+    registerFindWork(pi as unknown as ExtensionAPI);
+    await run(pi, "ask characters", makeCtx(dir, notified, askDialog));
+    expect(askedLabels).toHaveLength(1);
+    expect(askedLabels[0]).toContain("characters page layout");
+    expect(askedLabels[0]).not.toContain("fix the crash");
+    expect(notified[0]).toEqual(["find-work: cancelled", "info"]);
+  });
+
+  test("ask mode with a directive that matches nothing keeps the dialog, unfiltered", async () => {
+    const dir = tempDir("fw-h-askprose-");
+    mkdirSync(join(dir, ".omp"), { recursive: true });
+    writeFileSync(join(dir, ".omp", "receipt.toml"), '[[job]]\nB-01 = "fix the crash"\n');
+    const askDialog: AskDialog = async () => undefined;
+    const notified: Array<[string, string | undefined]> = [];
+    const pi = new FakePi();
+    registerFindWork(pi as unknown as ExtensionAPI);
+    await run(pi, "ask propose fixes", makeCtx(dir, notified, askDialog));
+    expect(notified[0]?.[0]).toContain("no open items match 'propose fixes'");
+    expect(pi.sentUserMessages).toHaveLength(0); // cancelled dialog -> no turn
   });
 
   test("unknown dialog selection reports no selection", async () => {
