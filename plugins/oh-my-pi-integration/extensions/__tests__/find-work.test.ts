@@ -34,6 +34,7 @@ import {
   renderList,
   renderTable,
 } from "../commands/find-work";
+import { readPlanLabels } from "../util/plan-frontmatter";
 
 type CommandHandler = (args: string, ctx: ExtensionCommandContext) => Promise<void>;
 
@@ -516,6 +517,55 @@ describe("planTickets", () => {
   });
   test("missing .plan dir yields nothing", () => {
     expect(planTickets(tempDir("fw-noplan-"))).toEqual([]);
+  });
+  test("labels from frontmatter/Labels/Tags headers drive kind, priority, domain", () => {
+    const dir = tempDir("fw-plan-labels-");
+    mkdirSync(join(dir, ".plan", "tickets"), { recursive: true });
+    mkdirSync(join(dir, ".plan", "epics"), { recursive: true });
+    writeFileSync(
+      join(dir, ".plan", "tickets", "L-1.md"),
+      "---\nlabels: [bug, p1, crypto]\n---\n# Frontmatter labels\n",
+    );
+    writeFileSync(
+      join(dir, ".plan", "tickets", "L-2.md"),
+      "# Header labels\n**Labels:** enhancement, chat\n",
+    );
+    writeFileSync(join(dir, ".plan", "tickets", "L-3.md"), "# Tags alias\n**Tags:** bug\n");
+    writeFileSync(
+      join(dir, ".plan", "tickets", "L-4.md"),
+      "---\nlabels: [p0, crypto]\n---\n# Precedence\n**Labels:** bug\n",
+    );
+    writeFileSync(join(dir, ".plan", "epics", "L-5.md"), "# Epic labels\n**Labels:** chat, bug\n");
+    writeFileSync(
+      join(dir, ".plan", "tickets", "L-6.md"),
+      "---\nlabels: [bug, done]\n---\n# Labeled but done\nStatus: done\n",
+    );
+    const tickets = planTickets(dir);
+    const byId: Record<string, WorkTicket | undefined> = {};
+    for (const ticket of tickets) byId[ticket.id] = ticket;
+    expect(byId["L-1"]).toMatchObject({ kind: "bug", priority: "P1", domain: "crypto" });
+    expect(byId["L-2"]).toMatchObject({ kind: "feature", domain: "chat" });
+    expect(byId["L-3"]).toMatchObject({ kind: "bug" });
+    // frontmatter wins over header (explicit > inherited)
+    expect(byId["L-4"]).toMatchObject({ kind: "task", priority: "P0", domain: "crypto" });
+    // epic dir default yields only when labels give no stronger kind
+    expect(byId["L-5"]).toMatchObject({ kind: "bug" });
+    expect(byId["L-6"]).toBeUndefined(); // labels never bypass done-detection
+  });
+});
+
+describe("readPlanLabels", () => {
+  test("flow, bare, block, and quoted frontmatter forms", () => {
+    expect(readPlanLabels("---\nlabels: [a, b]\n---\n# t\n")).toEqual(["a", "b"]);
+    expect(readPlanLabels("---\nlabels: bug\n---\n# t\n")).toEqual(["bug"]);
+    expect(readPlanLabels("---\nlabels:\n  - x\n  - 'y z'\n---\n# t\n")).toEqual(["x", "y z"]);
+    expect(readPlanLabels("---\nlabels: []\n---\n# t\n")).toEqual([]);
+    expect(readPlanLabels("# no labels\n")).toEqual([]);
+  });
+  test("Labels outranks Tags regardless of file order", () => {
+    expect(readPlanLabels("**Tags:** stale\n**Labels:** fresh\n")).toEqual(["fresh"]);
+    expect(readPlanLabels("**Tags:** only\n")).toEqual(["only"]);
+    expect(readPlanLabels("---\nlabels: [fm]\n---\n**Tags:** ignored\n")).toEqual(["fm"]);
   });
 });
 

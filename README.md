@@ -32,12 +32,15 @@ plugin can be installed directly with `omp plugin install`.
   line-oriented, so comments and unknown keys survive. Fail-open throughout;
   opt out with `PI_RECEIPT_DISABLE=1`.
 - **`/find-work` command** — discovers open work items across the receipt
-  ledger, `.plan/` docs, GitHub (`gh`), and `git-issue`, and presents them as a
-  flat `list` (`1,2,3`, `A,B,C`, `P1,P2,P3`, or `B1,F1,E1` schemes, with
-  `batches` grouping and bug/feature/epic/task filters), a markdown `table`, or
-  an interactive `ask` dialog grouped by domain; `ask` hands the selected
-  batch (and any trailing directive, e.g. `/find-work ask propose the next
-  batch of fixes`) to an agent turn. jira/glab are resolved inside that turn.
+  ledger, `.plan/` docs (labels read from YAML frontmatter `labels:`,
+  `**Labels:**`, or `**Tags:**` headers drive kind/priority/domain), GitHub
+  (`gh`), and `git-issue`, and presents them as a flat `list` (`1,2,3`,
+  `A,B,C`, `P1,P2,P3`, or `B1,F1,E1` schemes, with `batches` grouping and
+  bug/feature/epic/task filters), a markdown `table`, or an interactive `ask`
+  dialog grouped by domain; `ask` filters dialog candidates by the topic when
+  a directive matches tickets and hands the selected batch (and any trailing
+  directive, e.g. `/find-work ask propose the next batch of fixes`) to an
+  agent turn. jira/glab are resolved inside that turn.
 - **GPG & SSH hard-stop guards** — when a commit signing or ssh-agent/socket
   failure needs a human (locked GPG key, stale SSH agent), substitutes an
   imperative hard-stop directive and blocks the agent's usual self-recovery

@@ -18,6 +18,9 @@
  * `list-order`, `list-letters`, `list-priorities`, `list-types`,
  * `list-batches`, `list-bugs`, `list-features`, `list-epics`, `list-tasks`
  * (each also implies mode=list when no explicit mode was given).
+ * `.plan/` tickets and epics read labels from YAML frontmatter `labels:`,
+ * a `**Labels:**` header, or a `**Tags:**` header (alias) — same kind /
+ * priority / domain classification as gh labels (see util/plan-frontmatter).
  *
  * Handler discipline (same as the other commands): read-only answers go to
  * `ctx.ui.notify` (no agent turn spent); doing-things go through
@@ -39,6 +42,7 @@ import type {
 import type { ReceiptDoc } from "../receipt/receipt";
 import { DEFAULT_STATE, parseReceipt } from "../receipt/receipt";
 import { onPath } from "./bookkeep";
+import { readPlanLabels } from "../util/plan-frontmatter";
 import { argumentItems } from "./completions";
 
 // ---------------------------------------------------------------------------
@@ -532,16 +536,19 @@ function planFileTicket(
   const heading = lines.find((line) => HEADING_RE.test(line));
   const id = file.replace(/\.md$/, "");
   const title = heading ? (HEADING_RE.exec(heading)?.[1] ?? "").trim() : id;
+  const labels = readPlanLabels(text);
   const status = lines.find((line) => STATUS_LINE_RE.test(line));
   const statusValue = status ? (STATUS_LINE_RE.exec(status)?.[1] ?? "") : "";
-  if (STATUS_DONE_RE.test(statusValue)) return null;
+  if (STATUS_DONE_RE.test(statusValue)) return null; // labels never bypass done-detection
+  const fromMeta = classifyKind(labels, title);
   return {
     id,
     title: title || id,
     source: ".plan",
-    kind: classifyKind([], title) === "task" ? kind : classifyKind([], title),
-    priority: DEFAULT_PRIORITY,
-    domain: dir,
+    // Dir default applies only when labels/title yield no stronger kind.
+    kind: fromMeta === "task" ? kind : fromMeta,
+    priority: classifyPriority(labels),
+    domain: domainOf(labels, dir),
   };
 }
 

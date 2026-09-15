@@ -462,6 +462,7 @@ const AGENT_PAYLOADS: readonly [string, string][] = [
   ["extensions/commands/completions.ts", "extensions/commands/completions.ts"],
   ["extensions/util/worktree-base.ts", "extensions/util/worktree-base.ts"],
   ["extensions/util/lint-feedback.ts", "extensions/util/lint-feedback.ts"],
+  ["extensions/util/plan-frontmatter.ts", "extensions/util/plan-frontmatter.ts"],
   ["extensions/guards/gpg-guard.ts", "extensions/guards/gpg-guard.ts"],
   ["extensions/guards/ssh-guard.ts", "extensions/guards/ssh-guard.ts"],
   ["extensions/guards/git-destructive-guard.ts", "extensions/guards/git-destructive-guard.ts"],
