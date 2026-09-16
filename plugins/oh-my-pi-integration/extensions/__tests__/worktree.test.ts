@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@oh-my-pi/pi-coding-agent";
@@ -16,6 +16,7 @@ class FakePi {
   commands = new Map<string, { description?: string; handler: CommandHandler }>();
   execCalls: Array<{ command: string; args: string[] }> = [];
   throwOnExec = false;
+  throwOnGiwt = false;
   sentUserMessages: string[] = [];
 
   registerCommand(name: string, opts: { description?: string; handler: CommandHandler }): void {
@@ -24,6 +25,7 @@ class FakePi {
 
   async exec(command: string, args: string[]): Promise<{ stdout?: string }> {
     this.execCalls.push({ command, args });
+    if (command === "giwt" && this.throwOnGiwt) throw new Error("giwt: command not found");
     if (this.throwOnExec) throw new Error("fatal: a branch named 'x' already exists");
     return { stdout: "" };
   }
@@ -193,5 +195,29 @@ describe("worktree handler", () => {
     await pi.commands.get("worktree")?.handler("resume-me keep going", makeCtx(root));
     expect(pi.execCalls).toHaveLength(0);
     expect(pi.sentUserMessages[0]).toContain("reused");
+  });
+
+  test("delegates to giwt when giwt.toml present", async () => {
+    const pi = setup();
+    const root = tempDir("wt-giwt-");
+    writeFileSync(join(root, "giwt.toml"), '[paths]\ntree = "tree"\n');
+    await pi.commands.get("worktree")?.handler("feat-x implement feature X", makeCtx(root));
+    // giwt is tried first (not git worktree add)
+    expect(pi.execCalls.some((c) => c.command === "giwt")).toBe(true);
+    expect(pi.execCalls.some((c) => c.command === "git")).toBe(false);
+    expect(pi.sentUserMessages[0]).toContain("feat-x");
+  });
+
+  test("falls back to git worktree add when giwt exec fails", async () => {
+    const pi = new FakePi();
+    pi.throwOnGiwt = true; // giwt call will fail, git call will succeed
+    registerWorktree(pi as unknown as ExtensionAPI);
+    const root = tempDir("wt-giwt-fb-");
+    writeFileSync(join(root, "giwt.toml"), "[paths]\n");
+    await pi.commands.get("worktree")?.handler("feat-y implement Y", makeCtx(root));
+    // Both giwt (failed) and git (fallback) should be called
+    expect(pi.execCalls.some((c) => c.command === "giwt")).toBe(true);
+    expect(pi.execCalls.some((c) => c.command === "git")).toBe(true);
+    expect(pi.sentUserMessages[0]).toContain("feat-y");
   });
 });

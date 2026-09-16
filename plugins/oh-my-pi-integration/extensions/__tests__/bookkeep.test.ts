@@ -370,6 +370,7 @@ describe("bookkeepCompletions", () => {
     expect(items).toContain("find");
     expect(items).toContain("issue");
     expect(items).toContain("list");
+    expect(items).toContain("config");
   });
 
   test("partial prefix narrows subcommands", () => {
@@ -440,9 +441,28 @@ describe("bookkeep list handler", () => {
     // Completions are TUI items: the suggestion lives on `label`.
     const labels = (cmd.getArgumentCompletions?.("") ?? []).map((item) => item.label);
     // Subcommand listing always works regardless of repo state.
-    expect(labels).toEqual(expect.arrayContaining(["audit", "sync", "find", "issue", "list"]));
+    expect(labels).toEqual(
+      expect.arrayContaining(["audit", "sync", "find", "issue", "list", "config"]),
+    );
     // Done items are filtered even when the editor uses the real cwd.
     const items = (cmd.getArgumentCompletions?.("audit ") ?? []).map((item) => item.label);
     for (const id of items) expect(id.toLowerCase()).not.toContain("done");
+  });
+});
+
+describe("bookkeep config handler", () => {
+  test("/bookkeep config dumps resolved config without spending a turn", async () => {
+    const { pi, notified } = setup(tempDir("bk-hconfig-"));
+    const cwd = tempDir("bk-hconfigb-");
+    await pi.commands.get("bookkeep")?.handler("config", makeCtx(cwd, notified));
+    expect(pi.sentUserMessages).toHaveLength(0);
+    expect(notified[0]?.[1]).toBe("info");
+    expect(notified[0]?.[0]).toContain("giwt config:");
+    expect(notified[0]?.[0]).toContain("receipt path:");
+  });
+
+  test("config takes no further completions", () => {
+    const env = detectBookkeepEnv(tempDir("bk-cmp8-"));
+    expect(bookkeepCompletions(env, "config ")).toEqual([]);
   });
 });

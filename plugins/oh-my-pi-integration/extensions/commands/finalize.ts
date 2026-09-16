@@ -7,11 +7,19 @@
  * everything else builds a prompt for `pi.sendUserMessage` so the merge
  * itself runs inside an agent turn — with all guards active and a confirm
  * step before anything destructive. Commands never shell out a merge.
+ *
+ * giwt integration: when giwt is available (giwt.toml or .tmp/giwt present),
+ * the prompt delegates to `giwt finalize` instead of manual git merge
+ * commands. giwt's finalize handles merge-with-gates (check + test), lockfile
+ * safety, GPG signing, stash/pop, ticket sync, and worktree cleanup. The
+ * audit pre-checks (divergence, layout-violation, corruption) remain omp's
+ * responsibility — they run in the prompt before the giwt call.
  */
 
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@oh-my-pi/pi-coding-agent";
+import { resolveGiwtConfig } from "../util/giwt-config";
 import { argumentItems } from "./completions";
 
 export interface FinalizeEnv {
@@ -25,6 +33,8 @@ export interface FinalizeEnv {
   inWorktree: boolean;
   /** Worktree dir basename when inside one (branch guess). */
   branchGuess: string | null;
+  /** giwt available (giwt.toml or .tmp/giwt present). */
+  giwtAvailable: boolean;
 }
 
 const WORKTREE_DIRS = ["tree", ".worktrees"];
@@ -61,7 +71,15 @@ export function detectFinalizeEnv(cwd: string | undefined): FinalizeEnv {
   const root = inWorktree ? `/${parts.slice(0, at).join("/")}` : here;
   const worktreeDir = inWorktree ? (parts[at] ?? null) : existingWorktreeDir(root);
   const branchGuess = inWorktree ? (parts[parts.length - 1] ?? null) : null;
-  return { root, worktreeCli: hasWorktreeCli(root), worktreeDir, inWorktree, branchGuess };
+  const giwtConfig = resolveGiwtConfig(root);
+  return {
+    root,
+    worktreeCli: hasWorktreeCli(root),
+    worktreeDir,
+    inWorktree,
+    branchGuess,
+    giwtAvailable: giwtConfig.available,
+  };
 }
 
 /**
@@ -110,6 +128,39 @@ export function buildFinalizePrompt(env: FinalizeEnv, branch: string): string {
   ].join("\n");
 }
 
+/**
+ * Build the turn prompt for giwt-delegated finalize. Keeps omp's audit
+ * pre-checks (divergence, layout-violation, corruption) but replaces the
+ * manual merge procedure with `giwt finalize`, which handles merge-with-gates,
+ * lockfile safety, GPG signing, stash/pop, ticket sync, and worktree cleanup.
+ */
+export function buildGiwtFinalizePrompt(env: FinalizeEnv, branch: string): string {
+  return [
+    `Finalize the worktree for branch '${branch}' using giwt.`,
+    `Detected environment: repo root ${env.root}; giwt available; worktree dir ${env.worktreeDir ?? "none"}; invoked inside worktree ${env.inWorktree ? "yes" : "no"}.`,
+    "Procedure, in order — stop and report on any red verdict:",
+    "1. Resolve the default branch (dev preferred; else the remote default via git symbolic-ref refs/remotes/origin/HEAD). The branch to finalize must not be the default branch itself.",
+    "2. Require a clean tree: git status --short in the worktree must be empty. Dirty means mid-work — stop, do not merge.",
+    "3. Audit before merge (a clean tree is necessary but not sufficient): divergence via git merge-base <base> <branch> with ahead (base..branch) and behind counts — already fully merged means skip the merge and only remove the worktree + delete the branch; a large behind count with the branch's changes already present on base means orphaned/redundant — remove without merging; added files at layout-violating paths (git diff <base>..<branch> --name-status, lines starting with 'A') mean a corrupted branch — do NOT merge, remove without merging and report.",
+    `4. Merge: run \`bun run giwt finalize ${branch}\` from ${env.root} with REPO_ROOT=${env.root} in the environment. giwt handles:`,
+    "   - Merge-with-gates: runs `commands.check` + `commands.test` from giwt.toml before merging",
+    "   - Lockfile safety (.worktree-finalize.lock) for signal-safe cleanup (SIGINT/SIGTERM/SIGHUP)",
+    "   - GPG signing verification (asserts agent key unlocked before merging)",
+    "   - Stash/pop for dirty worktrees",
+    "   - Ticket index sync after merge (.plan/tickets/ ↔ index.json)",
+    "   - Worktree removal + branch deletion",
+    "   Fallbacks if giwt fails: retry with REPO_ROOT set; then manual git merge from " +
+      env.root +
+      " (git merge refs/heads/" +
+      branch +
+      " --no-edit + git worktree remove <path> + git branch -d " +
+      branch +
+      ").",
+    "5. After merging: verify with git worktree list + git log --oneline -3. If the repo has a planning index (.plan/ + plan:sync script), run the sync check.",
+    "6. Confirm with the user before the merge step and before any branch/worktree deletion. Report the final verdict: merged, removed-as-redundant, removed-as-corrupted, or blocked-dirty.",
+  ].join("\n");
+}
+
 async function showFinalizeStatus(pi: ExtensionAPI, ctx: ExtensionCommandContext): Promise<void> {
   try {
     const res = await pi.exec("git", ["worktree", "list"], { timeout: 15000 });
@@ -146,7 +197,11 @@ export function registerFinalize(pi: ExtensionAPI): void {
         );
         return;
       }
-      await pi.sendUserMessage(buildFinalizePrompt(env, branch));
+      // Delegate to giwt finalize when available; fall back to manual prompt.
+      const prompt = env.giwtAvailable
+        ? buildGiwtFinalizePrompt(env, branch)
+        : buildFinalizePrompt(env, branch);
+      await pi.sendUserMessage(prompt);
     },
   });
 }

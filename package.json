@@ -12,19 +12,28 @@
   "workspaces": [
     "plugins/*"
   ],
+  "dependencies": {
+    "giwt": "file:../giwt"
+  },
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",
     "@oh-my-pi/pi-coding-agent": "18.2.1",
     "@types/bun": "^1.4.2",
     "@types/node": "^26.2.0",
+    "jscpd": "^4.0.5",
+    "knip": "^6.36.0",
+    "oxlint": "^1.0.0",
     "typescript": "^7.0.2",
     "yaml": "^2.9.1"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "biome check plugins scripts && bun scripts/check-no-console.ts",
+    "lint": "bun run lint:biome && bun run lint:oxlint && bun scripts/check-no-console.ts",
+    "lint:biome": "biome check plugins scripts",
+    "lint:oxlint": "oxlint plugins scripts",
     "lint:fix": "biome check --write plugins scripts && bun scripts/check-no-console.ts",
     "format": "biome format --write plugins scripts",
+    "format:check": "biome format plugins scripts",
     "test": "bun test",
     "test:watch": "bun test --watch",
     "test:coverage": "bun test --coverage",
@@ -32,7 +41,9 @@
     "check:regex": "bun scripts/check-regex-safety.ts",
     "check:ship": "bun scripts/check-shipment.ts",
     "check:coverage": "bun scripts/check-coverage.ts",
-    "verify": "bun run lint && bun run typecheck && bun run test && bun run check:coverage && bun run check:rules && bun run check:regex && bun run check:ship",
+    "check:knip": "knip --no-progress || true",
+    "check:cpd": "jscpd",
+    "verify": "bun run lint && bun run typecheck && bun run test && bun run check:coverage && bun run check:knip && bun run check:cpd && bun run check:rules && bun run check:regex && bun run check:ship",
     "install:test": "bun scripts/install.ts --target /tmp/omp-test"
   }
 }

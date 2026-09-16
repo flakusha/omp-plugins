@@ -27,8 +27,9 @@
  */
 
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import type { CustomMessagePayload } from "@oh-my-pi/pi-coding-agent";
+import { resolveGiwtConfig } from "../util/giwt-config";
+import { formatGiwtLedgerFooter, readGiwtLedger } from "./giwt-bridge";
 
 /** Finished jobs are carried at most this many receipts before pruning. */
 export const RECEIPT_KEEP = 3;
@@ -281,49 +282,80 @@ export function setEntryState(text: string, id: string, state: string): string |
 }
 
 /**
- * Carry the project receipt: read `<cwd>/.omp/receipt.toml`, apply chores,
- * write back atomically, and return the footer message injection for
- * `before_agent_start`. Fail-open: any problem → undefined, file untouched
- * (or footer-only when only the write failed).
+ * Carry the project receipt: read the resolved receipt.toml (omp dir from
+ * giwt config, default `<cwd>/.omp`), apply chores, write back atomically,
+ * and return the footer message injection for `before_agent_start`. Also
+ * reads giwt's `.ledger.jsonl` and appends recent agent activity as a
+ * secondary section in the footer. Fail-open: any problem → undefined,
+ * file untouched (or footer-only when only the write failed).
  */
 export async function carryReceipt(
   cwd: string | undefined,
   env: Record<string, string | undefined> = process.env as Record<string, string | undefined>,
 ): Promise<{ message: CustomMessagePayload } | undefined> {
   if (!cwd || env.PI_RECEIPT_DISABLE === "1") return undefined;
-  const path = join(cwd, ".omp", "receipt.toml");
-  if (!existsSync(path)) return undefined;
 
-  let text: string;
-  try {
-    text = readFileSync(path, "utf8");
-  } catch {
-    return undefined;
+  // ── TOML receipt (job ledger with state) ──────────────────────────
+  // omp dir is configurable via giwt.toml/.giwt.toml `paths.omp_dir`.
+  const giwtConfig = resolveGiwtConfig(cwd);
+  const tomlPath = giwtConfig.receiptPath;
+  const hasToml = existsSync(tomlPath);
+
+  let tomlFooter: string[] = [];
+
+  if (hasToml) {
+    let text: string;
+    try {
+      text = readFileSync(tomlPath, "utf8");
+    } catch {
+      return undefined;
+    }
+
+    let result: CarryResult;
+    try {
+      result = carry(text);
+    } catch {
+      return undefined; // malformed beyond tolerance: fail open, never write
+    }
+
+    // No TOML entries: no carry, no churn — preserve the original guard.
+    // giwt ledger is checked below regardless.
+    if (result.footer.length > 1) {
+      try {
+        atomicWrite(tomlPath, result.text);
+      } catch {
+        /* read-only receipt: still carry the footer this turn */
+      }
+      tomlFooter = result.footer;
+    }
   }
 
-  let result: CarryResult;
-  try {
-    result = carry(text);
-  } catch {
-    return undefined; // malformed beyond tolerance: fail open, never write
-  }
-  if (result.footer.length <= 1) return undefined; // no entries: no carry, no churn
+  // ── giwt ledger (append-only agent activity, read-only) ──────────
+  const giwtEntries = giwtConfig.available ? readGiwtLedger(giwtConfig.treeDir) : [];
+  const giwtFooter = formatGiwtLedgerFooter(giwtEntries);
 
-  try {
-    atomicWrite(path, result.text);
-  } catch {
-    /* read-only receipt: still carry the footer this turn */
+  // ── Combine: TOML jobs first, giwt activity second ────────────────
+  const combinedFooter = [...tomlFooter, ...giwtFooter];
+  if (combinedFooter.length === 0) return undefined; // nothing to carry
+
+  let footer = combinedFooter.join("\n");
+  if (combinedFooter.length > RECEIPT_MAX_LINES) {
+    footer = `${combinedFooter.slice(0, RECEIPT_MAX_LINES).join("\n")}\n…(truncated)`;
   }
 
-  let footer = result.footer.join("\n");
-  if (result.footer.length > RECEIPT_MAX_LINES) {
-    footer = `${result.footer.slice(0, RECEIPT_MAX_LINES).join("\n")}\n…(truncated)`;
-  }
+  const receiptLabel = tomlPath.startsWith(`${cwd}/`) ? tomlPath.slice(cwd.length + 1) : tomlPath;
+  const sources = [
+    tomlFooter.length > 0 ? receiptLabel : null,
+    giwtFooter.length > 0 ? ".ledger.jsonl" : null,
+  ]
+    .filter(Boolean)
+    .join(" + ");
+
   return {
     message: {
       customType: "omp-receipt",
       content:
-        `Job receipt (carried from .omp/receipt.toml; update states as work ` +
+        `Job receipt (carried from ${sources || "no source"}; update states as work ` +
         `progresses — finished jobs are pruned after ${RECEIPT_KEEP} receipts):\n${footer}`,
       display: false,
       attribution: "agent",

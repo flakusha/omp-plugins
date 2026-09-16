@@ -3,7 +3,12 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@oh-my-pi/pi-coding-agent";
-import { buildFinalizePrompt, detectFinalizeEnv, registerFinalize } from "../commands/finalize";
+import {
+  buildFinalizePrompt,
+  buildGiwtFinalizePrompt,
+  detectFinalizeEnv,
+  registerFinalize,
+} from "../commands/finalize";
 
 type CommandHandler = (args: string, ctx: ExtensionCommandContext) => Promise<void>;
 
@@ -182,5 +187,21 @@ describe("finalize handler", () => {
     expect(notified).toHaveLength(0);
     expect(pi.sentUserMessages[0]).toContain("feat-ship");
     expect(pi.sentUserMessages[0]).toContain("Confirm with the user");
+  });
+});
+
+describe("buildGiwtFinalizePrompt", () => {
+  test("instructs agent to use giwt finalize with audit pre-checks", () => {
+    const env = detectFinalizeEnv(process.cwd());
+    const prompt = buildGiwtFinalizePrompt(env, "my-feature");
+    expect(prompt).toContain("giwt");
+    expect(prompt).toContain("my-feature");
+    expect(prompt).toContain("bun run giwt finalize");
+    expect(prompt).toContain("REPO_ROOT");
+    expect(prompt).toContain("Audit before merge");
+    expect(prompt).toContain("Merge-with-gates");
+    expect(prompt).toContain("Lockfile safety");
+    expect(prompt).toContain("GPG signing");
+    expect(prompt).toContain("Confirm with the user");
   });
 });

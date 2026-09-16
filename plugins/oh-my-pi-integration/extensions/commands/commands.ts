@@ -17,8 +17,8 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@oh-my-pi/pi-coding-agent";
+import { formatGiwtLedgerFooter, readGiwtLedger } from "../receipt/giwt-bridge";
 import {
   atomicWrite,
   DEFAULT_STATE,
@@ -27,6 +27,7 @@ import {
   renderFooter,
   setEntryState,
 } from "../receipt/receipt";
+import { resolveGiwtConfig, resolveReceiptPath } from "../util/giwt-config";
 import { registerBookkeep } from "./bookkeep";
 import { argumentItems } from "./completions";
 import { registerFinalize } from "./finalize";
@@ -214,7 +215,15 @@ export async function runRecall(
 }
 
 function receiptPath(cwd: string | undefined): string | undefined {
-  return cwd ? join(cwd, ".omp", "receipt.toml") : undefined;
+  return resolveReceiptPath(cwd);
+}
+
+/** Human-readable receipt path relative to cwd (for user messages). */
+function receiptLabel(cwd: string | undefined): string {
+  const path = receiptPath(cwd);
+  if (!path) return "receipt.toml";
+  if (cwd && path.startsWith(`${cwd}/`)) return path.slice(cwd.length + 1);
+  return path;
 }
 
 function readLedger(cwd: string | undefined): string | undefined {
@@ -232,24 +241,45 @@ function isFinishedState(state: string | undefined): boolean {
 }
 
 async function showReceipt(ctx: ExtensionCommandContext): Promise<void> {
+  // ── TOML receipt (job ledger with state) ──────────────────────────
   const text = readLedger(ctx.cwd);
-  if (text === undefined) {
-    ctx.ui.notify("no job ledger yet (nothing recorded in .omp/receipt.toml)", "info");
+  let tomlFooter: string[] = [];
+  if (text !== undefined) {
+    tomlFooter = renderReceiptStatus(text);
+  }
+
+  // ── giwt ledger (append-only agent activity, read-only) ──────────
+  const giwtConfig = resolveGiwtConfig(ctx.cwd);
+  const giwtEntries = giwtConfig.available ? readGiwtLedger(giwtConfig.treeDir) : [];
+  const giwtFooter = formatGiwtLedgerFooter(giwtEntries);
+
+  // ── Combine ───────────────────────────────────────────────────────
+  const combined = [...tomlFooter, ...giwtFooter];
+
+  if (
+    combined.length === 0 ||
+    (combined.length === 1 && tomlFooter.length <= 1 && giwtFooter.length === 0)
+  ) {
+    const msg =
+      text === undefined && giwtFooter.length === 0
+        ? `no job ledger yet (nothing recorded in ${receiptLabel(ctx.cwd)} or .ledger.jsonl)`
+        : "job ledger is empty";
+    ctx.ui.notify(msg, "info");
     return;
   }
-  const footer = renderReceiptStatus(text);
-  if (footer.length <= 1) {
-    ctx.ui.notify("job ledger is empty", "info");
-    return;
+
+  let footer = combined.join("\n");
+  if (combined.length > RECEIPT_MAX_LINES) {
+    footer = `${combined.slice(0, RECEIPT_MAX_LINES).join("\n")}\n…(truncated)`;
   }
-  ctx.ui.notify(footer.join("\n"), "info");
+  ctx.ui.notify(footer, "info");
 }
 
 async function finishReceiptJob(id: string, ctx: ExtensionCommandContext): Promise<void> {
   const path = receiptPath(ctx.cwd);
   const text = readLedger(ctx.cwd);
   if (!path || text === undefined) {
-    ctx.ui.notify("no job ledger to update (.omp/receipt.toml not found)", "error");
+    ctx.ui.notify(`no job ledger to update (${receiptLabel(ctx.cwd)} not found)`, "error");
     return;
   }
   const doc = parseReceipt(text);

@@ -13,26 +13,51 @@ import {
   buildChatPrompt,
   buildFindWorkAgentPrompt,
   buildLabelIndex,
+  buildOrchestratePrompt,
   buildSelectedPrompt,
   classifyKind,
   classifyPriority,
+  detectLintTool,
   detectWorkSources,
   domainOf,
+  fetchMergeTickets,
   fetchTickets,
+  fetchToolTickets,
   filterTickets,
+  giwtLedgerTickets,
+  giwtRunTickets,
   groupBatches,
+  hasGitRepo,
+  hasJscpd,
+  hasKnip,
+  hasTestScript,
+  hasTodoSource,
   kindFromReceiptId,
   labelTickets,
   letterLabel,
   MAX_TICKETS,
+  parseBiomeOutput,
+  parseBranchLines,
+  parseEslintJson,
   parseFindWorkArgs,
   parseGhIssues,
   parseGitIssueList,
+  parseJscpdReport,
+  parseKnipIssues,
+  parseMergeBase,
+  parseOxlintJson,
+  parseRevCounts,
+  parseStatusShort,
+  parseTestOutput,
+  parseTscOutput,
+  parseWorktreePorcelain,
   planTickets,
   receiptTickets,
   registerFindWork,
   renderList,
   renderTable,
+  todoCommentText,
+  todoTickets,
 } from "../commands/find-work";
 import { readPlanLabels } from "../util/plan-frontmatter";
 
@@ -42,6 +67,8 @@ class FakePi {
   execCalls: Array<{ command: string; args: string[] }> = [];
   scripted: Array<{ stdout?: string }> = [];
   throwOnExec = false;
+  /** Substrings of `command + args` that fail (selective exec failure). */
+  throwMatching: string[] = [];
   sentUserMessages: string[] = [];
 
   registerCommand(name: string, opts: { description?: string; handler: CommandHandler }): void {
@@ -52,7 +79,12 @@ class FakePi {
 
   async exec(command: string, args: string[]): Promise<{ stdout?: string }> {
     this.execCalls.push({ command, args });
-    if (this.throwOnExec) throw new Error("cli down");
+    if (
+      this.throwOnExec ||
+      this.throwMatching.some((p) => `${command} ${args.join(" ")}`.includes(p))
+    ) {
+      throw new Error("cli down");
+    }
     return this.scripted.shift() ?? { stdout: "" };
   }
 
@@ -401,6 +433,15 @@ describe("detectWorkSources", () => {
       jira: false,
       glab: false,
       trackerCli: true,
+      giwtLedger: false,
+      giwtRuns: false,
+      todo: false,
+      merges: false,
+      lint: false,
+      typecheck: false,
+      tests: false,
+      knip: false,
+      jscpd: false,
     });
   });
 
@@ -615,6 +656,15 @@ describe("fetchTickets", () => {
       jira: false,
       glab: false,
       trackerCli: false,
+      giwtLedger: false,
+      giwtRuns: false,
+      todo: false,
+      merges: false,
+      lint: false,
+      typecheck: false,
+      tests: false,
+      knip: false,
+      jscpd: false,
     });
     expect(tickets.map((t) => t.id)).toEqual(["F-01", "#12", "#13"]);
     expect(warnings).toEqual([]);
@@ -641,6 +691,15 @@ describe("fetchTickets", () => {
       jira: false,
       glab: false,
       trackerCli: true,
+      giwtLedger: false,
+      giwtRuns: false,
+      todo: false,
+      merges: false,
+      lint: false,
+      typecheck: false,
+      tests: false,
+      knip: false,
+      jscpd: false,
     });
     expect(tickets).toEqual([]);
     expect(warnings.some((w) => w.includes("gh issue list failed"))).toBe(true);
@@ -660,6 +719,15 @@ describe("fetchTickets", () => {
       jira: false,
       glab: false,
       trackerCli: false,
+      giwtLedger: false,
+      giwtRuns: false,
+      todo: false,
+      merges: false,
+      lint: false,
+      typecheck: false,
+      tests: false,
+      knip: false,
+      jscpd: false,
     });
     expect(tickets).toHaveLength(MAX_TICKETS + 5);
     expect(warnings).toHaveLength(0);
@@ -728,6 +796,15 @@ describe("prompt builders", () => {
         jira: true,
         glab: false,
         trackerCli: false,
+        giwtLedger: false,
+        giwtRuns: false,
+        todo: false,
+        merges: false,
+        lint: false,
+        typecheck: false,
+        tests: false,
+        knip: false,
+        jscpd: false,
       },
       "list bug items",
     );
@@ -956,7 +1033,9 @@ describe("/find-work handler", () => {
 
   test("description is a non-empty usage string", () => {
     const commands = registered();
-    expect(commands.get("find-work")?.description).toContain("/find-work [list|table|ask]");
+    expect(commands.get("find-work")?.description).toContain(
+      "/find-work [list|table|ask|orchestrate]",
+    );
   });
 
   test("list mode truncates after filtering with an accurate warning", async () => {
@@ -1024,5 +1103,836 @@ describe("/find-work handler", () => {
     expect(out.indexOf("1. TASK-alpha")).toBeGreaterThan(-1);
     expect(out.indexOf("2. TASK-mid")).toBeGreaterThan(out.indexOf("1. TASK-alpha"));
     expect(out.indexOf("3. TASK-zeta")).toBeGreaterThan(out.indexOf("2. TASK-mid"));
+  });
+});
+
+describe("giwtLedgerTickets", () => {
+  test("returns [] when giwt unavailable (no giwt.toml)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "fw-giwt-noleg-"));
+    try {
+      expect(giwtLedgerTickets(dir)).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("maps ledger entries to work tickets with say-annotation priority", () => {
+    const dir = mkdtempSync(join(tmpdir(), "fw-giwt-leg-"));
+    try {
+      mkdirSync(join(dir, "tree"), { recursive: true });
+      mkdirSync(join(dir, ".tmp", "giwt"), { recursive: true });
+      writeFileSync(join(dir, "giwt.toml"), '[paths]\ntree = "tree"\n');
+      const records = [
+        JSON.stringify({
+          v: 1,
+          ts: "2026-09-10T06:55:01Z",
+          pid: 1,
+          cmd: "new",
+          branch: "auth",
+          msg: "new auth :: fixing login",
+        }),
+        JSON.stringify({
+          v: 1,
+          ts: "2026-09-10T07:00:00Z",
+          pid: 2,
+          cmd: "commit",
+          branch: "auth",
+          msg: "commit auth",
+        }),
+      ];
+      writeFileSync(join(dir, "tree", ".ledger.jsonl"), `${records.join("\n")}\n`);
+      const tickets = giwtLedgerTickets(dir);
+      expect(tickets.length).toBe(2);
+      // Say-annotated record gets P2, bare record gets P3
+      const sayTicket = tickets.find(
+        (t) => t.msg?.includes("fixing login") || t.title.includes("fixing login"),
+      );
+      expect(sayTicket).toBeDefined();
+      expect(sayTicket?.priority).toBe("P2");
+      expect(sayTicket?.source).toBe("giwt-ledger");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("giwtRunTickets", () => {
+  test("returns [] when giwt unavailable", () => {
+    const dir = mkdtempSync(join(tmpdir(), "fw-giwt-noruns-"));
+    try {
+      expect(giwtRunTickets(dir)).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("only surfaces abnormal runs (no end/exitCode)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "fw-giwt-runs-"));
+    try {
+      mkdirSync(join(dir, ".tmp", "giwt"), { recursive: true });
+      writeFileSync(join(dir, "giwt.toml"), "[paths]\n");
+      const runsDir = join(dir, ".tmp", "giwt", "runs");
+      mkdirSync(join(runsDir, "20260910-1000-111-finalize"), { recursive: true });
+      // Abnormal: no end/exitCode
+      writeFileSync(
+        join(runsDir, "20260910-1000-111-finalize", "meta.json"),
+        JSON.stringify({
+          v: 1,
+          cmd: "finalize",
+          args: ["mybranch"],
+          branch: "mybranch",
+          repoRoot: dir,
+          pid: 111,
+          start: "2026-09-10T10:00:00Z",
+        }),
+      );
+      mkdirSync(join(runsDir, "20260910-1100-222-commit"), { recursive: true });
+      // Normal: has end and exitCode
+      writeFileSync(
+        join(runsDir, "20260910-1100-222-commit", "meta.json"),
+        JSON.stringify({
+          v: 1,
+          cmd: "commit",
+          args: [],
+          branch: "",
+          repoRoot: dir,
+          pid: 222,
+          start: "2026-09-10T11:00:00Z",
+          end: "2026-09-10T11:01:00Z",
+          exitCode: 0,
+        }),
+      );
+      const tickets = giwtRunTickets(dir);
+      expect(tickets.length).toBe(1);
+      expect(tickets[0].cmd ?? tickets[0].title).toContain("finalize");
+      expect(tickets[0].kind).toBe("bug");
+      expect(tickets[0].priority).toBe("P1");
+      expect(tickets[0].source).toBe("giwt-run");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("buildOrchestratePrompt", () => {
+  test("includes domain grouping and subagent instructions", () => {
+    const tickets: WorkTicket[] = [
+      {
+        id: "B-01",
+        title: "fix crash",
+        source: "receipt",
+        kind: "bug",
+        priority: "P0",
+        domain: "receipt",
+      },
+      {
+        id: "F-01",
+        title: "add feature",
+        source: ".plan",
+        kind: "feature",
+        priority: "P2",
+        domain: "auth",
+      },
+    ];
+    const labeled = labelTickets(tickets, "order");
+    const sources = detectWorkSources(".", "/nonexistent");
+    const prompt = buildOrchestratePrompt(labeled, sources, "");
+    expect(prompt).toContain("Orchestrate work items");
+    expect(prompt).toContain("Dependency analysis");
+    expect(prompt).toContain("Parallel execution");
+    expect(prompt).toContain("subagent");
+    expect(prompt).toContain("receipt");
+    expect(prompt).toContain("auth");
+  });
+
+  test("includes user directive when provided", () => {
+    const tickets: WorkTicket[] = [
+      { id: "T-01", title: "task", source: ".plan", kind: "task", priority: "P3", domain: "test" },
+    ];
+    const labeled = labelTickets(tickets, "order");
+    const sources = detectWorkSources(".", "/nonexistent");
+    const prompt = buildOrchestratePrompt(labeled, sources, "focus on auth bugs");
+    expect(prompt).toContain("focus on auth bugs");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TODO comment scan
+// ---------------------------------------------------------------------------
+
+describe("todoCommentText", () => {
+  test("strips marker and separators", () => {
+    expect(todoCommentText("// TODO: refactor this", "TODO")).toBe("refactor this");
+    expect(todoCommentText("# FIXME - broken edge", "FIXME")).toBe("broken edge");
+    expect(todoCommentText("x = 1  # TODO", "TODO")).toBe("");
+  });
+});
+
+describe("todoTickets", () => {
+  test("FIXME sorts first as bug/P2, TODO follows as task/P3", () => {
+    const dir = tempDir("fw-todo-");
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(
+      join(dir, "src", "a.ts"),
+      "// header\n// TODO: write tests\nconst x = 1;\n// FIXME: off-by-one\nconst y = 2;\n// TODO: more tests\n",
+    );
+    writeFileSync(join(dir, "src", "b.ts"), "// TODO: document b\n");
+    // Skipped: vendored deps, scratch dirs, markdown docs
+    mkdirSync(join(dir, "node_modules", "dep"), { recursive: true });
+    writeFileSync(join(dir, "node_modules", "dep", "b.ts"), "// TODO: hidden\n");
+    mkdirSync(join(dir, ".tmp"), { recursive: true });
+    writeFileSync(join(dir, ".tmp", "c.ts"), "// TODO: scratch\n");
+    writeFileSync(join(dir, "notes.md"), "# TODO: document\n");
+    const tickets = todoTickets(dir);
+    expect(tickets).toHaveLength(4);
+    expect(tickets[0]?.id).toBe("TD-01");
+    expect(tickets[0]?.kind).toBe("bug");
+    expect(tickets[0]?.priority).toBe("P2");
+    expect(tickets[0]?.source).toBe("todo");
+    expect(tickets[0]?.title).toContain("FIXME");
+    expect(tickets[0]?.title).toContain("src/a.ts:4");
+    expect(tickets[1]?.kind).toBe("task");
+    expect(tickets[1]?.title).toContain("src/a.ts:2");
+    expect(tickets[2]?.title).toContain("src/a.ts:6");
+    expect(tickets[3]?.title).toContain("src/b.ts:1");
+    expect(tickets[0]?.domain).toBe("src");
+  });
+
+  test("empty and oversized lines are skipped", () => {
+    const dir = tempDir("fw-todo-edge-");
+    writeFileSync(join(dir, "ok.ts"), "const x = 1;\n");
+    writeFileSync(join(dir, "big.ts"), `// TODO: ${"x".repeat(600)}\n`);
+    expect(todoTickets(dir)).toEqual([]);
+  });
+});
+
+describe("hasTodoSource", () => {
+  test("true with code files, false for docs-only or empty dirs", () => {
+    const code = tempDir("fw-todosrc-");
+    writeFileSync(join(code, "a.ts"), "const x = 1;\n");
+    expect(hasTodoSource(code)).toBe(true);
+    const docs = tempDir("fw-tododocs-");
+    writeFileSync(join(docs, "README.md"), "# hi\n");
+    expect(hasTodoSource(docs)).toBe(false);
+    expect(hasTodoSource(tempDir("fw-todoempty-"))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Merge queue parsers
+// ---------------------------------------------------------------------------
+
+describe("merge parsers", () => {
+  test("parseBranchLines rejoins piped subjects", () => {
+    const out = parseBranchLines(
+      "feat-x|abc123|Add x|2026-09-01\nfeat-y|def456|a|b|c|2026-09-02\n",
+    );
+    expect(out).toHaveLength(2);
+    expect(out[0]).toEqual({ name: "feat-x", sha: "abc123", subject: "Add x", date: "2026-09-01" });
+    expect(out[1]?.subject).toBe("a|b|c");
+  });
+
+  test("parseBranchLines tolerates pipes inside branch names", () => {
+    const out = parseBranchLines("feat|y|def456|ship it|2026-09-02\n");
+    expect(out).toHaveLength(1);
+    expect(out[0]).toEqual({
+      name: "feat|y",
+      sha: "def456",
+      subject: "ship it",
+      date: "2026-09-02",
+    });
+  });
+
+  test("parseRevCounts reads behind/ahead pair", () => {
+    expect(parseRevCounts("3\t5\n")).toEqual({ behind: 3, ahead: 5 });
+    expect(parseRevCounts("oops")).toBeNull();
+  });
+
+  test("parseMergeBase extracts branch from origin HEAD", () => {
+    expect(parseMergeBase("refs/remotes/origin/dev\n")).toBe("dev");
+    expect(parseMergeBase("")).toBeNull();
+  });
+
+  test("parseWorktreePorcelain handles branch, detached, bare, and prunable blocks", () => {
+    const raw = [
+      "worktree /r",
+      "HEAD aaa",
+      "branch refs/heads/dev",
+      "",
+      "worktree /r/tree/x",
+      "HEAD bbb",
+      "detached",
+      "",
+      "worktree /r/tree/y",
+      "HEAD ccc",
+      "branch refs/heads/feat",
+      "bare",
+      "",
+      "worktree /r/tree/old",
+      "HEAD ddd",
+      "branch refs/heads/old",
+      "prunable gitdir file points to non-existent location",
+      "",
+    ].join("\n");
+    const out = parseWorktreePorcelain(raw);
+    expect(out).toHaveLength(4);
+    expect(out[0]).toEqual({
+      path: "/r",
+      head: "aaa",
+      branch: "dev",
+      bare: false,
+      detached: false,
+      prunable: null,
+    });
+    expect(out[1]?.branch).toBeNull();
+    expect(out[1]?.detached).toBe(true);
+    expect(out[2]?.bare).toBe(true);
+    expect(out[3]?.prunable).toBe("gitdir file points to non-existent location");
+  });
+
+  test("parseStatusShort counts modified vs untracked", () => {
+    expect(parseStatusShort(" M a\nA  b\n?? c\n")).toEqual({ modified: 2, untracked: 1, total: 3 });
+    expect(parseStatusShort("")).toEqual({ modified: 0, untracked: 0, total: 0 });
+  });
+});
+
+describe("fetchMergeTickets", () => {
+  test("unmerged branches and dirty worktrees become tickets; protected filtered", async () => {
+    const pi = new FakePi();
+    const root = tempDir("fw-merge-");
+    pi.scripted.push(
+      { stdout: "refs/remotes/origin/dev\n" }, // symbolic-ref
+      { stdout: "feat-x|abc123|Add x|2026-09-01\nmain|def456|Release|2026-09-02\n" }, // branch list
+      { stdout: "1\t2\n" }, // rev-list feat-x
+      {
+        stdout: [
+          `worktree ${root}`,
+          "HEAD aaa",
+          "branch refs/heads/dev",
+          "",
+          `worktree ${join(root, "tree", "feat-y")}`,
+          "HEAD bbb",
+          "branch refs/heads/feat-y",
+          "",
+          `worktree ${join(root, "tree", "old")}`,
+          "HEAD ccc",
+          "branch refs/heads/old",
+          "prunable gitdir file points to non-existent location",
+          "",
+        ].join("\n"),
+      }, // worktree list
+      { stdout: "" }, // status: root clean
+      { stdout: " M src/a.ts\n?? scratch.txt\n" }, // status: feat-y dirty
+    );
+    const tickets = await fetchMergeTickets(pi, root);
+    expect(tickets.map((t) => t.id)).toEqual(["WT-feat-y", "WT-old", "feat-x"]);
+    const wt = tickets[0];
+    expect(wt?.priority).toBe("P1");
+    expect(wt?.domain).toBe("worktrees");
+    expect(wt?.title).toContain("1 modified, 1 untracked");
+    expect(tickets[1]?.priority).toBe("P3");
+    expect(tickets[1]?.title).toContain("prunable worktree");
+    expect(tickets[1]?.title).toContain("git worktree prune");
+    const br = tickets[2];
+    expect(br?.priority).toBe("P2");
+    expect(br?.domain).toBe("branches");
+    expect(br?.title).toContain("2 ahead, 1 behind");
+  });
+
+  test("falls back to local dev branch and skips uncountable branches", async () => {
+    const pi = new FakePi();
+    const root = tempDir("fw-mergefb-");
+    pi.scripted.push(
+      { stdout: "" }, // symbolic-ref empty → probe locals
+      { stdout: "  dev\n" }, // branch --list dev
+      { stdout: "gone|a1b2c3d|Gone|2026-01-01\nlive|e4f5a6b|Live|2026-02-02\n" },
+      { stdout: "oops" }, // rev-list gone → unparseable, skipped
+      { stdout: "0\t1\n" }, // rev-list live
+      { stdout: [`worktree ${root}`, "HEAD aaa", "branch refs/heads/dev", ""].join("\n") },
+      { stdout: "" }, // clean
+    );
+    const tickets = await fetchMergeTickets(pi, root);
+    expect(tickets.map((t) => t.id)).toEqual(["live"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tool cluster detection + parsers
+// ---------------------------------------------------------------------------
+
+describe("tool detection", () => {
+  test("detectLintTool prefers eslint, then biome, then oxlint", () => {
+    const dir = tempDir("fw-lintdet-");
+    expect(detectLintTool(dir)).toBeNull();
+    writeFileSync(join(dir, ".oxlintrc.json"), "{}\n");
+    expect(detectLintTool(dir)).toBe("oxlint");
+    writeFileSync(join(dir, "biome.json"), "{}\n");
+    expect(detectLintTool(dir)).toBe("biome");
+    writeFileSync(join(dir, "eslint.config.js"), "export default [];\n");
+    expect(detectLintTool(dir)).toBe("eslint");
+  });
+
+  test("detectLintTool finds oxlint via package.json dep or script", () => {
+    const dep = tempDir("fw-lintoxdep-");
+    writeFileSync(join(dep, "package.json"), JSON.stringify({ devDependencies: { oxlint: "^1" } }));
+    expect(detectLintTool(dep)).toBe("oxlint");
+    const scr = tempDir("fw-lintoxscr-");
+    writeFileSync(join(scr, "package.json"), JSON.stringify({ scripts: { oxlint: "oxlint src" } }));
+    expect(detectLintTool(scr)).toBe("oxlint");
+  });
+
+  test("hasTestScript reads package.json scripts", () => {
+    const dir = tempDir("fw-testdet-");
+    expect(hasTestScript(dir)).toBe(false);
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ scripts: { test: "bun test" } }));
+    expect(hasTestScript(dir)).toBe(true);
+  });
+
+  test("hasKnip via config, package key, or dep", () => {
+    const cfg = tempDir("fw-knipcfg-");
+    writeFileSync(join(cfg, "knip.json"), "{}\n");
+    expect(hasKnip(cfg)).toBe(true);
+    const key = tempDir("fw-knipkey-");
+    writeFileSync(join(key, "package.json"), JSON.stringify({ knip: {} }));
+    expect(hasKnip(key)).toBe(true);
+    const dep = tempDir("fw-knipdep-");
+    writeFileSync(join(dep, "package.json"), JSON.stringify({ devDependencies: { knip: "^5" } }));
+    expect(hasKnip(dep)).toBe(true);
+    expect(hasKnip(tempDir("fw-knipno-"))).toBe(false);
+  });
+
+  test("hasJscpd via config, dep, or script", () => {
+    const cfg = tempDir("fw-jscfg-");
+    writeFileSync(join(cfg, ".jscpd.json"), "{}\n");
+    expect(hasJscpd(cfg)).toBe(true);
+    const scr = tempDir("fw-jsscr-");
+    writeFileSync(join(scr, "package.json"), JSON.stringify({ scripts: { dup: "jscpd src" } }));
+    expect(hasJscpd(scr)).toBe(true);
+    expect(hasJscpd(tempDir("fw-jsno-"))).toBe(false);
+  });
+
+  test("hasGitRepo checks .git presence", () => {
+    const dir = tempDir("fw-gitrepo-");
+    expect(hasGitRepo(dir)).toBe(false);
+    mkdirSync(join(dir, ".git"));
+    expect(hasGitRepo(dir)).toBe(true);
+  });
+});
+
+describe("tool parsers", () => {
+  test("parseEslintJson maps severity to bug/task", () => {
+    const out = parseEslintJson(
+      JSON.stringify([
+        {
+          filePath: "/r/src/a.ts",
+          messages: [{ ruleId: "no-unused-vars", severity: 2, message: "Unused.", line: 3 }],
+        },
+        {
+          filePath: "/r/src/b.ts",
+          messages: [{ ruleId: null, severity: 1, message: "Warn.", line: 1 }],
+        },
+      ]),
+      "/r",
+    );
+    expect(out).toHaveLength(2);
+    expect(out[0]).toEqual({
+      file: "src/a.ts",
+      line: 3,
+      rule: "no-unused-vars",
+      message: "Unused.",
+      error: true,
+    });
+    expect(out[1]?.rule).toBe("eslint");
+    expect(out[1]?.error).toBe(false);
+    expect(parseEslintJson("", "/r")).toEqual([]);
+    expect(() => parseEslintJson("nope", "/r")).toThrow();
+  });
+
+  test("parseBiomeOutput reads header lines and correctness mapping", () => {
+    const raw = [
+      "src/a.ts:3:7 lint/correctness/noUnusedVariables ━━━━━━━━━━",
+      "",
+      "  ! Unused variable.",
+      "",
+      "src/b.ts:1:1 lint/style/useConst ━━━━━━━━━━",
+      "",
+      "  ! Use const.",
+      "",
+      "Checked 2 files. Found 2 warnings.",
+    ].join("\n");
+    const out = parseBiomeOutput(raw, "/r");
+    expect(out).toHaveLength(2);
+    expect(out[0]).toEqual({
+      file: "src/a.ts",
+      line: 3,
+      rule: "lint/correctness/noUnusedVariables",
+      message: "Unused variable.",
+      error: true,
+    });
+    expect(out[1]?.error).toBe(false);
+  });
+
+  test("parseOxlintJson reads the verified diagnostics shape", () => {
+    const out = parseOxlintJson(
+      JSON.stringify({
+        diagnostics: [
+          {
+            message: "No debugger",
+            code: "eslint(no-debugger)",
+            severity: "error",
+            filename: "/r/bad.ts",
+            labels: [{ span: { line: 2, column: 1 } }],
+          },
+          {
+            message: "Unused",
+            code: "eslint(no-unused-vars)",
+            severity: "warning",
+            filename: "/r/bad.ts",
+            labels: [],
+          },
+        ],
+      }),
+      "/r",
+    );
+    expect(out).toHaveLength(2);
+    expect(out[0]).toEqual({
+      file: "bad.ts",
+      line: 2,
+      rule: "eslint(no-debugger)",
+      message: "No debugger",
+      error: true,
+    });
+    expect(out[1]?.line).toBe(0);
+    expect(parseOxlintJson("", "/r")).toEqual([]);
+    expect(() => parseOxlintJson("nope", "/r")).toThrow();
+    expect(() => parseOxlintJson("{}", "/r")).toThrow();
+  });
+
+  test("parseTscOutput reads file(line,col) error lines", () => {
+    const out = parseTscOutput(
+      "src/a.ts(3,7): error TS2322: Type 'string' is not assignable.\nFound 1 error.\n",
+      "/r",
+    );
+    expect(out).toEqual([
+      { file: "src/a.ts", line: 3, code: "TS2322", message: "Type 'string' is not assignable." },
+    ]);
+  });
+
+  test("parseTestOutput reads bun, jest, pytest, and go failures", () => {
+    const raw = [
+      "(fail) suite > breaks [0.5ms]",
+      "FAIL src/other.test.ts",
+      "FAILED test_x.py::test_y - boom",
+      "--- FAIL: TestThing (0.00s)",
+      "ok  all good",
+    ].join("\n");
+    const out = parseTestOutput(raw);
+    expect(out.map((f) => f.name)).toEqual([
+      "suite > breaks",
+      "src/other.test.ts",
+      "test_x.py::test_y - boom",
+      "TestThing",
+    ]);
+  });
+
+  test("parseTestOutput falls back to a summary ticket", () => {
+    expect(parseTestOutput("3 failed, 10 passed")).toEqual([
+      { name: "3 failing (see test output)" },
+    ]);
+    expect(parseTestOutput("0 fail")).toEqual([]);
+    expect(parseTestOutput("all green")).toEqual([]);
+  });
+
+  test("parseKnipIssues handles the issues array shape", () => {
+    const out = parseKnipIssues({
+      issues: [
+        { file: "src/a.ts", exports: [], files: [{ name: "src/a.ts" }] },
+        { file: "src/b.ts", exports: [{ name: "oldFn", line: 4 }], files: [] },
+      ],
+    });
+    expect(out).toHaveLength(2);
+    expect(out[0]).toEqual({ kind: "file", file: "src/a.ts", name: "src/a.ts", line: undefined });
+    expect(out[1]).toEqual({ kind: "export", file: "src/b.ts", name: "oldFn", line: 4 });
+    expect(parseKnipIssues({})).toEqual([]);
+  });
+
+  test("parseJscpdReport reads duplications", () => {
+    const out = parseJscpdReport({
+      duplicates: [
+        {
+          firstFile: { name: "a.ts", startLoc: { line: 1 } },
+          secondFile: { name: "b.ts", startLoc: { line: 10 } },
+          lines: 6,
+        },
+      ],
+    });
+    expect(out).toEqual([{ a: "a.ts", lineA: 1, b: "b.ts", lineB: 10, lines: 6 }]);
+    expect(parseJscpdReport({ duplicates: [] })).toEqual([]);
+    expect(() => parseJscpdReport({})).toThrow();
+  });
+});
+
+describe("fetchToolTickets", () => {
+  const allOff = {
+    receipt: false,
+    plan: false,
+    gh: false,
+    gitIssue: false,
+    jira: false,
+    glab: false,
+    trackerCli: false,
+    giwtLedger: false,
+    giwtRuns: false,
+    todo: false,
+    merges: false,
+    lint: false,
+    typecheck: false,
+    tests: false,
+    knip: false,
+    jscpd: false,
+  };
+
+  test("eslint findings become LT tickets, failures become warnings", async () => {
+    const pi = new FakePi();
+    pi.scripted.push({
+      stdout: JSON.stringify([
+        {
+          filePath: "/r/src/a.ts",
+          messages: [{ ruleId: "no-debugger", severity: 2, message: "No.", line: 2 }],
+        },
+      ]),
+    });
+    const root = tempDir("fw-tooleslint-");
+    writeFileSync(join(root, "eslint.config.js"), "export default [];\n");
+    const { tickets, warnings } = await fetchToolTickets(pi, root, { ...allOff, lint: true });
+    expect(warnings).toEqual([]);
+    expect(tickets).toHaveLength(1);
+    expect(tickets[0]?.id).toBe("LT-01");
+    expect(tickets[0]?.kind).toBe("bug");
+    expect(tickets[0]?.domain).toBe("lint");
+    expect(tickets[0]?.title).toContain("src/a.ts:2");
+
+    const pi2 = new FakePi();
+    pi2.throwOnExec = true;
+    const failed = await fetchToolTickets(pi2, root, { ...allOff, lint: true });
+    expect(failed.tickets).toEqual([]);
+    expect(failed.warnings.some((w) => w.includes("lint scan failed"))).toBe(true);
+  });
+
+  test("tsc errors and test failures map to P1 bugs", async () => {
+    const pi = new FakePi();
+    pi.scripted.push({ stdout: "src/a.ts(3,7): error TS2322: Bad.\n" });
+    pi.scripted.push({ stdout: "(fail) suite > breaks\n" });
+    const root = tempDir("fw-toolstsc-");
+    writeFileSync(join(root, "tsconfig.json"), "{}\n");
+    writeFileSync(join(root, "package.json"), JSON.stringify({ scripts: { test: "bun test" } }));
+    const { tickets } = await fetchToolTickets(pi, root, {
+      ...allOff,
+      typecheck: true,
+      tests: true,
+    });
+    expect(tickets.map((t) => t.id)).toEqual(["TS-01", "TT-01"]);
+    expect(tickets.every((t) => t.priority === "P1")).toBe(true);
+  });
+
+  test("knip and biome findings map to cleanup tickets", async () => {
+    const pi = new FakePi();
+    // fetchToolTickets runs lint before knip — script in call order.
+    pi.scripted.push({
+      stdout: "src/b.ts:1:1 lint/style/useConst ━━━\n\n  ! Use const.\n",
+    });
+    pi.scripted.push({
+      stdout: JSON.stringify({
+        issues: [{ file: "src/old.ts", exports: [], files: [{ name: "src/old.ts" }] }],
+      }),
+    });
+    const root = tempDir("fw-toolsknip-");
+    writeFileSync(join(root, "knip.json"), "{}\n");
+    writeFileSync(join(root, "biome.json"), "{}\n");
+    const { tickets } = await fetchToolTickets(pi, root, { ...allOff, knip: true, lint: true });
+    expect(tickets.map((t) => t.id)).toEqual(["LT-01", "KN-01"]);
+    expect(tickets[1]?.domain).toBe("knip");
+    expect(tickets[0]?.kind).toBe("task");
+  });
+});
+
+describe("fetchTickets tool wiring", () => {
+  test("todo, merges, and tools contribute alongside classic sources", async () => {
+    const root = tempDir("fw-wire-");
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "src", "a.ts"), "// TODO: wire it\n");
+    writeFileSync(join(root, "eslint.config.js"), "export default [];\n");
+    const pi = new FakePi();
+    pi.scripted.push({
+      stdout: JSON.stringify([
+        {
+          filePath: join(root, "src", "a.ts"),
+          messages: [{ ruleId: "x", severity: 1, message: "W.", line: 1 }],
+        },
+      ]),
+    });
+    const { tickets, warnings } = await fetchTickets(pi, root, {
+      receipt: false,
+      plan: false,
+      gh: false,
+      gitIssue: false,
+      jira: false,
+      glab: false,
+      trackerCli: false,
+      giwtLedger: false,
+      giwtRuns: false,
+      todo: true,
+      merges: false,
+      lint: true,
+      typecheck: false,
+      tests: false,
+      knip: false,
+      jscpd: false,
+    });
+    expect(warnings).toEqual([]);
+    expect(tickets.map((t) => t.id).sort()).toEqual(["LT-01", "TD-01"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tool runners: oxlint, jscpd, merge failure paths
+// ---------------------------------------------------------------------------
+
+describe("fetchToolTickets runners", () => {
+  test("oxlint JSON findings map to LT tickets; repo-pinned bin preferred", async () => {
+    const pi = new FakePi();
+    pi.scripted.push({
+      stdout: JSON.stringify({
+        diagnostics: [
+          {
+            message: "No debugger",
+            code: "eslint(no-debugger)",
+            severity: "error",
+            filename: "bad.ts",
+            labels: [{ span: { line: 2, column: 1 } }],
+          },
+        ],
+      }),
+    });
+    const root = tempDir("fw-toolsox-");
+    writeFileSync(join(root, ".oxlintrc.json"), "{}\n");
+    mkdirSync(join(root, "node_modules", ".bin"), { recursive: true });
+    writeFileSync(join(root, "node_modules", ".bin", "oxlint"), "#!/bin/sh\n");
+    const { tickets, warnings } = await fetchToolTickets(pi, root, {
+      receipt: false,
+      plan: false,
+      gh: false,
+      gitIssue: false,
+      jira: false,
+      glab: false,
+      trackerCli: false,
+      giwtLedger: false,
+      giwtRuns: false,
+      todo: false,
+      merges: false,
+      lint: true,
+      typecheck: false,
+      tests: false,
+      knip: false,
+      jscpd: false,
+    });
+    expect(warnings).toEqual([]);
+    expect(tickets).toHaveLength(1);
+    expect(tickets[0]?.id).toBe("LT-01");
+    expect(tickets[0]?.kind).toBe("bug");
+    expect(tickets[0]?.title).toContain("bad.ts:2");
+    expect(pi.execCalls[0]?.command).toBe(join(root, "node_modules", ".bin", "oxlint"));
+  });
+
+  test("jscpd duplications map to CPD tickets", async () => {
+    const report = {
+      duplicates: [
+        {
+          firstFile: { name: "a.ts", startLoc: { line: 3 } },
+          secondFile: { name: "b.ts", startLoc: { line: 8 } },
+          lines: 12,
+        },
+      ],
+    };
+    const pi = {
+      execCalls: [] as Array<{ command: string; args: string[] }>,
+      async exec(command: string, args: string[]): Promise<{ stdout?: string }> {
+        this.execCalls.push({ command, args });
+        const o = args.indexOf("-o");
+        if (o >= 0 && args[o + 1]) {
+          writeFileSync(join(args[o + 1], "jscpd-report.json"), JSON.stringify(report));
+        }
+        return { stdout: "" };
+      },
+    };
+    const root = tempDir("fw-toolsjscpd-");
+    writeFileSync(join(root, ".jscpd.json"), "{}\n");
+    const { tickets, warnings } = await fetchToolTickets(pi, root, {
+      receipt: false,
+      plan: false,
+      gh: false,
+      gitIssue: false,
+      jira: false,
+      glab: false,
+      trackerCli: false,
+      giwtLedger: false,
+      giwtRuns: false,
+      todo: false,
+      merges: false,
+      lint: false,
+      typecheck: false,
+      tests: false,
+      knip: false,
+      jscpd: true,
+    });
+    expect(warnings).toEqual([]);
+    expect(tickets).toHaveLength(1);
+    expect(tickets[0]?.id).toBe("CPD-01");
+    expect(tickets[0]?.domain).toBe("duplication");
+    expect(tickets[0]?.title).toContain("12 duplicated lines: a.ts:3 ↔ b.ts:8");
+    expect(pi.execCalls[0]?.command).toBe("jscpd");
+  });
+});
+
+describe("fetchMergeTickets failure paths", () => {
+  test("unresolvable base warns instead of throwing", async () => {
+    const pi = new FakePi();
+    pi.throwOnExec = true;
+    const { tickets, warnings } = await fetchTickets(pi, tempDir("fw-mergenobase-"), {
+      receipt: false,
+      plan: false,
+      gh: false,
+      gitIssue: false,
+      jira: false,
+      glab: false,
+      trackerCli: false,
+      giwtLedger: false,
+      giwtRuns: false,
+      todo: false,
+      merges: true,
+      lint: false,
+      typecheck: false,
+      tests: false,
+      knip: false,
+      jscpd: false,
+    });
+    expect(tickets).toEqual([]);
+    expect(warnings.some((w) => w.includes("git branch/worktree scan failed"))).toBe(true);
+  });
+
+  test("vanished branches and broken worktrees are skipped", async () => {
+    const pi = new FakePi();
+    pi.throwMatching = ["rev-list", "status"];
+    const root = tempDir("fw-mergeskip-");
+    pi.scripted.push(
+      { stdout: "refs/remotes/origin/dev\n" },
+      { stdout: "gone|a1b2c3d|Gone|2026-01-01\n" },
+      {
+        stdout: [`worktree ${root}`, "HEAD aaa", "branch refs/heads/dev", ""].join("\n"),
+      },
+    );
+    const tickets = await fetchMergeTickets(pi, root);
+    expect(tickets).toEqual([]);
+    expect(pi.execCalls).toHaveLength(5);
   });
 });

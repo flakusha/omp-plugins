@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -194,6 +194,98 @@ describe("carryReceipt — IO wiring", () => {
     const text = "# nothing yet\n";
     writeFileSync(join(cwd, ".omp", "receipt.toml"), text);
     expect(await carryReceipt(cwd, {})).toBeUndefined();
+    expect(readFileSync(join(cwd, ".omp", "receipt.toml"), "utf8")).toBe(text);
+  });
+
+  test("carries giwt ledger alongside TOML receipt", async () => {
+    const cwd = tempDir("receipt-giwt-both-");
+    mkdirSync(join(cwd, ".omp"));
+    writeFileSync(join(cwd, ".omp", "receipt.toml"), EXAMPLE);
+    // giwt setup: giwt.toml + tree/.ledger.jsonl
+    writeFileSync(join(cwd, "giwt.toml"), '[paths]\ntree = "tree"\n');
+    mkdirSync(join(cwd, "tree"), { recursive: true });
+    writeFileSync(
+      join(cwd, "tree", ".ledger.jsonl"),
+      `${JSON.stringify({
+        v: 1,
+        ts: "2026-09-10T06:55:01Z",
+        pid: 1,
+        cmd: "new",
+        branch: "auth",
+        msg: "new auth :: working on login",
+      })}\n`,
+    );
+    const result = await carryReceipt(cwd, {});
+    expect(result).toBeDefined();
+    expect(result?.message.content).toContain("F-02"); // TOML job
+    expect(result?.message.content).toContain("F-03"); // TOML job
+    expect(result?.message.content).toContain("[giwt ledger]"); // giwt section
+    expect(result?.message.content).toContain("new auth"); // giwt entry
+    expect(result?.message.content).toContain(".omp/receipt.toml + .ledger.jsonl");
+  });
+
+  test("carries giwt ledger alone when no TOML receipt exists", async () => {
+    const cwd = tempDir("receipt-giwt-only-");
+    // No .omp/receipt.toml — only giwt
+    writeFileSync(join(cwd, "giwt.toml"), '[paths]\ntree = "tree"\n');
+    mkdirSync(join(cwd, "tree"), { recursive: true });
+    writeFileSync(
+      join(cwd, "tree", ".ledger.jsonl"),
+      `${JSON.stringify({
+        v: 1,
+        ts: "2026-09-10T07:00:00Z",
+        pid: 2,
+        cmd: "commit",
+        branch: "fix",
+        msg: "commit fix :: done",
+      })}\n`,
+    );
+    const result = await carryReceipt(cwd, {});
+    expect(result).toBeDefined();
+    expect(result?.message.content).toContain("[giwt ledger]");
+    expect(result?.message.content).toContain("commit fix");
+    expect(result?.message.content).toContain(".ledger.jsonl");
+    expect(result?.message.content).not.toContain(".omp/receipt.toml");
+  });
+
+  test("honors paths.omp_dir for receipt placement (e.g. .tmp)", async () => {
+    const cwd = tempDir("receipt-ompdir-");
+    writeFileSync(join(cwd, "giwt.toml"), '[paths]\ntree = "tree"\nomp_dir = ".tmp/omp"\n');
+    mkdirSync(join(cwd, ".tmp", "omp"), { recursive: true });
+    writeFileSync(join(cwd, ".tmp", "omp", "receipt.toml"), EXAMPLE);
+    // No .omp dir at all — the resolved location must be used.
+    expect(existsSync(join(cwd, ".omp"))).toBe(false);
+    const result = await carryReceipt(cwd, {});
+    expect(result).toBeDefined();
+    expect(result?.message.content).toContain("F-02");
+    expect(result?.message.content).toContain(".tmp/omp/receipt.toml");
+    const written = readFileSync(join(cwd, ".tmp", "omp", "receipt.toml"), "utf8");
+    expect(written).toContain("[carriage]");
+  });
+
+  test("does not write TOML when only giwt has entries", async () => {
+    const cwd = tempDir("receipt-giwt-nochurn-");
+    mkdirSync(join(cwd, ".omp"));
+    const text = "# nothing yet\n";
+    writeFileSync(join(cwd, ".omp", "receipt.toml"), text);
+    // giwt has entries, TOML does not
+    writeFileSync(join(cwd, "giwt.toml"), '[paths]\ntree = "tree"\n');
+    mkdirSync(join(cwd, "tree"), { recursive: true });
+    writeFileSync(
+      join(cwd, "tree", ".ledger.jsonl"),
+      `${JSON.stringify({
+        v: 1,
+        ts: "2026-09-10T07:00:00Z",
+        pid: 3,
+        cmd: "test",
+        branch: "",
+        msg: "test run",
+      })}\n`,
+    );
+    const result = await carryReceipt(cwd, {});
+    expect(result).toBeDefined();
+    expect(result?.message.content).toContain("[giwt ledger]");
+    // TOML should NOT be written (no entries = no churn)
     expect(readFileSync(join(cwd, ".omp", "receipt.toml"), "utf8")).toBe(text);
   });
 });

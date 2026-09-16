@@ -4,7 +4,8 @@
  * Subcommands: `audit <epic|ticket>` (reconcile tracker claims against code),
  * `sync [--fix]` (verify the planning index), `find <query>` (locate items),
  * `issue <request>` (tracker operations via the detected backend),
- * `list` (enumerate discovered planning items).
+ * `list` (enumerate discovered planning items),
+ * `config` (dump resolved giwt/omp config: file, paths, branches, commands).
  *
  * The handler detects the tracking environment with fs checks only (no turn
  * spent) and bakes the facts into the turn prompt: in-repo `.plan/` + index
@@ -18,7 +19,8 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@oh-my-pi/pi-coding-agent";
+import { dumpGiwtConfig, resolveGiwtConfig, resolvePlanDir } from "../util/giwt-config";
 import { argumentItems } from "./completions";
 
 export interface BookkeepEnv {
@@ -34,11 +36,13 @@ export interface BookkeepEnv {
   gh: boolean;
   /** `jira` on PATH. */
   jira: boolean;
+  /** giwt available (giwt.toml or .tmp/giwt dir present). */
+  giwtAvailable: boolean;
 }
 
 const PLAN_SCRIPTS = ["plan:sync", "plan:find", "plan:map", "plan:docs"];
 const TRACKER_COMMANDS = ["ticket", "issues", "prs", "gi"];
-const BOOKKEEP_SUBCOMMANDS = ["audit", "sync", "find", "issue", "list"] as const;
+const BOOKKEEP_SUBCOMMANDS = ["audit", "sync", "find", "issue", "list", "config"] as const;
 /** Verbs the `issue` subcommand commonly takes; pure suffix hints. */
 const ISSUE_VERBS = ["list", "view", "search", "create", "close", "comment", "assign"];
 
@@ -72,13 +76,15 @@ export function detectBookkeepEnv(cwd: string | undefined): BookkeepEnv {
       existsSync(join(root, `scripts/worktree/${cmd}.ts`)) ||
       existsSync(join(root, `scripts/worktree/${cmd}.mjs`)),
   );
+  const giwtConfig = resolveGiwtConfig(root);
   return {
     root,
-    planDir: existsSync(join(root, ".plan")),
+    planDir: existsSync(giwtConfig.planDir),
     planScripts: planScriptsOf(root),
     worktreeTracker,
     gh: onPath("gh"),
     jira: onPath("jira"),
+    giwtAvailable: giwtConfig.available,
   };
 }
 
@@ -92,8 +98,8 @@ function indexCommand(env: BookkeepEnv): string | null {
 
 export function bookkeepUsage(env: BookkeepEnv): string {
   return [
-    "bookkeep <audit <epic|ticket>|sync [--fix]|find <query>|issue <request>|list>",
-    `tracking: .plan ${yesNo(env.planDir)}; index: ${env.planScripts.join(",") || "none"}; worktree-tracker ${yesNo(env.worktreeTracker)}; gh ${yesNo(env.gh)}; jira ${yesNo(env.jira)}`,
+    "bookkeep <audit <epic|ticket>|sync [--fix]|find <query>|issue <request>|list|config>",
+    `tracking: .plan ${yesNo(env.planDir)}; index: ${env.planScripts.join(",") || "none"}; worktree-tracker ${yesNo(env.worktreeTracker)}; gh ${yesNo(env.gh)}; jira ${yesNo(env.jira)}; giwt ${yesNo(env.giwtAvailable)}`,
   ].join("\n");
 }
 /**
@@ -118,10 +124,11 @@ const DONE_LEAD_RE =
  * done" or "In Progress (… fixed …)" keeps the item listed.
  */
 export function discoverPlanningIds(root: string): string[] {
-  if (!existsSync(join(root, ".plan"))) return [];
+  const planRoot = resolveGiwtConfig(root).planDir;
+  if (!existsSync(planRoot)) return [];
   const out: string[] = [];
   for (const dir of ["tickets", "epics", "backlog"] as const) {
-    const full = join(root, ".plan", dir);
+    const full = resolvePlanDir(root, dir);
     if (!existsSync(full)) continue;
     let entries: string[];
     try {
@@ -259,12 +266,18 @@ function issueAction(env: BookkeepEnv, rest: string[]): BookkeepAction {
   return { prompt: buildIssuePrompt(env, rest.join(" ")) };
 }
 
+/** Read-only config dump: resolved giwt paths, branches, commands. */
+function configAction(env: BookkeepEnv): BookkeepAction {
+  return { message: `${bookkeepUsage(env)}\n\n${dumpGiwtConfig(env.root)}`, level: "info" };
+}
+
 const BOOKKEEP_ACTIONS: Record<string, (env: BookkeepEnv, rest: string[]) => BookkeepAction> = {
   audit: auditAction,
   sync: syncAction,
   find: findAction,
   issue: issueAction,
   list: (env: BookkeepEnv) => ({ prompt: buildListPrompt(env) }),
+  config: (env: BookkeepEnv) => configAction(env),
 };
 
 function resolveBookkeepAction(env: BookkeepEnv, argv: string[]): BookkeepAction {
@@ -309,6 +322,8 @@ export function bookkeepCompletions(env: BookkeepEnv, argPrefix: string): string
     }
     case "list":
       return [];
+    case "config":
+      return [];
     default:
       return BOOKKEEP_SUBCOMMANDS.filter((s) => s.startsWith(lastPrefix));
   }
@@ -317,18 +332,42 @@ export function bookkeepCompletions(env: BookkeepEnv, argPrefix: string): string
 /** Register `/bookkeep` on the plugin factory's `pi`. */
 export function registerBookkeep(pi: ExtensionAPI): void {
   pi.registerCommand("bookkeep", {
-    description: "Planning hygiene: `/bookkeep <audit|sync|find|issue|list> ...`",
+    description: "Planning hygiene: `/bookkeep <audit|sync|find|issue|list|config> ...`",
     // NOTE: process.cwd() because getArgumentCompletions gets no ctx — assumes TUI cwd == process cwd (see completions.ts).
     getArgumentCompletions: (argumentPrefix: string) =>
       argumentItems(
         argumentPrefix,
         bookkeepCompletions(detectBookkeepEnv(process.cwd()), argumentPrefix),
       ),
-    handler: async (args, ctx) => {
-      const action = resolveBookkeepAction(
-        detectBookkeepEnv(ctx.cwd),
-        args.trim().split(/\s+/).filter(Boolean),
-      );
+    handler: async (args, ctx: ExtensionCommandContext) => {
+      const argv = args.trim().split(/\s+/).filter(Boolean);
+      const env = detectBookkeepEnv(ctx.cwd);
+
+      // giwt delegation for audit/sync: giwt's plan validate and ticket sync
+      // run via subprocess (pi.exec) — fail-open to prompt-building when
+      // giwt is unavailable or errors.
+      if (env.giwtAvailable) {
+        const sub = argv[0];
+        if (sub === "audit" && argv[1]) {
+          const giwtResult = await tryGiwtAudit(pi, ctx.cwd, argv[1]);
+          if (giwtResult !== null) {
+            ctx.ui.notify(giwtResult, "info");
+            return;
+          }
+          // giwt failed — fall through to prompt
+        }
+        if (sub === "sync") {
+          const fix = argv.includes("--fix");
+          const giwtResult = await tryGiwtSync(pi, ctx.cwd, fix);
+          if (giwtResult !== null) {
+            ctx.ui.notify(giwtResult, "info");
+            return;
+          }
+          // giwt failed — fall through to prompt
+        }
+      }
+
+      const action = resolveBookkeepAction(env, argv);
       if ("prompt" in action) {
         await pi.sendUserMessage(action.prompt);
         return;
@@ -336,4 +375,43 @@ export function registerBookkeep(pi: ExtensionAPI): void {
       ctx.ui.notify(action.message, action.level);
     },
   });
+}
+
+/** Timeout for giwt subprocess calls (plan validate, ticket sync). */
+const GIWT_EXEC_TIMEOUT_MS = 30_000;
+
+/**
+ * Try giwt's plan validate CLI for audit. Returns formatted output string,
+ * or null when giwt is unavailable or errored (caller falls back to prompt).
+ */
+async function tryGiwtAudit(
+  pi: ExtensionAPI,
+  _root: string,
+  _target: string,
+): Promise<string | null> {
+  try {
+    const res = await pi.exec("giwt", ["plan", "validate"], { timeout: GIWT_EXEC_TIMEOUT_MS });
+    const out = (res.stdout ?? "").trim();
+    if (!out) return null;
+    return `giwt plan validate:\n${out}`;
+  } catch {
+    return null; // giwt unavailable or errored
+  }
+}
+
+/**
+ * Try giwt's ticket sync CLI. Returns formatted output string,
+ * or null when giwt is unavailable or errored (caller falls back to prompt).
+ */
+async function tryGiwtSync(pi: ExtensionAPI, _root: string, fix: boolean): Promise<string | null> {
+  try {
+    const args = fix ? ["sync", "--fix"] : ["sync"];
+    const res = await pi.exec("giwt", args, { timeout: GIWT_EXEC_TIMEOUT_MS });
+    const out = (res.stdout ?? "").trim();
+    if (!out) return null;
+    const exitOk = (res as { exitCode?: number }).exitCode === 0;
+    return `giwt sync ${fix ? "--fix" : ""} (${exitOk ? "in sync" : "issues remain"}):\n${out}`;
+  } catch {
+    return null; // giwt unavailable or errored
+  }
 }

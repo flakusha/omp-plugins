@@ -6,6 +6,11 @@
  * turn scoped to that checkout. The container reuses the repo's existing
  * convention (`tree/` or `.worktrees/`), defaulting to `tree/`.
  *
+ * giwt integration: when giwt is available, creation delegates to
+ * `giwt new-branch <name>` which adds branch protection checks, GPG signing
+ * config, `.credentials.env` symlink, and `node_modules` linking. Falls back
+ * to `git worktree add -b` when giwt is unavailable.
+ *
  * Handler discipline: creation is the command's explicit purpose, so the
  * `git worktree add` runs in the handler via `pi.exec`; a creation failure
  * notifies and stops with no turn spent. The task itself always runs inside
@@ -15,6 +20,7 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { join, relative } from "node:path";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
+import { resolveGiwtConfig } from "../util/giwt-config";
 import { argumentItems } from "./completions";
 import { detectFinalizeEnv, existingWorktreeNames } from "./finalize";
 
@@ -58,7 +64,40 @@ export function buildWorktreePrompt(
   ].join("\n");
 }
 
+/**
+ * Create a worktree. Tries giwt's `new-branch` command first (adds branch
+ * protection, GPG config, credentials symlink, node_modules link), falls
+ * back to `git worktree add -b` when giwt is unavailable.
+ *
+ * TREE_DIR env is set to align giwt's worktree container with omp's
+ * OMP_WORKTREE_DIR when the latter is set — so giwt places worktrees
+ * in the same out-of-repo sibling dir omp uses.
+ */
 async function createWorktree(pi: ExtensionAPI, target: WorktreeTarget): Promise<string | null> {
+  const giwtConfig = resolveGiwtConfig(target.root);
+
+  // Try giwt new-branch when available
+  if (giwtConfig.available) {
+    try {
+      // Align TREE_DIR with OMP_WORKTREE_DIR when set
+      const savedTreeDir = process.env.TREE_DIR;
+      const savedRepoRoot = process.env.REPO_ROOT;
+      if (process.env.OMP_WORKTREE_DIR) process.env.TREE_DIR = process.env.OMP_WORKTREE_DIR;
+      process.env.REPO_ROOT = target.root;
+      try {
+        await pi.exec("giwt", ["new-branch", target.name], { timeout: 60000 });
+        return null; // giwt succeeded
+      } finally {
+        // Restore env
+        process.env.TREE_DIR = savedTreeDir;
+        process.env.REPO_ROOT = savedRepoRoot;
+      }
+    } catch {
+      // giwt failed — fall through to git worktree add
+    }
+  }
+
+  // Fallback: git worktree add -b
   mkdirSync(join(target.root, target.container), { recursive: true });
   try {
     await pi.exec("git", ["worktree", "add", "-b", target.name, target.path], { timeout: 60000 });
