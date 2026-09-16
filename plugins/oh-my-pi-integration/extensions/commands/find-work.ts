@@ -41,8 +41,8 @@ import type {
 } from "@oh-my-pi/pi-coding-agent";
 import type { ReceiptDoc } from "../receipt/receipt";
 import { DEFAULT_STATE, parseReceipt } from "../receipt/receipt";
-import { onPath } from "./bookkeep";
 import { readPlanLabels } from "../util/plan-frontmatter";
+import { onPath } from "./bookkeep";
 import { argumentItems } from "./completions";
 
 // ---------------------------------------------------------------------------

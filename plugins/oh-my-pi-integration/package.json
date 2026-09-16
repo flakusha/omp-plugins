@@ -1,7 +1,7 @@
 {
   "name": "oh-my-pi-integration",
-  "version": "1.0.0",
-  "description": "omp integration plugin: engram memory auto-save + retrieval, GPG/SSH hard-stop guards, and harness tooling guards.",
+  "version": "1.1.0",
+  "description": "omp integration plugin: engram memory auto-save + retrieval, GPG/SSH hard-stop guards, harness tooling guards, and a native write/glob/edit → lean-ctx reroute hook.",
   "license": "AGPL-3.0-or-later",
   "type": "module",
   "omp": {

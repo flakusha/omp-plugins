@@ -4,15 +4,15 @@
     "name": "omp-plugins"
   },
   "metadata": {
-    "description": "oh-my-pi integration bundle: rtk/lean-ctx bash rewrite, engram memory persistence + retrieval, GPG/SSH hard-stop guards, and a native tool re-route hook.",
-    "version": "1.0.0",
+    "description": "oh-my-pi integration bundle: engram memory persistence + retrieval, GPG/SSH hard-stop guards, harness tooling guards, and a native write/glob/edit → lean-ctx reroute hook.",
+    "version": "1.1.0",
     "pluginRoot": "./plugins"
   },
   "plugins": [
     {
       "name": "oh-my-pi-integration",
-      "description": "rtk/lean-ctx bash rewrite + engram memory + GPG/SSH guards + lean-ctx native-tool re-route hook",
-      "version": "1.0.0",
+      "description": "engram memory + GPG/SSH guards + harness tooling guards + lean-ctx native write/glob/edit reroute hook",
+      "version": "1.1.0",
       "category": "development",
       "source": "./oh-my-pi-integration"
     }

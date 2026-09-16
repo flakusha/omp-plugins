@@ -40,7 +40,8 @@ ship a layout that doesn't depend on the loader's resolution behavior.
 │   │   ├── guards/{gpg,ssh,git-destructive}-guard.ts
 │   │   └── util/lint-feedback.ts
 │   ├── hooks/pre/
-│   │   └── harness-evasion-guard.ts
+│   │   ├── harness-evasion-guard.ts
+│   │   └── lean-ctx-native-reroute.ts
 │   ├── rules/                          ← 75+ rule .md files (canonical)
 │   │   ├── harness-tooling-discipline.md
 │   │   ├── harness-use-readonly-mcp.md
@@ -133,6 +134,7 @@ F <hash> agent/extensions/index.ts
 F <hash> agent/extensions/guards/{gpg,ssh,git-destructive}-guard.ts
 F <hash> agent/extensions/util/lint-feedback.ts
 F <hash> agent/hooks/pre/harness-evasion-guard.ts
+F <hash> agent/hooks/pre/lean-ctx-native-reroute.ts
 F <hash> agent/AGENTS.md
 F <hash> agent/config.yml
 F <hash> agent/rules/<75+ rule .md files>
@@ -287,7 +289,7 @@ plugins/oh-my-pi-integration/
     guards/{gpg,ssh,git-destructive}-guard.ts
     util/lint-feedback.ts
   hooks/
-    pre/harness-evasion-guard.ts
+    pre/{harness-evasion-guard,lean-ctx-native-reroute}.ts
   rules/                      ← 75+ rule .md files
   package.json
 

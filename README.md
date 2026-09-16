@@ -53,6 +53,13 @@ plugin can be installed directly with `omp plugin install`.
   file, runs the project's biome on that file and surfaces diagnostics in the
   tool result (best-effort, bounded; resolves the repo-local biome from
   `node_modules/.bin`, falling back to PATH).
+- **Native tool reroute pre-hook** (`hooks/pre/lean-ctx-native-reroute.ts`) —
+  escalates in-root `edit`/`write`/`glob` to the lean-ctx MCP (`ctx_patch`
+  anchored, hash-validated edits and creation; `ctx_glob` for globs). Native
+  `write` stays allowed for `.tmp/` scratch at any depth and is blocked
+  outside the project root. `read`/`grep`, out-of-root paths, internal URIs,
+  and binary/document/archive paths keep the native tools — fail-open
+  exemptions, never a dead end.
 - **Compaction preservation** — on `session.compacting`, injects the
   in-flight mutation buffer into the compaction summary so no uncommitted work
   is lost across a compaction (`harness-evasion-guard` pre-hook additionally

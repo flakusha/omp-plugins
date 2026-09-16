@@ -313,8 +313,14 @@ describe("discoverPlanningIds / buildListPrompt", () => {
     writeFileSync(join(root, ".plan/tickets/A-fixed.md"), "# A\n\n**Status:** fixed-in-worktree\n");
     writeFileSync(join(root, ".plan/tickets/B-nab.md"), "# B\n\n**Status:** not-a-bug\n");
     writeFileSync(join(root, ".plan/tickets/C-wontfix.md"), "# C\n\n**Status:** won't fix\n");
-    writeFileSync(join(root, ".plan/tickets/E-oktag.md"), "# E\n\n**Status:** [OK] Fixed (f32d0a45)\n");
-    writeFileSync(join(root, ".plan/tickets/D-open.md"), "# D\n\n**Status:** not-yet-implemented\n");
+    writeFileSync(
+      join(root, ".plan/tickets/E-oktag.md"),
+      "# E\n\n**Status:** [OK] Fixed (f32d0a45)\n",
+    );
+    writeFileSync(
+      join(root, ".plan/tickets/D-open.md"),
+      "# D\n\n**Status:** not-yet-implemented\n",
+    );
     writeFileSync(
       join(root, ".plan/tickets/F-inprog.md"),
       "# F\n\n**Status:** 🔄 In Progress (fixed by backfill later)\n",

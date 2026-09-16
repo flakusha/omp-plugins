@@ -983,7 +983,10 @@ describe("/find-work handler", () => {
     const ticketsDir = join(dir, ".plan", "tickets");
     mkdirSync(ticketsDir, { recursive: true });
     for (let i = 0; i < MAX_TICKETS + 5; i++) {
-      writeFileSync(join(ticketsDir, `FEAT-${String(i).padStart(3, "0")}.md`), `# FEAT: filler ${i}\n`);
+      writeFileSync(
+        join(ticketsDir, `FEAT-${String(i).padStart(3, "0")}.md`),
+        `# FEAT: filler ${i}\n`,
+      );
     }
     writeFileSync(join(ticketsDir, "BUG-real-crash.md"), "# BUG: real crash\n\n**Status**: open\n");
     writeFileSync(join(ticketsDir, "BUG-other-crash.md"), "# BUG: other crash\n");
