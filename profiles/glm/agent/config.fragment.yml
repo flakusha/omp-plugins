@@ -20,3 +20,11 @@ theme:
 compaction:
   thresholdPercent: 75
   thresholdTokens: 300000
+composer:
+  tokenRate: true
+statusLine:
+  separator: powerline-thin
+terminal:
+  showProgress: true
+display:
+  hideToolActivity: false

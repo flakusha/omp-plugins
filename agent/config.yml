@@ -90,6 +90,10 @@ task:
   agentAdvisor:
     task: "on"
 composer:
-  shape: band
+  shape: field
 theme:
   dark: dark-catppuccin
+display:
+  showTokenUsage: true
+  showTurnTime: true
+  cacheMissMarker: true

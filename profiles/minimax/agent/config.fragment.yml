@@ -17,11 +17,11 @@ ttsr:
   contextMode: discard
   interruptMode: tool-only
   repeatMode: once
-composer:
-  shape: box
 colorBlindMode: false
 statusLine:
   compactThinkingLevel: false
+  separator: powerline
+  preset: nerd
 compaction:
   thresholdTokens: 200000
 dev:
