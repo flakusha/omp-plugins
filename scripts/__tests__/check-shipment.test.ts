@@ -7,6 +7,7 @@ import {
   countLeftoverFiles,
   listTopLevelTs,
   topLevelTsError,
+  unresolvedImports,
 } from "../check-shipment";
 import { runCli } from "./cli";
 
@@ -66,6 +67,47 @@ describe("topLevelTsError", () => {
     expect(topLevelTsError("index.ts")).toBeUndefined();
     expect(topLevelTsError("")).toContain("non-factory .ts at top of agent/extensions");
     expect(topLevelTsError("helper.ts\nindex.ts")).toContain("helper.ts");
+  });
+});
+
+describe("unresolvedImports", () => {
+  // Resource contract: each test owns a unique mkdtempSync dir, removed in
+  // finally — parallel-safe, no shared state, no ordering dependence.
+  test("resolves extensionless, .ts, and index targets; ignores bare and node: specifiers", () => {
+    const root = mkdtempSync(join(tmpdir(), "ship-closure-ok-"));
+    try {
+      mkdirSync(join(root, "sub"), { recursive: true });
+      writeFileSync(
+        join(root, "a.ts"),
+        'import { b } from "./b";\nimport "./c";\nimport { d } from "./d.ts";\nimport x from "bare-pkg";\nimport fs from "node:fs";\n',
+      );
+      writeFileSync(join(root, "b.ts"), "");
+      mkdirSync(join(root, "c"), { recursive: true });
+      writeFileSync(join(root, "c", "index.ts"), "");
+      writeFileSync(join(root, "d.ts"), "");
+      expect(unresolvedImports(root)).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("lists dangling static and dynamic relative imports, mtime suffix stripped", () => {
+    const root = mkdtempSync(join(tmpdir(), "ship-closure-bad-"));
+    try {
+      writeFileSync(
+        join(root, "a.ts"),
+        'import { g } from "./gone";\nconst m = await import("./alsogone?mtime=1");\n',
+      );
+      writeFileSync(join(root, "deep.ts"), 'import "../missing";\n');
+      expect(unresolvedImports(root)).toEqual([
+        "a.ts -> ./alsogone",
+        "a.ts -> ./gone",
+        "deep.ts -> ../missing",
+      ]);
+      expect(unresolvedImports(join(root, "missing-dir"))).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

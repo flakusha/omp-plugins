@@ -19,9 +19,17 @@
 //     relied on raw shell exit-127 noise);
 //   - env `OMP_CHECKS_ROOT` overrides the repo root (test fixture support).
 
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 
 const REPO_ROOT = process.env.OMP_CHECKS_ROOT ?? join(import.meta.dir, "..");
 
@@ -90,6 +98,43 @@ export function topLevelTsError(tops: string): string | undefined {
   return `non-factory .ts at top of agent/extensions (would fail to load): ${tops}`;
 }
 
+/**
+ * Relative imports in *.ts under root that do not resolve to a shipped file
+ * (exact, +".ts", or +"/index.ts"). Catches payload-manifest drift: a module
+ * imported by a shipped file but missing from the installer's AGENT_PAYLOADS
+ * fails omp's extension load at runtime ("Cannot find module ... imported
+ * from ..."), killing every extension behind the entry. Bare and node:
+ * specifiers are ignored — only the relative graph is checked. `?mtime=`
+ * cache-bust suffixes are stripped before resolution.
+ */
+export function unresolvedImports(root: string): string[] {
+  if (!existsSync(root)) return [];
+  const files: string[] = [];
+  const walk = (dir: string): void => {
+    for (const ent of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, ent.name);
+      if (ent.isDirectory()) walk(p);
+      else if (ent.isFile() && ent.name.endsWith(".ts")) files.push(p);
+    }
+  };
+  walk(root);
+  const IMPORT_RE =
+    /\bfrom\s+["'](\.[^"']+)["']|\bimport\s*\(\s*["'](\.[^"']+)["']|\bimport\s+["'](\.[^"']+)["']/g;
+  const unresolved: string[] = [];
+  for (const file of files) {
+    const rel = relative(root, file);
+    for (const m of readFileSync(file, "utf8").matchAll(IMPORT_RE)) {
+      const spec = (m[1] ?? m[2] ?? m[3] ?? "").replace(/\?.*$/, "");
+      const base = resolve(dirname(file), spec);
+      const resolved = [base, `${base}.ts`, join(base, "index.ts")].some(
+        (c) => existsSync(c) && statSync(c).isFile(),
+      );
+      if (!resolved) unresolved.push(`${rel} -> ${spec}`);
+    }
+  }
+  return unresolved.sort();
+}
+
 function fail(message: string): number {
   console.error(`ERROR: ${message}`);
   return 1;
@@ -132,6 +177,16 @@ export async function main(): Promise<number> {
     console.log(`    top-level agent/extensions .ts: ${tops === "" ? "<none>" : tops}`);
     const topsError = topLevelTsError(tops);
     if (topsError !== undefined) return fail(topsError);
+
+    // 4) every relative import in the shipped agent extensions tree resolves
+    //    on disk — one dangling module stops the whole entry at load
+    const dangling = unresolvedImports(instExt);
+    console.log(`    unresolved relative imports: ${dangling.length}`);
+    if (dangling.length !== 0) {
+      return fail(
+        `dangling relative import(s) in shipped agent extensions:\n      ${dangling.join("\n      ")}`,
+      );
+    }
 
     console.log("==> shipment check OK");
     return 0;

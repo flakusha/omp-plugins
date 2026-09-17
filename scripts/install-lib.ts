@@ -84,6 +84,9 @@ export const HELP_TEXT = `# install.ts — Install the oh-my-pi integration bund
 #   TARGET/.omp/agent/extensions/commands/*.ts         slash commands (/receipt /verify /recall
 #                                                  /find-work /finalize /bookkeep /worktree /wt)
 #   TARGET/.omp/agent/extensions/guards/{gpg,ssh}-guard.ts
+#   TARGET/.omp/agent/extensions/util/*.ts             shared helpers (worktree base, lint
+#                                                  feedback, plan frontmatter, giwt config)
+#   TARGET/.omp/agent/extensions/receipt/*.ts          receipt carriage + giwt ledger bridge
 #   TARGET/.omp/agent/hooks/pre/lean-ctx-native-reroute.ts
 #   TARGET/.omp/agent/hooks/pre/harness-evasion-guard.ts
 #   TARGET/.omp/agent/rules/*.md                       universal project rules (agent-scoped)
@@ -464,10 +467,12 @@ const AGENT_PAYLOADS: readonly [string, string][] = [
   ["extensions/util/worktree-base.ts", "extensions/util/worktree-base.ts"],
   ["extensions/util/lint-feedback.ts", "extensions/util/lint-feedback.ts"],
   ["extensions/util/plan-frontmatter.ts", "extensions/util/plan-frontmatter.ts"],
+  ["extensions/util/giwt-config.ts", "extensions/util/giwt-config.ts"],
   ["extensions/guards/gpg-guard.ts", "extensions/guards/gpg-guard.ts"],
   ["extensions/guards/ssh-guard.ts", "extensions/guards/ssh-guard.ts"],
   ["extensions/guards/git-destructive-guard.ts", "extensions/guards/git-destructive-guard.ts"],
   ["extensions/receipt/receipt.ts", "extensions/receipt/receipt.ts"],
+  ["extensions/receipt/giwt-bridge.ts", "extensions/receipt/giwt-bridge.ts"],
   ["hooks/pre/lean-ctx-native-reroute.ts", "hooks/pre/lean-ctx-native-reroute.ts"],
   ["hooks/pre/harness-evasion-guard.ts", "hooks/pre/harness-evasion-guard.ts"],
 ];
