@@ -35,6 +35,8 @@ export interface FinalizeEnv {
   branchGuess: string | null;
   /** giwt available (giwt.toml or .tmp/giwt present). */
   giwtAvailable: boolean;
+  /** Planning index present (.plan/ dir) — gates `--plan-gates` on giwt finalize. */
+  planIndex: boolean;
 }
 
 const WORKTREE_DIRS = ["tree", ".worktrees"];
@@ -79,6 +81,7 @@ export function detectFinalizeEnv(cwd: string | undefined): FinalizeEnv {
     inWorktree,
     branchGuess,
     giwtAvailable: giwtConfig.available,
+    planIndex: existsSync(join(root, ".plan")),
   };
 }
 
@@ -124,7 +127,7 @@ export function buildFinalizePrompt(env: FinalizeEnv, branch: string): string {
     "3. Audit before merge (a clean tree is necessary but not sufficient): divergence via git merge-base <base> <branch> with ahead (base..branch) and behind counts — already fully merged means skip the merge and only remove the worktree + delete the branch; a large behind count with the branch's changes already present on base means orphaned/redundant — remove without merging; added files at layout-violating paths (git diff <base>..<branch> --name-status, lines starting with 'A') mean a corrupted branch — do NOT merge, remove without merging and report.",
     `4. Merge: ${mergeStep} Fallbacks if the CLI fails: retry with REPO_ROOT set; then the manual refs/heads merge from ${env.root} (unstage with git reset HEAD -- . if stale stash/worktree state blocks it); --no-verify only if a format hook blocks an otherwise-good merge commit.`,
     "5. After merging: confirm the merge commit exists on the base, then remove the worktree and delete the branch; verify with git worktree list + git log --oneline -3. If the repo has a planning index (.plan/ + plan:sync script), run the sync check.",
-    "6. Confirm with the user before the merge step and before any branch/worktree deletion. Report the final verdict: merged, removed-as-redundant, removed-as-corrupted, or blocked-dirty.",
+    "6. Confirm with the user before the merge step and before any branch/worktree deletion — use the ask tool (options: proceed / abort), never a turn-yielding chat question; on any red verdict, report it via the ask tool instead of ending the turn. Report the final verdict: merged, removed-as-redundant, removed-as-corrupted, or blocked-dirty.",
   ].join("\n");
 }
 
@@ -142,12 +145,15 @@ export function buildGiwtFinalizePrompt(env: FinalizeEnv, branch: string): strin
     "1. Resolve the default branch (dev preferred; else the remote default via git symbolic-ref refs/remotes/origin/HEAD). The branch to finalize must not be the default branch itself.",
     "2. Require a clean tree: git status --short in the worktree must be empty. Dirty means mid-work — stop, do not merge.",
     "3. Audit before merge (a clean tree is necessary but not sufficient): divergence via git merge-base <base> <branch> with ahead (base..branch) and behind counts — already fully merged means skip the merge and only remove the worktree + delete the branch; a large behind count with the branch's changes already present on base means orphaned/redundant — remove without merging; added files at layout-violating paths (git diff <base>..<branch> --name-status, lines starting with 'A') mean a corrupted branch — do NOT merge, remove without merging and report.",
-    `4. Merge: run \`bun run giwt finalize ${branch}\` from ${env.root} with REPO_ROOT=${env.root} in the environment. giwt handles:`,
+    `4. Merge: run \`bun run giwt finalize ${branch}${env.planIndex ? " --plan-gates all" : ""}\` from ${env.root} with REPO_ROOT=${env.root} in the environment. giwt handles:`,
     "   - Merge-with-gates: runs `commands.check` + `commands.test` from giwt.toml before merging",
     "   - Lockfile safety (.worktree-finalize.lock) for signal-safe cleanup (SIGINT/SIGTERM/SIGHUP)",
     "   - GPG signing verification (asserts agent key unlocked before merging)",
     "   - Stash/pop for dirty worktrees",
     "   - Ticket index sync after merge (.plan/tickets/ ↔ index.json)",
+    env.planIndex
+      ? "   - Plan validation gate (--plan-gates all): validates the .plan index, epics, and ticket links before merging"
+      : "   - No plan gate: repo has no .plan planning index",
     "   - Worktree removal + branch deletion",
     "   Fallbacks if giwt fails: retry with REPO_ROOT set; then manual git merge from " +
       env.root +
@@ -157,7 +163,7 @@ export function buildGiwtFinalizePrompt(env: FinalizeEnv, branch: string): strin
       branch +
       ").",
     "5. After merging: verify with git worktree list + git log --oneline -3. If the repo has a planning index (.plan/ + plan:sync script), run the sync check.",
-    "6. Confirm with the user before the merge step and before any branch/worktree deletion. Report the final verdict: merged, removed-as-redundant, removed-as-corrupted, or blocked-dirty.",
+    "6. Confirm with the user before the merge step and before any branch/worktree deletion — use the ask tool (options: proceed / abort), never a turn-yielding chat question; on any red verdict, report it via the ask tool instead of ending the turn. Report the final verdict: merged, removed-as-redundant, removed-as-corrupted, or blocked-dirty.",
   ].join("\n");
 }
 

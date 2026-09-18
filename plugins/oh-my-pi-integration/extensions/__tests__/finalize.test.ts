@@ -188,6 +188,13 @@ describe("finalize handler", () => {
     expect(pi.sentUserMessages[0]).toContain("feat-ship");
     expect(pi.sentUserMessages[0]).toContain("Confirm with the user");
   });
+
+  test("confirmation and red-verdict reporting route through the ask tool", () => {
+    const prompt = buildFinalizePrompt(detectFinalizeEnv(process.cwd()), "feat-ask");
+    expect(prompt).toContain("use the ask tool");
+    expect(prompt).toContain("proceed / abort");
+    expect(prompt).toContain("report it via the ask tool");
+  });
 });
 
 describe("buildGiwtFinalizePrompt", () => {
@@ -203,5 +210,24 @@ describe("buildGiwtFinalizePrompt", () => {
     expect(prompt).toContain("Lockfile safety");
     expect(prompt).toContain("GPG signing");
     expect(prompt).toContain("Confirm with the user");
+    expect(prompt).toContain("use the ask tool");
+    expect(prompt).toContain("--plan-gates all");
+  });
+
+  test("adds --plan-gates to the command only when a .plan index exists", () => {
+    const base = {
+      root: "/tmp/fake-root",
+      worktreeCli: false,
+      worktreeDir: null,
+      inWorktree: false,
+      branchGuess: null,
+      giwtAvailable: true,
+    };
+    const withPlan = buildGiwtFinalizePrompt({ ...base, planIndex: true }, "b1");
+    expect(withPlan).toContain("bun run giwt finalize b1 --plan-gates all");
+    expect(withPlan).toContain("Plan validation gate");
+    const withoutPlan = buildGiwtFinalizePrompt({ ...base, planIndex: false }, "b2");
+    expect(withoutPlan).not.toContain("--plan-gates");
+    expect(withoutPlan).toContain("No plan gate");
   });
 });
