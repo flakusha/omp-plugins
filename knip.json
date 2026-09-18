@@ -1,0 +1,29 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": ["scripts/**/*.ts", "plugins/*/extensions/**/*.ts"],
+      "project": ["plugins/**/*.ts", "scripts/**/*.ts"]
+    }
+  },
+  "ignore": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/.tmp/**",
+    "plugins/*/node_modules/**",
+    "plugins/*/extensions/__tests__/fixtures/**"
+  ],
+  "ignoreDependencies": [
+    "@types/bun",
+    "@types/node"
+  ],
+  "rules": {
+    "files": "error",
+    "dependencies": "error",
+    "exports": "warn",
+    "types": "error",
+    "duplicates": "warn",
+    "unlisted": "warn",
+    "unresolved": "error"
+  }
+}

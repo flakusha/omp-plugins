@@ -1,0 +1,17 @@
+{
+  "$schema": "https://schemas.openobserve.io/jscpd-config.json",
+  "threshold": 50,
+  "reporters": ["console", "json"],
+  "output": "./.tmp/reports/jscpd",
+  "format": ["typescript"],
+  "ignore": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/.tmp/**",
+    "**/*.test.ts",
+    "**/__tests__/fixtures/**",
+    "**/__tests__/**",
+    "plugins/*/node_modules/**"
+  ],
+  "absolute": false
+}

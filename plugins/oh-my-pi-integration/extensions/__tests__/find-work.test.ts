@@ -17,6 +17,7 @@ import {
   buildSelectedPrompt,
   classifyKind,
   classifyPriority,
+  type DoctorCheck,
   detectLintTool,
   detectWorkSources,
   domainOf,
@@ -36,8 +37,10 @@ import {
   labelTickets,
   letterLabel,
   MAX_TICKETS,
+  mapDoctorReport,
   parseBiomeOutput,
   parseBranchLines,
+  parseDoctorReport,
   parseEslintJson,
   parseFindWorkArgs,
   parseGhIssues,
@@ -1304,6 +1307,21 @@ describe("todoTickets", () => {
     writeFileSync(join(dir, "big.ts"), `// TODO: ${"x".repeat(600)}\n`);
     expect(todoTickets(dir)).toEqual([]);
   });
+
+  test("markers outside comments and inside test files are skipped", () => {
+    const dir = tempDir("fw-todo-prec-");
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(
+      join(dir, "src", "a.ts"),
+      'const m = x === "FIXME" ? "FIXME" : "TODO";\n// TODO: real work\n// TODO\n// TODO: x\n',
+    );
+    writeFileSync(join(dir, "src", "a.test.ts"), "// TODO: scaffold\n");
+    mkdirSync(join(dir, "__tests__"), { recursive: true });
+    writeFileSync(join(dir, "__tests__", "b.ts"), "// TODO: fixture\n");
+    const tickets = todoTickets(dir);
+    expect(tickets).toHaveLength(1);
+    expect(tickets[0]?.title).toContain("real work");
+  });
 });
 
 describe("hasTodoSource", () => {
@@ -1694,6 +1712,8 @@ describe("fetchToolTickets", () => {
 
   test("eslint findings become LT tickets, failures become warnings", async () => {
     const pi = new FakePi();
+    // Force the direct-runner path even where a giwt binary exists.
+    pi.throwMatching = ["giwt"];
     pi.scripted.push({
       stdout: JSON.stringify([
         {
@@ -1721,6 +1741,7 @@ describe("fetchToolTickets", () => {
 
   test("tsc errors and test failures map to P1 bugs", async () => {
     const pi = new FakePi();
+    pi.throwMatching = ["giwt"];
     pi.scripted.push({ stdout: "src/a.ts(3,7): error TS2322: Bad.\n" });
     pi.scripted.push({ stdout: "(fail) suite > breaks\n" });
     const root = tempDir("fw-toolstsc-");
@@ -1737,6 +1758,7 @@ describe("fetchToolTickets", () => {
 
   test("knip and biome findings map to cleanup tickets", async () => {
     const pi = new FakePi();
+    pi.throwMatching = ["giwt"];
     // fetchToolTickets runs lint before knip — script in call order.
     pi.scripted.push({
       stdout: "src/b.ts:1:1 lint/style/useConst ━━━\n\n  ! Use const.\n",
@@ -1763,6 +1785,7 @@ describe("fetchTickets tool wiring", () => {
     writeFileSync(join(root, "src", "a.ts"), "// TODO: wire it\n");
     writeFileSync(join(root, "eslint.config.js"), "export default [];\n");
     const pi = new FakePi();
+    pi.throwMatching = ["giwt"];
     pi.scripted.push({
       stdout: JSON.stringify([
         {
@@ -1801,6 +1824,7 @@ describe("fetchTickets tool wiring", () => {
 describe("fetchToolTickets runners", () => {
   test("oxlint JSON findings map to LT tickets; repo-pinned bin preferred", async () => {
     const pi = new FakePi();
+    pi.throwMatching = ["giwt"];
     pi.scripted.push({
       stdout: JSON.stringify({
         diagnostics: [
@@ -1841,7 +1865,9 @@ describe("fetchToolTickets runners", () => {
     expect(tickets[0]?.id).toBe("LT-01");
     expect(tickets[0]?.kind).toBe("bug");
     expect(tickets[0]?.title).toContain("bad.ts:2");
-    expect(pi.execCalls[0]?.command).toBe(join(root, "node_modules", ".bin", "oxlint"));
+    expect(
+      pi.execCalls.some((c) => c.command === join(root, "node_modules", ".bin", "oxlint")),
+    ).toBe(true);
   });
 
   test("jscpd duplications map to CPD tickets", async () => {
@@ -1890,7 +1916,7 @@ describe("fetchToolTickets runners", () => {
     expect(tickets[0]?.id).toBe("CPD-01");
     expect(tickets[0]?.domain).toBe("duplication");
     expect(tickets[0]?.title).toContain("12 duplicated lines: a.ts:3 ↔ b.ts:8");
-    expect(pi.execCalls[0]?.command).toBe("jscpd");
+    expect(pi.execCalls.some((c) => c.command === "jscpd")).toBe(true);
   });
 });
 
@@ -1934,5 +1960,338 @@ describe("fetchMergeTickets failure paths", () => {
     const tickets = await fetchMergeTickets(pi, root);
     expect(tickets).toEqual([]);
     expect(pi.execCalls).toHaveLength(5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// giwt doctor delegation
+// ---------------------------------------------------------------------------
+
+describe("parseDoctorReport", () => {
+  test("parses the v1 report shape", () => {
+    const checks = parseDoctorReport(
+      JSON.stringify({
+        version: 1,
+        root: "/r",
+        checks: [{ id: "lint", tool: "oxlint", ok: true, findings: [] }],
+      }),
+    );
+    expect(checks).toHaveLength(1);
+    expect(checks[0]?.id).toBe("lint");
+  });
+
+  test("throws on garbage, wrong version, and missing checks", () => {
+    expect(() => parseDoctorReport("nope")).toThrow();
+    expect(() => parseDoctorReport(JSON.stringify({ version: 2, checks: [] }))).toThrow();
+    expect(() => parseDoctorReport(JSON.stringify({ version: 1 }))).toThrow();
+  });
+
+  test("tolerates run-record chatter before the JSON", () => {
+    const checks = parseDoctorReport(
+      "Run record: /tmp/x/.tmp/giwt/runs/20260916T000000-1-doctor\n" +
+        JSON.stringify({ version: 1, root: "/r", checks: [] }),
+    );
+    expect(checks).toEqual([]);
+  });
+});
+
+describe("mapDoctorReport", () => {
+  const wanted = new Set<DoctorCheck>(["lint", "typecheck", "tests", "knip", "jscpd"]);
+
+  test("maps each check to prefixed tickets with source priorities", () => {
+    const { tickets, warnings } = mapDoctorReport(
+      [
+        {
+          id: "lint",
+          tool: "oxlint",
+          ok: true,
+          findings: [
+            { file: "a.ts", line: 1, rule: "r1", message: "Bad.", severity: "error", kind: "bug" },
+            {
+              file: "b.ts",
+              line: 2,
+              rule: "r2",
+              message: "Meh.",
+              severity: "warning",
+              kind: "task",
+            },
+          ],
+        },
+        {
+          id: "typecheck",
+          tool: "tsc",
+          ok: true,
+          findings: [
+            {
+              file: "c.ts",
+              line: 3,
+              rule: "TS1",
+              message: "Bad type.",
+              severity: "error",
+              kind: "bug",
+            },
+          ],
+        },
+        {
+          id: "tests",
+          tool: "bun",
+          ok: true,
+          findings: [{ message: "suite > breaks", severity: "error", kind: "bug" }],
+        },
+        {
+          id: "knip",
+          tool: "knip",
+          ok: true,
+          findings: [
+            {
+              file: "d.ts",
+              rule: "knip:export",
+              message: "export: old",
+              severity: "warning",
+              kind: "task",
+            },
+          ],
+        },
+        {
+          id: "jscpd",
+          tool: "jscpd",
+          ok: true,
+          findings: [
+            { file: "e.ts", message: "2 duplicated lines", severity: "warning", kind: "task" },
+          ],
+        },
+      ],
+      "/r",
+      wanted,
+    );
+    expect(warnings).toEqual([]);
+    expect(tickets.map((t) => t.id)).toEqual([
+      "LT-01",
+      "LT-02",
+      "TS-03",
+      "TT-04",
+      "KN-05",
+      "CPD-06",
+    ]);
+    expect(tickets.map((t) => t.priority)).toEqual(["P2", "P3", "P1", "P1", "P3", "P3"]);
+    expect(tickets.map((t) => t.source)).toEqual([
+      "lint",
+      "lint",
+      "typecheck",
+      "tests",
+      "knip",
+      "jscpd",
+    ]);
+    expect(tickets[2]?.title).toContain("TS1");
+    expect(tickets[3]?.title).toContain("FAIL");
+  });
+
+  test("keeps only wanted checks and surfaces check errors as warnings", () => {
+    const { tickets, warnings } = mapDoctorReport(
+      [
+        { id: "lint", tool: "x", ok: false, error: "boom", findings: [] },
+        {
+          id: "todo",
+          tool: "comment-scan",
+          ok: true,
+          findings: [{ message: "T.", severity: "warning", kind: "task" }],
+        },
+      ],
+      "/r",
+      new Set(["lint"]),
+    );
+    expect(tickets).toEqual([]);
+    expect(warnings).toEqual(["lint: boom"]);
+  });
+});
+
+describe("fetchViaDoctor", () => {
+  function withFakeGiwtBin(): { bin: string; restore: () => void } {
+    const bin = tempDir("fw-giwtbin-");
+    writeFileSync(join(bin, "giwt"), "#!/bin/sh\n");
+    const saved = process.env.PATH ?? "";
+    process.env.PATH = `${bin}:${saved}`;
+    return {
+      bin,
+      restore: () => {
+        process.env.PATH = saved;
+      },
+    };
+  }
+
+  const allOff = {
+    receipt: false,
+    plan: false,
+    gh: false,
+    gitIssue: false,
+    jira: false,
+    glab: false,
+    trackerCli: false,
+    giwtLedger: false,
+    giwtRuns: false,
+    todo: false,
+    merges: false,
+    lint: false,
+    typecheck: false,
+    tests: false,
+    knip: false,
+    jscpd: false,
+  };
+
+  test("prefers one doctor call and maps all five tool checks", async () => {
+    const { restore } = withFakeGiwtBin();
+    try {
+      const pi = new FakePi();
+      pi.scripted.push({
+        stdout: JSON.stringify({
+          version: 1,
+          root: "/r",
+          checks: [
+            {
+              id: "lint",
+              tool: "oxlint",
+              ok: true,
+              findings: [
+                {
+                  file: "a.ts",
+                  line: 1,
+                  rule: "r",
+                  message: "Bad.",
+                  severity: "error",
+                  kind: "bug",
+                },
+              ],
+            },
+            { id: "typecheck", tool: "tsc", ok: true, findings: [] },
+            {
+              id: "tests",
+              tool: "bun",
+              ok: true,
+              findings: [{ message: "s > t", severity: "error", kind: "bug" }],
+            },
+            { id: "knip", tool: "knip", ok: true, findings: [] },
+            {
+              id: "jscpd",
+              tool: "jscpd",
+              ok: true,
+              findings: [{ file: "d.ts", message: "dup", severity: "warning", kind: "task" }],
+            },
+          ],
+        }),
+      });
+      const root = tempDir("fw-doctor-");
+      const { tickets, warnings } = await fetchToolTickets(pi, root, {
+        ...allOff,
+        lint: true,
+        typecheck: true,
+        tests: true,
+        knip: true,
+        jscpd: true,
+      });
+      expect(warnings).toEqual([]);
+      expect(tickets.map((t) => t.id)).toEqual(["LT-01", "TT-02", "CPD-03"]);
+      expect(pi.execCalls).toHaveLength(1);
+      expect(pi.execCalls[0]?.command).toBe("giwt");
+      expect(pi.execCalls[0]?.args).toContain("--json");
+    } finally {
+      restore();
+    }
+  });
+
+  test("garbage doctor output falls back to direct runners", async () => {
+    const { restore } = withFakeGiwtBin();
+    try {
+      const pi = new FakePi();
+      pi.scripted.push({ stdout: "not json" });
+      pi.scripted.push({
+        stdout: "src/b.ts:1:1 lint/style/useConst ━━━\n\n  ! Use const.\n",
+      });
+      const root = tempDir("fw-doctorfb-");
+      writeFileSync(join(root, "biome.json"), "{}\n");
+      const { tickets } = await fetchToolTickets(pi, root, { ...allOff, lint: true });
+      expect(tickets.map((t) => t.id)).toEqual(["LT-01"]);
+      expect(pi.execCalls[0]?.command).toBe("giwt");
+    } finally {
+      restore();
+    }
+  });
+});
+
+describe("fetchTickets parallelism + tool-cluster budget", () => {
+  const allOff = {
+    receipt: false,
+    plan: false,
+    gh: false,
+    gitIssue: false,
+    jira: false,
+    glab: false,
+    trackerCli: false,
+    giwtLedger: false,
+    giwtRuns: false,
+    todo: false,
+    merges: false,
+    lint: false,
+    typecheck: false,
+    tests: false,
+    knip: false,
+    jscpd: false,
+  };
+
+  test("independent async sources start concurrently and resolve out of order", async () => {
+    const events: string[] = [];
+    const deferreds: Array<(v: { stdout?: string }) => void> = [];
+    const pi = {
+      async exec(command: string): Promise<{ stdout?: string }> {
+        events.push(`start:${command}`);
+        return new Promise((resolve) => deferreds.push(resolve));
+      },
+    };
+    // Resource contract: no fs fixtures, no real subprocesses — pi stubs exec;
+    // tempDir is unique per test.
+    const pending = fetchTickets(pi as never, tempDir("fw-par-"), {
+      ...allOff,
+      gh: true,
+      gitIssue: true,
+    });
+    // Both subprocesses were started before either resolved — the historical
+    // sequential impl cannot pass this: it resolves gh before starting git-issue.
+    expect(events).toEqual(["start:gh", "start:git-issue"]);
+    deferreds[1]?.({ stdout: "" }); // git-issue resolves first, unparseable
+    deferreds[0]?.({ stdout: JSON.stringify([{ number: 12, title: "t", labels: [], url: "" }]) });
+    const { tickets, warnings } = await pending;
+    expect(tickets.map((t) => t.id)).toEqual(["#12"]);
+    expect(warnings.some((w) => w.includes("git-issue list returned no parseable items"))).toBe(
+      true,
+    );
+  });
+
+  test("doctor timeout consumes the budget and skips the direct fallback", async () => {
+    // Fake giwt on PATH (satisfies giwtOnPath) — never actually executed:
+    // pi stubs exec and simulates the killed-doctor wait.
+    const bin = tempDir("fw-budgetbin-");
+    writeFileSync(join(bin, "giwt"), "#!/bin/sh\nsleep 5\n");
+    const saved = process.env.PATH ?? "";
+    process.env.PATH = `${bin}:${saved}`;
+    try {
+      const pi = {
+        async exec(): Promise<{ stdout?: string }> {
+          await Bun.sleep(200); // outlives the injected 40ms budget
+          return { stdout: "" };
+        },
+      };
+      const t0 = Date.now();
+      const res = await fetchToolTickets(
+        pi as never,
+        tempDir("fw-budget-"),
+        { ...allOff, lint: true },
+        { budgetMs: 40 },
+      );
+      expect(res.tickets).toEqual([]);
+      expect(res.warnings[0]).toContain("cluster budget");
+      // Returned after the stub wait, not after any real tool budget.
+      expect(Date.now() - t0).toBeLessThan(1999);
+    } finally {
+      process.env.PATH = saved;
+    }
   });
 });

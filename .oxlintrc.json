@@ -1,0 +1,19 @@
+{
+  "$schema": "https://oxc.rs/docs/oxlint/configuration/schema.json",
+  "categories": {
+    "correctness": "error"
+  },
+  "rules": {
+    "no-debugger": "error",
+    "no-explicit-any": "error",
+    "no-thenable": "off",
+    "no-useless-escape": "off"
+  },
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/.tmp/**",
+    "**/__tests__/**/fixtures/**",
+    "plugins/*/node_modules/**"
+  ]
+}

@@ -40,7 +40,11 @@ plugin can be installed directly with `omp plugin install`.
   dialog grouped by domain; `ask` filters dialog candidates by the topic when
   a directive matches tickets and hands the selected batch (and any trailing
   directive, e.g. `/find-work ask propose the next batch of fixes`) to an
-  agent turn. jira/glab are resolved inside that turn.
+  agent turn. jira/glab are resolved inside that turn. Independent sources
+  fetch concurrently; live tool findings (lint/typecheck/tests/knip/jscpd,
+  via `giwt doctor check` when available) share a bounded wall budget
+  (`TOOL_CLUSTER_BUDGET_MS`, 120s) — on repos where they cannot finish in
+  budget the roster still presents, with a warning naming the direct command.
 - **GPG & SSH hard-stop guards** — when a commit signing or ssh-agent/socket
   failure needs a human (locked GPG key, stale SSH agent), substitutes an
   imperative hard-stop directive and blocks the agent's usual self-recovery
