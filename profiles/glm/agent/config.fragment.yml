@@ -27,4 +27,7 @@ statusLine:
 terminal:
   showProgress: true
 display:
+  showTokenUsage: true
+  showTurnTime: true
+  cacheMissMarker: true
   hideToolActivity: false
