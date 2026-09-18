@@ -5,10 +5,37 @@
  */
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@oh-my-pi/pi-coding-agent";
+import { findGitRoot, primaryRepoRoot } from "../../util/worktree-base";
 
 export function projectFor(cwd: string | undefined): string {
   if (!cwd) return "omp";
+  // Canonical key: primary repo name, so worktrees share the origin's
+  // memories instead of fragmenting per worktree dir name. Fail-open to
+  // the leaf basename when git metadata is unavailable.
+  try {
+    const gitRoot = findGitRoot(cwd);
+    if (gitRoot) {
+      const primary = primaryRepoRoot(gitRoot);
+      const base = primary?.split("/").filter(Boolean).pop();
+      if (base) return base;
+    }
+  } catch {
+    /* fall through to basename */
+  }
   return cwd.split("/").filter(Boolean).pop() || "omp";
+}
+
+/**
+ * Compat-fallback keys for reads: canonical first, then the leaf basename
+ * when it differs (memories saved before canonicalization, or by tools
+ * using the raw dir name, e.g. worktree `<name>` vs primary repo).
+ * Saves always use `projectFor` (keys[0]); sweeps read through the list.
+ */
+export function projectKeysFor(cwd: string | undefined): string[] {
+  const canonical = projectFor(cwd);
+  if (!cwd) return [canonical];
+  const leaf = cwd.split("/").filter(Boolean).pop() || "omp";
+  return leaf && leaf !== canonical ? [canonical, leaf] : [canonical];
 }
 
 // Function words that add no search signal (static membership table).
@@ -142,29 +169,42 @@ export function formatRetrieval(stdout: string): string | null {
 }
 
 /**
- * Search engram for a distilled query, falling back to the project's recent
- * context when keyword matching finds nothing (same two-step as turn-start
- * retrieval). Returns null when both come back empty; exec failures throw
- * to the caller, which surfaces a warning.
+ * Sweep reads through compat keys: keyword search per key, then
+ * recent-context fallback per key. First hit wins; null when all empty.
+ * Throws on exec failure so callers can warn.
  */
+export async function sweepRecall(
+  pi: ExtensionAPI,
+  query: string,
+  keys: string[],
+  timeout: number,
+): Promise<string | null> {
+  for (const proj of keys) {
+    const res = await pi.exec(
+      "engram",
+      ["search", query, "--project", proj, "--limit", String(RETRIEVE_LIMIT)],
+      { timeout },
+    );
+    const text = formatRetrieval(res.stdout ?? "");
+    if (text) return text;
+  }
+  for (const proj of keys) {
+    const res = await pi.exec("engram", ["search", proj, "--project", proj, "--limit", "4"], {
+      timeout,
+    });
+    const text = formatRetrieval(res.stdout ?? "");
+    if (text) return text;
+  }
+  return null;
+}
+
+/** Single-key recall (compat wrapper over the key sweep). */
 export async function runRecall(
   pi: ExtensionAPI,
   query: string,
   proj: string,
 ): Promise<string | null> {
-  let res = await pi.exec(
-    "engram",
-    ["search", query, "--project", proj, "--limit", String(RETRIEVE_LIMIT)],
-    { timeout: RECALL_TIMEOUT_MS },
-  );
-  let text = formatRetrieval(res.stdout ?? "");
-  if (!text) {
-    res = await pi.exec("engram", ["search", proj, "--project", proj, "--limit", "4"], {
-      timeout: RECALL_TIMEOUT_MS,
-    });
-    text = formatRetrieval(res.stdout ?? "");
-  }
-  return text;
+  return sweepRecall(pi, query, [proj], RECALL_TIMEOUT_MS);
 }
 
 export async function recallMemories(
@@ -177,11 +217,11 @@ export async function recallMemories(
     ctx.ui.notify("usage: /recall <keywords>", "error");
     return;
   }
-  const proj = projectFor(ctx.cwd);
+  const keys = projectKeysFor(ctx.cwd);
   const query = distillQuery(raw, 4) || raw;
   let text: string | null;
   try {
-    text = await runRecall(pi, query, proj);
+    text = await sweepRecall(pi, query, keys, RECALL_TIMEOUT_MS);
   } catch {
     ctx.ui.notify("memory search failed (engram unavailable?)", "warning");
     return;

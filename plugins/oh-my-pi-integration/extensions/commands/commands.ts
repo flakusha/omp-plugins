@@ -1,11 +1,15 @@
 /**
  * Global slash commands for the oh-my-pi-integration plugin (`/receipt`,
- * `/verify`, `/recall`, `/find-work`, `/finalize`, `/bookkeep`, `/worktree`, `/wt`).
+ * `/verify`, `/recall`, `/find-work`, `/finalize`, `/bookkeep`, `/worktree`, `/wt`, `/ticket`).
  *
  * Registered from the plugin factory (see index.ts), so they ship with the
  * extension payload and resolve in the default agent and every profile.
  * Same kill-switch as the rest of the plugin: `PI_INTEGRATION_DISABLE=1`.
  *
+ * NOTE (slash-only): `pi.registerCommand` entries are user-typed `/name`
+ * invocations only — they never surface as LLM-callable tools (that is
+ * `pi.registerTool`). Agent-turn access to a command's doing-part goes
+ * through `pi.sendUserMessage` with the built prompt (see below).
  * Handler discipline (command handlers receive args + ctx, no AgentAPI):
  * - read-only answers go straight to the user via `ctx.ui.notify`
  *   (no agent turn spent);
@@ -27,6 +31,7 @@ import { finishReceiptJob, receiptCompletions, showReceipt } from "./commands/re
 import { argumentItems } from "./completions";
 import { registerFinalize } from "./finalize";
 import { registerFindWork } from "./find-work";
+import { registerTicket } from "./ticket";
 import { registerWorktree } from "./worktree";
 import { registerWt } from "./wt";
 
@@ -34,10 +39,12 @@ export {
   distillQuery,
   formatRetrieval,
   projectFor,
+  projectKeysFor,
   RETRIEVE_LIMIT,
   RETRIEVE_MAX_CHARS,
   runRecall,
   STOPWORDS,
+  sweepRecall,
 } from "./commands/recall";
 export {
   finishReceiptJob,
@@ -55,7 +62,7 @@ export function buildVerifyPrompt(extra: string): string {
   return extra ? `${base}\n\nExtra focus from the user: ${extra}` : base;
 }
 
-/** Register `/receipt`, `/verify`, `/recall`, `/find-work`, `/finalize`, `/bookkeep`, `/worktree`, `/wt` on the plugin factory's `pi`. */
+/** Register `/receipt`, `/verify`, `/recall`, `/find-work`, `/finalize`, `/bookkeep`, `/worktree`, `/wt`, `/ticket` on the plugin factory's `pi`. */
 export function registerCommands(pi: ExtensionAPI): void {
   pi.registerCommand("receipt", {
     description: "Show the project job ledger; `/receipt done <id>` marks a job finished",
@@ -99,4 +106,5 @@ export function registerCommands(pi: ExtensionAPI): void {
   registerBookkeep(pi);
   registerWorktree(pi);
   registerWt(pi);
+  registerTicket(pi);
 }

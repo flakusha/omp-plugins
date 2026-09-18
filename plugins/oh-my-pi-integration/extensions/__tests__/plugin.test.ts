@@ -208,6 +208,7 @@ describe("integrationPlugin — registration", () => {
       "find-work",
       "recall",
       "receipt",
+      "ticket",
       "verify",
       "worktree",
       "wt",

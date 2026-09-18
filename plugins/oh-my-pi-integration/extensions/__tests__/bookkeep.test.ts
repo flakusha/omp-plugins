@@ -15,6 +15,7 @@ import {
   discoverPlanningIds,
   registerBookkeep,
 } from "../commands/bookkeep";
+import { tryGiwtBookkeep } from "../commands/bookkeep/giwt";
 
 type CommandHandler = (args: string, ctx: ExtensionCommandContext) => Promise<void>;
 
@@ -464,5 +465,91 @@ describe("bookkeep config handler", () => {
   test("config takes no further completions", () => {
     const env = detectBookkeepEnv(tempDir("bk-cmp8-"));
     expect(bookkeepCompletions(env, "config ")).toEqual([]);
+  });
+});
+
+// FakePi lacks exec, so giwt-delegation tests use a local exec double.
+interface GiwtScripted {
+  stdout?: string;
+  exitCode?: number;
+}
+
+function giwtPi(scripted: GiwtScripted[], opts: { throwOnExec?: boolean } = {}) {
+  const notified: Array<[string, string | undefined]> = [];
+  const execCalls: Array<{ command: string; args: string[] }> = [];
+  const pi = {
+    async exec(command: string, args: string[]): Promise<GiwtScripted> {
+      execCalls.push({ command, args });
+      if (opts.throwOnExec) throw new Error("giwt down");
+      return scripted.shift() ?? { stdout: "" };
+    },
+  } as unknown as ExtensionAPI;
+  const ctx = makeCtx(tempDir("bk-giwt-"), notified);
+  return { pi, ctx, notified, execCalls };
+}
+
+function giwtEnv(root: string) {
+  const env = detectBookkeepEnv(root);
+  return { ...env, giwtAvailable: true };
+}
+
+describe("tryGiwtBookkeep", () => {
+  test("unavailable giwt declines to serve", async () => {
+    const root = tempDir("bk-giwt0-");
+    const { pi, ctx } = giwtPi([]);
+    expect(await tryGiwtBookkeep(pi, ctx, detectBookkeepEnv(root), ["audit", "X"])).toBe(false);
+  });
+
+  test("unknown subcommand declines to serve", async () => {
+    const root = tempDir("bk-giwt1-");
+    const { pi, ctx } = giwtPi([]);
+    expect(await tryGiwtBookkeep(pi, ctx, giwtEnv(root), ["frobnicate"])).toBe(false);
+  });
+
+  test("audit without a target declines to serve", async () => {
+    const root = tempDir("bk-giwt2-");
+    const { pi, ctx } = giwtPi([]);
+    expect(await tryGiwtBookkeep(pi, ctx, giwtEnv(root), ["audit"])).toBe(false);
+  });
+
+  test("audit serves giwt plan validate output", async () => {
+    const root = tempDir("bk-giwt3-");
+    const { pi, ctx, notified, execCalls } = giwtPi([{ stdout: "all clean\n" }]);
+    expect(await tryGiwtBookkeep(pi, ctx, giwtEnv(root), ["audit", "EPIC-1"])).toBe(true);
+    expect(execCalls[0]).toEqual({ command: "giwt", args: ["plan", "validate"] });
+    expect(notified[0]?.[1]).toBe("info");
+    expect(notified[0]?.[0]).toContain("all clean");
+  });
+
+  test("audit with empty giwt output falls back", async () => {
+    const root = tempDir("bk-giwt4-");
+    const { pi, ctx } = giwtPi([{ stdout: "" }]);
+    expect(await tryGiwtBookkeep(pi, ctx, giwtEnv(root), ["audit", "EPIC-1"])).toBe(false);
+  });
+
+  test("audit exec failure falls back", async () => {
+    const root = tempDir("bk-giwt5-");
+    const { pi, ctx } = giwtPi([], { throwOnExec: true });
+    expect(await tryGiwtBookkeep(pi, ctx, giwtEnv(root), ["audit", "EPIC-1"])).toBe(false);
+  });
+
+  test("sync serves the plain and --fix forms", async () => {
+    const root = tempDir("bk-giwt6-");
+    const plain = giwtPi([{ stdout: "in sync\n", exitCode: 0 }]);
+    expect(await tryGiwtBookkeep(plain.pi, plain.ctx, giwtEnv(root), ["sync"])).toBe(true);
+    expect(plain.execCalls[0]).toEqual({ command: "giwt", args: ["sync"] });
+    expect(plain.notified[0]?.[0]).toContain("in sync");
+    const fixed = giwtPi([{ stdout: "drift\n", exitCode: 1 }]);
+    expect(await tryGiwtBookkeep(fixed.pi, fixed.ctx, giwtEnv(root), ["sync", "--fix"])).toBe(true);
+    expect(fixed.execCalls[0]).toEqual({ command: "giwt", args: ["sync", "--fix"] });
+    expect(fixed.notified[0]?.[0]).toContain("issues remain");
+  });
+
+  test("sync with empty output or exec failure falls back", async () => {
+    const root = tempDir("bk-giwt7-");
+    const empty = giwtPi([{ stdout: "" }]);
+    expect(await tryGiwtBookkeep(empty.pi, empty.ctx, giwtEnv(root), ["sync"])).toBe(false);
+    const down = giwtPi([], { throwOnExec: true });
+    expect(await tryGiwtBookkeep(down.pi, down.ctx, giwtEnv(root), ["sync"])).toBe(false);
   });
 });

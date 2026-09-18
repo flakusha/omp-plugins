@@ -5,12 +5,7 @@
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
-import {
-  distillQuery,
-  formatRetrieval,
-  projectFor,
-  RETRIEVE_LIMIT,
-} from "../commands/commands/recall";
+import { distillQuery, projectKeysFor, sweepRecall } from "../commands/commands/recall";
 
 /** Register the before_agent_start retrieval hook. */
 export function registerTurnStartRetrieval(pi: ExtensionAPI): void {
@@ -26,30 +21,16 @@ export function registerTurnStartRetrieval(pi: ExtensionAPI): void {
   // bounded: a failure/timeout returns undefined so the turn is never blocked.
   pi.on("before_agent_start", async (event, ctx: ExtensionContext) => {
     if (!RETRIEVE_ON()) return undefined;
-    const proj = projectFor(ctx.cwd);
     if (!EVERY_TURN() && retrievedThisSession) return undefined;
     retrievedThisSession = true;
 
-    const raw = event.prompt.trim() || proj;
+    const keys = projectKeysFor(ctx.cwd);
+    const fallback = keys[0] ?? "omp";
+    const raw = event.prompt.trim() || fallback;
     const distilled = distillQuery(raw, 4);
     try {
-      // 1) Best attempt: keyword search on a distilled query derived from the prompt.
-      let res = await pi.exec(
-        "engram",
-        ["search", distilled || raw, "--project", proj, "--limit", String(RETRIEVE_LIMIT)],
-        { timeout: RETRIEVE_TIMEOUT_MS },
-      );
-      let text = formatRetrieval(res.stdout ?? "");
-
-      // 2) Keyword matching is brittle — if nothing matched, fall back to the
-      //    project's recent recorded context so the agent still sees prior work.
-      if (!text) {
-        res = await pi.exec("engram", ["search", proj, "--project", proj, "--limit", "4"], {
-          timeout: RETRIEVE_TIMEOUT_MS,
-        });
-        text = formatRetrieval(res.stdout ?? "");
-      }
-
+      // sweepRecall: keyword search per key, then recent-context per key.
+      const text = await sweepRecall(pi, distilled || raw, keys, RETRIEVE_TIMEOUT_MS);
       if (!text) return undefined;
       return {
         message: {

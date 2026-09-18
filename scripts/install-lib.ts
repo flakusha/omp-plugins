@@ -84,7 +84,7 @@ export const HELP_TEXT = `# install.ts — Install the oh-my-pi integration bund
 #                                                  profiles link it — keeps the default template)
 #   TARGET/.omp/agent/extensions/index.ts              integration extension
 #   TARGET/.omp/agent/extensions/commands/*.ts         slash commands (/receipt /verify /recall
-#                                                  /find-work /finalize /bookkeep /worktree /wt)
+#                                                  /find-work /finalize /bookkeep /worktree /wt /ticket)
 #   TARGET/.omp/agent/extensions/guards/{gpg,ssh}-guard.ts
 #   TARGET/.omp/agent/extensions/util/*.ts             shared helpers (worktree base, lint
 #                                                  feedback, plan frontmatter, giwt config)
@@ -493,6 +493,7 @@ const AGENT_PAYLOADS: readonly [string, string][] = [
   ["extensions/commands/bookkeep/actions.ts", "extensions/commands/bookkeep/actions.ts"],
   ["extensions/commands/bookkeep/completions.ts", "extensions/commands/bookkeep/completions.ts"],
   ["extensions/commands/bookkeep/register.ts", "extensions/commands/bookkeep/register.ts"],
+  ["extensions/commands/ticket.ts", "extensions/commands/ticket.ts"],
   ["extensions/commands/ticket/env.ts", "extensions/commands/ticket/env.ts"],
   ["extensions/commands/ticket/parse.ts", "extensions/commands/ticket/parse.ts"],
   ["extensions/commands/ticket/exec.ts", "extensions/commands/ticket/exec.ts"],

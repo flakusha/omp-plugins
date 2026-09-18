@@ -5,9 +5,11 @@ import { join } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@oh-my-pi/pi-coding-agent";
 import {
   buildVerifyPrompt,
+  projectKeysFor,
   registerCommands,
   renderReceiptStatus,
   runRecall,
+  sweepRecall,
 } from "../commands/commands";
 
 type CommandHandler = (args: string, ctx: ExtensionCommandContext) => Promise<void>;
@@ -82,7 +84,7 @@ some useful detail
 `;
 
 describe("registerCommands", () => {
-  test("registers receipt, verify, recall, find-work, finalize, bookkeep, and worktree with descriptions", () => {
+  test("registers receipt, verify, recall, find-work, finalize, bookkeep, worktree, wt, and ticket with descriptions", () => {
     const commands = registered();
     expect([...commands.keys()].sort()).toEqual([
       "bookkeep",
@@ -90,6 +92,7 @@ describe("registerCommands", () => {
       "find-work",
       "recall",
       "receipt",
+      "ticket",
       "verify",
       "worktree",
       "wt",
@@ -167,6 +170,62 @@ describe("runRecall", () => {
     const pi = new FakePi();
     pi.throwOnExec = true;
     await expect(runRecall(pi as unknown as ExtensionAPI, "x", "omp-plugins")).rejects.toThrow();
+  });
+});
+
+describe("projectKeysFor", () => {
+  test("undefined cwd falls back to omp", () => {
+    expect(projectKeysFor(undefined)).toEqual(["omp"]);
+  });
+
+  test("single key outside any repo", () => {
+    const dir = tempDir("cmd-keys-");
+    const leaf = dir.split("/").filter(Boolean).pop() as string;
+    expect(projectKeysFor(dir)).toEqual([leaf]);
+  });
+
+  test("canonical plus leaf for subdir inside a repo", () => {
+    const root = tempDir("cmd-repo-");
+    mkdirSync(join(root, ".git"), { recursive: true });
+    const sub = join(root, "sub");
+    mkdirSync(sub, { recursive: true });
+    const repoName = root.split("/").filter(Boolean).pop() as string;
+    expect(projectKeysFor(sub)).toEqual([repoName, "sub"]);
+  });
+});
+
+describe("sweepRecall", () => {
+  test("sweeps to leaf key when canonical misses", async () => {
+    const pi = new FakePi();
+    pi.scripted.push({ stdout: "no memories found\n" }, { stdout: ENGRAM_HIT });
+    const text = await sweepRecall(
+      pi as unknown as ExtensionAPI,
+      "cicd",
+      ["repo", "wt-name"],
+      10_000,
+    );
+    expect(text).toContain("remembered fix");
+    expect(pi.execCalls).toHaveLength(2);
+    expect(pi.execCalls[1]?.args).toContain("wt-name");
+  });
+
+  test("recent-context fallback sweeps keys in order", async () => {
+    const pi = new FakePi();
+    pi.scripted.push(
+      { stdout: "no memories found\n" },
+      { stdout: "no memories found\n" },
+      { stdout: "" },
+      { stdout: ENGRAM_HIT },
+    );
+    const text = await sweepRecall(
+      pi as unknown as ExtensionAPI,
+      "zzz",
+      ["repo", "wt-name"],
+      10_000,
+    );
+    expect(text).toContain("remembered fix");
+    expect(pi.execCalls).toHaveLength(4);
+    expect(pi.execCalls[3]?.args).toContain("wt-name");
   });
 });
 
