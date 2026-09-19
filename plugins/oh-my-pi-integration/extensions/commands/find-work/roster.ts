@@ -14,7 +14,6 @@ import {
   DEFAULT_PRIORITY,
   HEADING_RE,
   KEY_VALUE_RE,
-  NUMBERED_LINE_RE,
   STATUS_DONE_RE,
   STATUS_LINE_RE,
 } from "./keywords";
@@ -151,16 +150,31 @@ export function parseGhIssues(stdout: string): WorkTicket[] {
   });
 }
 
-/** Tolerant line-parse of `git-issue list` output (`N. title` / `N title`). */
+/**
+ * git-issue / `git issue ls` lines are `<hex-or-num>[ ][state] <TYPE-id>: <title>`.
+ * Plain `N. title` and `N title` shapes are also accepted (legacy fallback).
+ * The shared `NUMBERED_LINE_RE` only handles decimal numerics, so this parser
+ * uses a local regex that captures hex or decimal ids and strips a leading
+ * bracketed state token (e.g. `[open]`) before capture — otherwise the
+ * canonical title starts with `[open] BUG-…` and `classifyKind` cannot
+ * recognise the `BUG-` / `FEAT-` / `TASK-` prefix. Without this, every kind
+ * falls back to `task` and `kinds=[bug]` filters empty.
+ */
+const GIT_ISSUE_LINE_RE =
+  /^\s*(?:#?(?<hex>[0-9a-f]{3,})[.)]?\s+|(?<num>\d+)[.)]?\s+)(?<rest>\S.*)$/i;
+const GIT_ISSUE_STATE_RE = /\s*\[[^\]]+\]\s+/;
+
 export function parseGitIssueList(stdout: string): WorkTicket[] {
   const tickets: WorkTicket[] = [];
-  for (const line of stdout.split(/\r?\n/)) {
-    const m = NUMBERED_LINE_RE.exec(line);
-    if (!m) continue;
-    const title = (m[2] ?? "").trim();
+  for (const rawLine of stdout.split(/\r?\n/)) {
+    const line = rawLine.replace(GIT_ISSUE_STATE_RE, " ");
+    const m = GIT_ISSUE_LINE_RE.exec(line);
+    if (!m?.groups) continue;
+    const title = (m.groups.rest ?? "").trim();
     if (!title) continue;
+    const id = m.groups.hex || m.groups.num || title;
     tickets.push({
-      id: `GI-${m[1]}`,
+      id: `GI-${id}`,
       title,
       source: "git-issue",
       kind: classifyKind([], title),

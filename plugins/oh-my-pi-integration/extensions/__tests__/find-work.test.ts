@@ -635,12 +635,57 @@ describe("CLI output parsers", () => {
     expect(() => parseGhIssues("not json")).toThrow();
   });
 
-  test("parseGitIssueList handles numbered list lines and skips noise", () => {
+test("parseGitIssueList handles numbered list lines and skips noise", () => {
     const tickets = parseGitIssueList("1. first issue\n2 second issue\n\nnoise line\n");
     expect(tickets.map((t) => `${t.id} ${t.title}`)).toEqual([
       "GI-1 first issue",
       "GI-2 second issue",
     ]);
+  });
+
+  test("parseGitIssueList classifies TYPE-id prefix in <hash> [state] <TYPE-id>: title", () => {
+    // Real `git-issue list` / `git issue ls` output shape; before the fix, the
+    // captured `title` started at `[open]` and the BUG-/FEAT-/TASK- prefix went
+    // unrecognised (the shared NUMBERED_LINE_RE also rejects hex hashes, so
+    // the whole body fell through), so every kind was `task` and `kinds=[bug]`
+    // filtered empty.
+    const stdout = [
+      "0674395 [open] TASK-actor-position-physical-vs-spatial-split: split",
+      "06cc3fb [open] BUG-server-host-config-dead: start.ts never passes hostname",
+      "9203dc7 [open] FEAT-inventory-management-ui: UI",
+      "",
+    ].join("\n");
+    const tickets = parseGitIssueList(stdout);
+    expect(tickets.map((t) => [t.id, t.kind, t.title])).toEqual([
+      ["GI-0674395", "task", "TASK-actor-position-physical-vs-spatial-split: split"],
+      [
+        "GI-06cc3fb",
+        "bug",
+        "BUG-server-host-config-dead: start.ts never passes hostname",
+      ],
+      ["GI-9203dc7", "feature", "FEAT-inventory-management-ui: UI"],
+    ]);
+  });
+
+  test("filterTickets(?, bugs) keeps git-issue tickets classified as bug", () => {
+    // Regression: assemble what fetchTickets returns from `git-issue list` on
+    // loop-lore (1233+ open issues), confirm kinds=[bug] keeps every BUG- row.
+    const stdout = [
+      "0674395 [open] TASK-foo: foo",
+      "06cc3fb [open] BUG-server-host-dead: dead",
+      "9203dc7 [open] FEAT-inventory: ui",
+      "9999fff [open] BUG-assets-serve-x-content-type: sniff",
+      "",
+    ].join("\n");
+    const tickets = parseGitIssueList(stdout);
+    const bugs = filterTickets(tickets, {
+      mode: "list",
+      scheme: "order",
+      batches: false,
+      kinds: ["bug"],
+      query: "",
+    });
+    expect(bugs.map((t) => t.id)).toEqual(["GI-06cc3fb", "GI-9999fff"]);
   });
 });
 
