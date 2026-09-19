@@ -34,6 +34,32 @@ export const KIND_KEYWORDS: Record<string, TicketKind> = {
 };
 export const LIST_SUGAR_RE = /^list-(.+)$/;
 
+/**
+ * Canonical `list-<suffix>` sugar set: single source of truth for the parser,
+ * tab completion, and the unknown-sugar error message. The parser used to
+ * recurse via `applyKeyword` and accepted many extra shapes (`list-bug`,
+ * `list-task`, `list-priority`, …) silently — tab completion and the error
+ * message only advertised these nine. Narrow to that contract: parser,
+ * completion, and error text stay in sync.
+ */
+export const LIST_SUGAR_SUFFIXES = [
+  "order",
+  "letters",
+  "priorities",
+  "types",
+  "batches",
+  "bugs",
+  "features",
+  "epics",
+  "tasks",
+] as const;
+
+export type ListSugarSuffix = (typeof LIST_SUGAR_SUFFIXES)[number];
+
+/** True iff `word` is an exact `list-<canonical suffix>` match. */
+export function isCanonicalListSugar(word: string): word is `list-${ListSugarSuffix}` {
+  return LIST_SUGAR_SUFFIXES.some((s) => word === `list-${s}`);
+}
 /** gh / git-issue labels that decide kind or priority — never become domains. */
 export const LABEL_KINDS: Record<string, TicketKind> = {
   bug: "bug",

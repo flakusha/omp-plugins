@@ -11,7 +11,12 @@ import type {
 } from "@oh-my-pi/pi-coding-agent";
 import { argumentItems } from "../completions";
 import { fetchTickets } from "./fetch";
-import { ASK_DIALOG_TIMEOUT_MS, MAX_TICKETS, MODE_KEYWORDS } from "./keywords";
+import {
+  ASK_DIALOG_TIMEOUT_MS,
+  LIST_SUGAR_SUFFIXES,
+  MAX_TICKETS,
+  MODE_KEYWORDS,
+} from "./keywords";
 import { parseFindWorkArgs } from "./parse-args";
 import {
   buildChatPrompt,
@@ -152,19 +157,10 @@ async function runFindWork(
   await presentFindWork(pi, ctx, root, parsed, tickets);
 }
 
-/** The exact `list-*` sugar variants the parser accepts (usage-hint order). */
-export const FIND_WORK_SUGAR = [
-  "list-order",
-  "list-letters",
-  "list-priorities",
-  "list-types",
-  "list-batches",
-  "list-bugs",
-  "list-features",
-  "list-epics",
-  "list-tasks",
-] as const;
-
+/** `list-*` sugar variants advertised to users (derived from the parser table). */
+export const FIND_WORK_SUGAR = LIST_SUGAR_SUFFIXES.map(
+  (s) => `list-${s}`,
+) as readonly `list-${string}`[];
 /** Canonical option-region vocabulary (first token also allows mode words). */
 const OPTION_KEYWORDS = [
   ...MODE_KEYWORDS,

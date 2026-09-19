@@ -1,13 +1,17 @@
 /**
  * `/find-work` argument parsing: the mode keyword counts only as the FIRST
  * token; scheme/group/filter keywords are consumed until the first free-text
- * token, which starts the directive.
+ * token, which starts the directive. `list-<canonical>` is a sugar that
+ * implies the option region; any other `list-*` is rejected as a typo so the
+ * parser never silently diverges from the advertised sugar set.
  */
 
 import {
   GROUP_KEYWORDS,
+  isCanonicalListSugar,
   KIND_KEYWORDS,
   LIST_SUGAR_RE,
+  LIST_SUGAR_SUFFIXES,
   MODE_KEYWORDS,
   SCHEME_KEYWORDS,
 } from "./keywords";
@@ -21,7 +25,8 @@ function normToken(token: string): string {
   return token.replace(/^--/, "").toLowerCase();
 }
 
-function applyKeyword(word: string, args: FindWorkArgs, modeExplicit: boolean): boolean {
+/** Apply a non-sugar option-region keyword (scheme/group/kind). */
+function applyKeyword(word: string, args: FindWorkArgs): boolean {
   const scheme = SCHEME_KEYWORDS[word];
   if (scheme) {
     args.scheme = scheme;
@@ -36,30 +41,22 @@ function applyKeyword(word: string, args: FindWorkArgs, modeExplicit: boolean): 
     if (!args.kinds.includes(kind)) args.kinds.push(kind);
     return true;
   }
-  const sugar = LIST_SUGAR_RE.exec(word);
-  if (sugar?.[1]) {
-    if (!modeExplicit) args.mode = "list";
-    return applyKeyword(sugar[1], args, true);
-  }
   return false;
 }
 
-/** Usage error for a typo'd `list-*` variant. */
-function unknownListSugar(rest: string): string {
-  return (
-    `unknown option 'list-${rest}' — valid variants: ` +
-    "list-order, list-letters, list-priorities, list-types, list-batches, " +
-    "list-bugs, list-features, list-epics, list-tasks"
-  );
-}
+/** Canonical `list-<suffix>` variants advertised to users (typo guard). */
+const CANONICAL_LIST_SUGAR_HINT = LIST_SUGAR_SUFFIXES.map((s) => `list-${s}`).join(", ");
 
 /**
  * Parse the option region. Mode keywords count only as the FIRST token, so a
  * directive that happens to start with a keyword-rich sentence after the mode
  * (`ask List bug items and propose…`) keeps its mode and treats the rest as
  * directive. Scheme/group/filter keywords are consumed until the first token
- * that matches none; everything from there is the directive.
- * Unknown `list-*` sugar is a hard error (typo guard with usage hint).
+ * that matches none; everything from there is the directive. `list-*` is
+ * canonical-suffix-only: tab completion and the unknown-sugar error text
+ * enumerate the same set, so invented or near-miss suffixes (`list-bug`,
+ * `list-task`, `list-priority`) error out at any position rather than
+ * silently consuming via the older recursion.
  */
 export function parseFindWorkArgs(argv: string[]): { args: FindWorkArgs; error?: string } {
   const args: FindWorkArgs = {
@@ -72,21 +69,22 @@ export function parseFindWorkArgs(argv: string[]): { args: FindWorkArgs; error?:
   if (argv.length === 0) return { args };
 
   let i = 0;
-  const first = normToken(argv[0] ?? "");
-  const firstSugar = LIST_SUGAR_RE.exec(first);
-  if ((MODE_KEYWORDS as readonly string[]).includes(first)) {
-    args.mode = first as WorkMode;
-    i = 1;
-  } else if (firstSugar?.[1]) {
-    if (!applyKeyword(first, args, false)) {
-      return { args, error: unknownListSugar(firstSugar[1]) };
-    }
+  if ((MODE_KEYWORDS as readonly string[]).includes(normToken(argv[0] ?? ""))) {
+    args.mode = normToken(argv[0] ?? "") as WorkMode;
     i = 1;
   }
 
   for (; i < argv.length; i++) {
     const word = normToken(argv[i] ?? "");
-    if (applyKeyword(word, args, (MODE_KEYWORDS as readonly string[]).includes(first))) continue;
+    const sugarSuffix = LIST_SUGAR_RE.exec(word)?.[1];
+    if (sugarSuffix !== undefined) {
+      if (!isCanonicalListSugar(word)) {
+        return { args, error: `unknown option 'list-${sugarSuffix}' — valid variants: ${CANONICAL_LIST_SUGAR_HINT}` };
+      }
+      applyKeyword(sugarSuffix, args);
+      continue;
+    }
+    if (applyKeyword(word, args)) continue;
     // A later mode word (or any unrecognized token) starts the directive —
     // e.g. `ask List bug items and propose…` keeps mode=ask and directive
     // "List bug items and propose…".

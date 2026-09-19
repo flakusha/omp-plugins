@@ -222,9 +222,72 @@ describe("parseFindWorkArgs", () => {
     expect(error).toContain("list-priorities");
   });
 
-  test("directive starts at the first unrecognized token", () => {
+test("directive starts at the first unrecognized token", () => {
     const { args } = parseFindWorkArgs(["ask", "bugs", "propose a batch"]);
     expect(args).toMatchObject({ mode: "ask", kinds: ["bug"], query: "propose a batch" });
+  });
+
+  // Parser sugar surface stays in lock-step with FIND_WORK_SUGAR / error
+  // message: invented or near-miss suffixes (list-bug, list-task, ...) reject
+  // everywhere, not just at position 0, so users don't get silent near-misses.
+  test.each([
+    "list-bug",
+    "list-feat",
+    "list-task",
+    "list-epic",
+    "list-feature",
+    "list-priority",
+    "list-type",
+    "list-alpha",
+    "list-orders",
+    "list-bugz",
+  ])("non-canonical sugar %s errors at any position", (sugar) => {
+    expect(parseFindWorkArgs([sugar]).error).toMatch(/^unknown option 'list-/);
+    expect(parseFindWorkArgs(["ask", sugar]).error).toMatch(/^unknown option 'list-/);
+    expect(parseFindWorkArgs(["ask", sugar, "directive text"]).error).toMatch(/^unknown option 'list-/);
+  });
+
+  test("error text enumerates the canonical sugar variants", () => {
+    const { error } = parseFindWorkArgs(["list-wat"]);
+    for (const s of [
+      "list-order",
+      "list-letters",
+      "list-priorities",
+      "list-types",
+      "list-batches",
+      "list-bugs",
+      "list-features",
+      "list-epics",
+      "list-tasks",
+    ]) {
+      expect(error).toContain(s);
+    }
+  });
+
+  test("canonical sugar like list-bugs still accepts sugar plus trailing filter", () => {
+    expect(parseFindWorkArgs(["list-bugs"]).args).toMatchObject({
+      mode: "list",
+      kinds: ["bug"],
+    });
+    expect(parseFindWorkArgs(["list-bugs", "feature"]).args).toMatchObject({
+      mode: "list",
+      kinds: ["bug", "feature"],
+    });
+  });
+
+  test("list- (empty suffix) is a directive, not a sugar", () => {
+    // `.+` in LIST_SUGAR_RE rejects empty suffix; bare `list-` quietly
+    // becomes directive text — matches existing parseFindWorkArgs behaviour
+    // for non-keyword tokens. Captured so a future regex change is loud.
+    const { args, error } = parseFindWorkArgs(["list-"]);
+    expect(error).toBeUndefined();
+    expect(args.mode).toBe("list");
+    expect(args.query).toBe("list-");
+  });
+
+  test("list-priorities sugar mid-line keeps the leading ask mode", () => {
+    const { args } = parseFindWorkArgs(["ask", "list-priorities"]);
+    expect(args).toMatchObject({ mode: "ask", scheme: "priorities" });
   });
 });
 
