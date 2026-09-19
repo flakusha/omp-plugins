@@ -24,6 +24,7 @@ composer:
   tokenRate: true
 statusLine:
   separator: powerline-thin
+  preset: nerd
 terminal:
   showProgress: true
 display:
