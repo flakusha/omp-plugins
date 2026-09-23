@@ -59,7 +59,8 @@ function clip(text: string, max: number): string {
 
 function itemLine(item: LabeledTicket): string {
   const t = item.ticket;
-  return `${item.label}. ${t.id} — ${clip(t.title, MAX_TITLE)} (${t.source}, ${t.kind}, ${t.priority})`;
+  const via = t.matchedVia ? `, match: ${t.matchedVia}` : "";
+  return `${item.label}. ${t.id} — ${clip(t.title, MAX_TITLE)} (${t.source}, ${t.kind}, ${t.priority}${via})`;
 }
 
 /** Flat numbered list; `batches` inserts a header per domain. */

@@ -7,6 +7,8 @@
  */
 
 import {
+  DIRECTIVE_FLAG_RE,
+  FAST_FLAG_RE,
   GROUP_KEYWORDS,
   isCanonicalListSugar,
   KIND_KEYWORDS,
@@ -14,6 +16,7 @@ import {
   LIST_SUGAR_SUFFIXES,
   MODE_KEYWORDS,
   SCHEME_KEYWORDS,
+  SEARCH_FLAG_RE,
 } from "./keywords";
 import type { FindWorkArgs, WorkMode } from "./types";
 
@@ -57,7 +60,76 @@ const CANONICAL_LIST_SUGAR_HINT = LIST_SUGAR_SUFFIXES.map((s) => `list-${s}`).jo
  * enumerate the same set, so invented or near-miss suffixes (`list-bug`,
  * `list-task`, `list-priority`) error out at any position rather than
  * silently consuming via the older recursion.
+ *
+ * Flags are recognized anywhere (before or after free text starts):
+ *   -s / --search <text...>          fuzzy search request (implies fast mode)
+ *   -m / -d / --directive <text...>  user directive + approach recommendation
+ *   --fast                           skip live tool findings (full repo check)
+ * A value flag consumes tokens until the next flag token, so multi-word
+ * values need no quoting; flag values are raw text (keywords inside a value
+ * are never applied).
  */
+/**
+ * Handle one flag token (`-s`/`-m`/`-d`/`--search`/`--directive`/`--fast`).
+ * Returns null when `token` is not a flag; otherwise the consumed token count
+ * plus an optional error (value flags require a non-empty value). A value
+ * flag consumes tokens until the next flag token, so multi-word values need
+ * no quoting; flag values are raw text (keywords inside are never applied).
+ */
+function isFlagToken(token: string): boolean {
+  return SEARCH_FLAG_RE.test(token) || DIRECTIVE_FLAG_RE.test(token) || FAST_FLAG_RE.test(token);
+}
+
+function applyFlagToken(
+  argv: string[],
+  index: number,
+  args: FindWorkArgs,
+): { consumed: number; error?: string } | null {
+  const token = argv[index] ?? "";
+  if (FAST_FLAG_RE.test(token)) {
+    args.fast = true;
+    return { consumed: 1 };
+  }
+  const isSearch = SEARCH_FLAG_RE.test(token);
+  if (!isSearch && !DIRECTIVE_FLAG_RE.test(token)) return null;
+  const value: string[] = [];
+  let next = index + 1;
+  while (next < argv.length && !isFlagToken(argv[next] ?? "")) {
+    value.push(argv[next] ?? "");
+    next++;
+  }
+  if (value.length === 0) {
+    return {
+      consumed: 1,
+      error: `'${token}' requires a value — e.g. ${
+        isSearch ? "-s perf audit" : "-m fix the parser, tests first"
+      }`,
+    };
+  }
+  if (isSearch) args.search = value.join(" ");
+  else args.directive = value.join(" ");
+  return { consumed: next - index };
+}
+
+/**
+ * Apply one option-region token (sugar/scheme/group/kind). Returns whether
+ * the token was consumed; `error` set means the caller must fail parsing.
+ */
+function applyOptionToken(word: string, args: FindWorkArgs): { consumed: boolean; error?: string } {
+  const sugarSuffix = LIST_SUGAR_RE.exec(word)?.[1];
+  if (sugarSuffix !== undefined) {
+    if (!isCanonicalListSugar(word)) {
+      return {
+        consumed: true,
+        error: `unknown option 'list-${sugarSuffix}' — valid variants: ${CANONICAL_LIST_SUGAR_HINT}`,
+      };
+    }
+    applyKeyword(sugarSuffix, args);
+    return { consumed: true };
+  }
+  return { consumed: applyKeyword(word, args) };
+}
+
 export function parseFindWorkArgs(argv: string[]): { args: FindWorkArgs; error?: string } {
   const args: FindWorkArgs = {
     mode: "list",
@@ -74,22 +146,30 @@ export function parseFindWorkArgs(argv: string[]): { args: FindWorkArgs; error?:
     i = 1;
   }
 
-  for (; i < argv.length; i++) {
-    const word = normToken(argv[i] ?? "");
-    const sugarSuffix = LIST_SUGAR_RE.exec(word)?.[1];
-    if (sugarSuffix !== undefined) {
-      if (!isCanonicalListSugar(word)) {
-        return { args, error: `unknown option 'list-${sugarSuffix}' — valid variants: ${CANONICAL_LIST_SUGAR_HINT}` };
-      }
-      applyKeyword(sugarSuffix, args);
+  const queryParts: string[] = [];
+  let inDirective = false;
+  while (i < argv.length) {
+    const flag = applyFlagToken(argv, i, args);
+    if (flag) {
+      if (flag.error) return { args, error: flag.error };
+      i += flag.consumed;
       continue;
     }
-    if (applyKeyword(word, args)) continue;
-    // A later mode word (or any unrecognized token) starts the directive —
-    // e.g. `ask List bug items and propose…` keeps mode=ask and directive
-    // "List bug items and propose…".
-    args.query = argv.slice(i).join(" ");
-    break;
+    const word = normToken(argv[i] ?? "");
+    if (!inDirective) {
+      // A later mode word (or any unrecognized token) starts the directive —
+      // e.g. `ask List bug items and propose…` keeps mode=ask.
+      const applied = applyOptionToken(word, args);
+      if (applied.error) return { args, error: applied.error };
+      if (applied.consumed) {
+        i++;
+        continue;
+      }
+      inDirective = true;
+    }
+    queryParts.push(argv[i] ?? "");
+    i++;
   }
+  args.query = queryParts.join(" ");
   return { args };
 }

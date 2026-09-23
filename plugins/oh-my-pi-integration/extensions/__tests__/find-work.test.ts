@@ -222,7 +222,7 @@ describe("parseFindWorkArgs", () => {
     expect(error).toContain("list-priorities");
   });
 
-test("directive starts at the first unrecognized token", () => {
+  test("directive starts at the first unrecognized token", () => {
     const { args } = parseFindWorkArgs(["ask", "bugs", "propose a batch"]);
     expect(args).toMatchObject({ mode: "ask", kinds: ["bug"], query: "propose a batch" });
   });
@@ -244,7 +244,9 @@ test("directive starts at the first unrecognized token", () => {
   ])("non-canonical sugar %s errors at any position", (sugar) => {
     expect(parseFindWorkArgs([sugar]).error).toMatch(/^unknown option 'list-/);
     expect(parseFindWorkArgs(["ask", sugar]).error).toMatch(/^unknown option 'list-/);
-    expect(parseFindWorkArgs(["ask", sugar, "directive text"]).error).toMatch(/^unknown option 'list-/);
+    expect(parseFindWorkArgs(["ask", sugar, "directive text"]).error).toMatch(
+      /^unknown option 'list-/,
+    );
   });
 
   test("error text enumerates the canonical sugar variants", () => {
@@ -503,6 +505,7 @@ describe("detectWorkSources", () => {
       giwtRuns: false,
       todo: false,
       merges: false,
+      patches: false,
       lint: false,
       typecheck: false,
       tests: false,
@@ -698,7 +701,7 @@ describe("CLI output parsers", () => {
     expect(() => parseGhIssues("not json")).toThrow();
   });
 
-test("parseGitIssueList handles numbered list lines and skips noise", () => {
+  test("parseGitIssueList handles numbered list lines and skips noise", () => {
     const tickets = parseGitIssueList("1. first issue\n2 second issue\n\nnoise line\n");
     expect(tickets.map((t) => `${t.id} ${t.title}`)).toEqual([
       "GI-1 first issue",
@@ -707,7 +710,7 @@ test("parseGitIssueList handles numbered list lines and skips noise", () => {
   });
 
   test("parseGitIssueList classifies TYPE-id prefix in <hash> [state] <TYPE-id>: title", () => {
-    // Real `git-issue list` / `git issue ls` output shape; before the fix, the
+    // Real `git-issue ls` output shape; before the fix, the
     // captured `title` started at `[open]` and the BUG-/FEAT-/TASK- prefix went
     // unrecognised (the shared NUMBERED_LINE_RE also rejects hex hashes, so
     // the whole body fell through), so every kind was `task` and `kinds=[bug]`
@@ -721,17 +724,13 @@ test("parseGitIssueList handles numbered list lines and skips noise", () => {
     const tickets = parseGitIssueList(stdout);
     expect(tickets.map((t) => [t.id, t.kind, t.title])).toEqual([
       ["GI-0674395", "task", "TASK-actor-position-physical-vs-spatial-split: split"],
-      [
-        "GI-06cc3fb",
-        "bug",
-        "BUG-server-host-config-dead: start.ts never passes hostname",
-      ],
+      ["GI-06cc3fb", "bug", "BUG-server-host-config-dead: start.ts never passes hostname"],
       ["GI-9203dc7", "feature", "FEAT-inventory-management-ui: UI"],
     ]);
   });
 
   test("filterTickets(?, bugs) keeps git-issue tickets classified as bug", () => {
-    // Regression: assemble what fetchTickets returns from `git-issue list` on
+    // Regression: assemble what fetchTickets returns from `git-issue ls` on
     // loop-lore (1233+ open issues), confirm kinds=[bug] keeps every BUG- row.
     const stdout = [
       "0674395 [open] TASK-foo: foo",
@@ -749,6 +748,47 @@ test("parseGitIssueList handles numbered list lines and skips noise", () => {
       query: "",
     });
     expect(bugs.map((t) => t.id)).toEqual(["GI-06cc3fb", "GI-9999fff"]);
+  });
+
+  test("parseGitIssueList skips [closed] issues but keeps [open]", () => {
+    // Regression: `git-issue ls --state all` returns every issue regardless of state; the
+    // consumer must filter closed ones or they surface as work items even after
+    // the git-issue has been transitioned to closed via `giwt state <id> closed`.
+    const stdout = [
+      "6ed8545 [closed] EPIC-030: LLM Request Throughput & Message Scheduling",
+      "136d857 [closed] EPIC-031: World & Locations",
+      "8c07e16 [open]   EPIC-2026-23: Assistant Commands",
+      "96970f5 [open]   EPIC-2026-24: Filtering & Pagination",
+      "",
+    ].join("\n");
+    const tickets = parseGitIssueList(stdout);
+    expect(tickets.map((t) => t.id)).toEqual(["GI-8c07e16", "GI-96970f5"]);
+  });
+});
+
+describe("planTickets done-status coverage", () => {
+  test("planTickets skips tickets with status: duplicate-of-*", () => {
+    // Regression: stub tickets closed via `Status: duplicate-of-epic-...`
+    // must NOT surface as work items even when git-issue was closed via
+    // `giwt state <id> closed`. The `.plan/tickets/*.md` frontmatter is the
+    // source of truth here.
+    const dir = tempDir("fw-plan-dup-");
+    const ticketsDir = join(dir, ".plan", "tickets");
+    mkdirSync(ticketsDir, { recursive: true });
+    writeFileSync(
+      join(ticketsDir, "EPIC-stub-open.md"),
+      "# EPIC-stub-open: live epic\n\n**Status**: open\n",
+    );
+    writeFileSync(
+      join(ticketsDir, "EPIC-stub-dup.md"),
+      "# EPIC-stub-dup: duplicate epic\n\n**Status**: duplicate-of-epic-llm-queue\n",
+    );
+    writeFileSync(
+      join(ticketsDir, "EPIC-stub-done.md"),
+      "# EPIC-stub-done: done epic\n\n**Status**: ✅ Closed\n",
+    );
+    const tickets = planTickets(dir);
+    expect(tickets.map((t) => t.id).sort()).toEqual(["EPIC-stub-open"]);
   });
 });
 
@@ -814,7 +854,7 @@ describe("fetchTickets", () => {
     });
     expect(tickets).toEqual([]);
     expect(warnings.some((w) => w.includes("gh issue list failed"))).toBe(true);
-    expect(warnings.some((w) => w.includes("git-issue list failed"))).toBe(true);
+    expect(warnings.some((w) => w.includes("git-issue ls failed"))).toBe(true);
     expect(warnings.some((w) => w.includes("worktree tracker CLI"))).toBe(true);
   });
 
@@ -2368,9 +2408,23 @@ describe("fetchTickets parallelism + tool-cluster budget", () => {
     deferreds[0]?.({ stdout: JSON.stringify([{ number: 12, title: "t", labels: [], url: "" }]) });
     const { tickets, warnings } = await pending;
     expect(tickets.map((t) => t.id)).toEqual(["#12"]);
-    expect(warnings.some((w) => w.includes("git-issue list returned no parseable items"))).toBe(
-      true,
-    );
+    expect(warnings.some((w) => w.includes("git-issue ls returned no parseable items"))).toBe(true);
+  });
+
+  test("git-issue slot execs `git-issue ls` and parses the short format", async () => {
+    // Regression pin: the git-issue dispatcher (v1.3.3) has no `list`
+    // subcommand — `git-issue list` exits 1 before any store access, so the
+    // source silently degraded to a warning on every roster run.
+    const pi = new FakePi();
+    pi.scripted.push({ stdout: "0674395 [open] TASK-foo: foo\n" });
+    const { tickets, warnings } = await fetchTickets(pi, tempDir("fw-gils-"), {
+      ...allOff,
+      gitIssue: true,
+    });
+    expect(pi.execCalls[0]?.command).toBe("git-issue");
+    expect(pi.execCalls[0]?.args).toEqual(["ls"]);
+    expect(tickets.map((t) => t.id)).toEqual(["GI-0674395"]);
+    expect(warnings).toEqual([]);
   });
 
   test("doctor timeout consumes the budget and skips the direct fallback", async () => {

@@ -90,11 +90,21 @@ export const HEADING_RE = /^#\s+(.+)$/;
 export const STATUS_LINE_RE =
   /^\s*(?:[-*>]\s*)?(?:\*\*)?\s*status\s*(?:\*\*)?\s*[:=]\s*(?:\*\*)?\s*(.+?)\s*(?:\*\*)?\s*$/i;
 export const STATUS_DONE_RE =
-  /^\s*(?:[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]+\s*|\[[^\]]*\]\s*|~~?\s*)*(done|fixed|complete[ds]?|closed|shipped|applied|finished|resolved|won'?t\s+(?:fix|do)|not-a-bug)\b/iu;
+  /^\s*(?:[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]+\s*|\[[^\]]*\]\s*|~~?\s*)*(done|fixed|complete[ds]?|closed|shipped|applied|finished|resolved|won'?t\s+(?:fix|do)|not-a-bug|duplicate(?:-of)?[\w.-]*)\b/iu;
 export const KEY_VALUE_RE = /^\s*([A-Za-z][\w-]*)\s*=\s*(.+)$/;
+/** `**Epic:** <binding>` header — the .plan format's ticket→epic link. */
+export const PLAN_EPIC_HEADER_RE = /^\s*(?:[-*>\s]*)?\*\*Epic:\*\*\s*(.+?)\s*$/i;
+/** `-s` / `--search` — fuzzy search request (tags, candidates, connections). */
+export const SEARCH_FLAG_RE = /^--?s(?:earch)?$/;
+/** `-m` / `-d` / `--directive` — user directive with approach recommendation. */
+export const DIRECTIVE_FLAG_RE = /^--?(?:m|d|directive)$/;
+/** `--fast` — skip the live tool cluster (full repo check) during search. */
+export const FAST_FLAG_RE = /^--?fast$/;
 
 export const DEFAULT_PRIORITY = "P3";
 export const MAX_TICKETS = 40;
+/** Max `-s` search hits appended after the main roster (fuzzy flood cap). */
+export const SEARCH_MAX_TICKETS = 10;
 export const MAX_TITLE = 80;
 export const TABLE_TITLE = 60;
 export const SOURCE_EXEC_TIMEOUT_MS = 15_000;

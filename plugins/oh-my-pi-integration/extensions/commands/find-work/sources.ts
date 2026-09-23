@@ -129,6 +129,7 @@ export function detectWorkSources(root: string, pathEnv?: string): WorkSources {
     giwtRuns: giwtConfig.available && existsSync(giwtConfig.runlogDir),
     todo: hasTodoSource(root),
     merges: hasGitRepo(root) && onPath("git", env),
+    patches: hasGitRepo(root) && onPath("git", env),
     lint: detectLintTool(root) !== null,
     typecheck: existsSync(join(root, "tsconfig.json")),
     tests: hasTestScript(root),
@@ -149,6 +150,7 @@ export function hasFetchableSource(sources: WorkSources): boolean {
     sources.giwtRuns ||
     sources.todo ||
     sources.merges ||
+    sources.patches ||
     sources.lint ||
     sources.typecheck ||
     sources.tests ||
@@ -167,7 +169,7 @@ export function describeSources(sources: WorkSources): string {
     `receipt ${yesNo(sources.receipt)}; .plan ${yesNo(sources.plan)}; gh ${yesNo(sources.gh)}; ` +
     `git-issue ${yesNo(sources.gitIssue)}; jira ${yesNo(sources.jira)}; glab ${yesNo(sources.glab)}; ` +
     `worktree-tracker ${yesNo(sources.trackerCli)}; giwt-ledger ${yesNo(sources.giwtLedger)}; giwt-runs ${yesNo(sources.giwtRuns)}; ` +
-    `todo ${yesNo(sources.todo)}; merges ${yesNo(sources.merges)}; lint ${yesNo(sources.lint)}; ` +
+    `todo ${yesNo(sources.todo)}; merges ${yesNo(sources.merges)}; patches ${yesNo(sources.patches)}; lint ${yesNo(sources.lint)}; ` +
     `typecheck ${yesNo(sources.typecheck)}; tests ${yesNo(sources.tests)}; knip ${yesNo(sources.knip)}; jscpd ${yesNo(sources.jscpd)}`
   );
 }
@@ -175,10 +177,12 @@ export function describeSources(sources: WorkSources): string {
 export function findWorkUsage(sources: WorkSources): string {
   return [
     "usage: /find-work [list|table|ask|orchestrate] [order|letters|priorities|types] [batches] " +
-      "[bugs|features|epics|tasks] [directive...]",
+      "[bugs|features|epics|tasks] [-s <search>] [-m|-d <directive>] [--fast] [directive...]",
+    "flags: -s fuzzy search over tags/candidates/connected items+epics (implies --fast); " +
+      "-m/-d user directive with approach recommendation; --fast skip live tool findings.",
     `sources: ${describeSources(sources)}`,
     "orchestrate: auto-delegate items to parallel subagents grouped by domain.",
-    "tool findings (lint/typecheck/tests/knip/jscpd) run live under a shared time budget; TODO comments and unmerged branches run live when detected.",
+    "tool findings (lint/typecheck/tests/knip/jscpd) run live under a shared time budget; TODO comments, unmerged branches, and a dirty working tree (→ patch-review item, perf & bughunting) run live when detected.",
     "jira/glab are resolved inside an agent turn (use `/find-work ask` with a directive).",
   ].join("\n");
 }

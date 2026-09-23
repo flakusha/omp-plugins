@@ -25,29 +25,52 @@ export function filterTickets(tickets: WorkTicket[], args: FindWorkArgs): WorkTi
 }
 
 function ticketBullets(tickets: WorkTicket[]): string {
-  return tickets.map((t) => `- [${t.priority} ${t.id}] ${t.title} (${t.source})`).join("\n");
+  return tickets
+    .map(
+      (t) =>
+        `- [${t.priority} ${t.id}] ${t.title} (${t.source}${t.matchedVia ? ` · ${t.matchedVia}` : ""})`,
+    )
+    .join("\n");
 }
 
-/** Turn prompt for a dialog-selected batch (+ optional user directive). */
-export function buildSelectedPrompt(selected: WorkTicket[], directive: string): string {
+/** Turn prompt for a dialog-selected batch (+ optional user directive/search). */
+export function buildSelectedPrompt(
+  selected: WorkTicket[],
+  directive: string,
+  search?: string,
+): string {
   return [
     "Work batch selected via /find-work:",
     ticketBullets(selected),
     directive
       ? `User directive: ${directive}`
       : "Work through the tickets above in priority order (P0 first): implement each, verify with the repo's gate, and report a per-ticket verdict.",
+    ...(search
+      ? [
+          `Search query (-s): ${search} — 'match: …' annotations rank search hits after the main roster.`,
+        ]
+      : []),
     "Stop for user confirm on anything destructive or ambiguous.",
   ].join("\n");
 }
 
 /** Turn prompt when the user chose "Chat about this" in the dialog. */
-export function buildChatPrompt(labeled: LabeledTicket[], directive: string): string {
+export function buildChatPrompt(
+  labeled: LabeledTicket[],
+  directive: string,
+  search?: string,
+): string {
   return [
     "Open work items from /find-work:",
     renderList(labeled, false),
     directive
       ? `The user wants to discuss: ${directive}`
       : "The user wants to discuss these tickets.",
+    ...(search
+      ? [
+          `Search query (-s): ${search} — 'match: …' annotations rank search hits after the main roster.`,
+        ]
+      : []),
     "Summarize the options and propose a batch; use the ask tool if a decision is needed.",
   ].join("\n");
 }
@@ -71,6 +94,7 @@ export function buildOrchestratePrompt(
   labeled: LabeledTicket[],
   sources: WorkSources,
   directive: string,
+  search?: string,
 ): string {
   const batches = groupBatches(labeled);
   const domainSummary = [...batches.entries()]
@@ -94,6 +118,11 @@ export function buildOrchestratePrompt(
     directive
       ? `User directive: ${directive}`
       : "Focus on bugs and small features first — defer epics unless explicitly requested.",
+    ...(search
+      ? [
+          `Search query (-s): ${search} — 'match: …' items rank after the main roster; treat them as secondary candidates.`,
+        ]
+      : []),
     "Stop for user confirm before any destructive operation (branch deletion, force push, schema migration). Report progress after each domain completes.",
   ].join("\n");
 }
@@ -108,12 +137,18 @@ export function buildFindWorkAgentPrompt(
   root: string,
   sources: WorkSources,
   directive: string,
+  search?: string,
 ): string {
   return [
     `Find actionable work items for the repo at ${root} and propose a batch.`,
     `Detected sources: ${describeSources(sources)}.`,
-    "Search each available source (gh issue list, jira, git-issue list, .plan/ docs, the worktree tracker CLI, giwt ledger, giwt abnormal runs, TODO/FIXME comments, unmerged branches/worktrees, lint/typecheck/tests/knip/jscpd findings); skip the ones marked no.",
+    "Search each available source (gh issue list, jira, git-issue ls, .plan/ docs, the worktree tracker CLI, giwt ledger, giwt abnormal runs, TODO/FIXME comments, unmerged branches/worktrees, lint/typecheck/tests/knip/jscpd findings); skip the ones marked no.",
     directive ? `User directive: ${directive}` : "Collect open bugs and small features first.",
+    ...(search
+      ? [
+          `Search query (-s): ${search} — prefer direct tag/id hits, then fuzzy title matches, then connected epic/tag items; rank them after the main roster.`,
+        ]
+      : []),
     "Present the result with the ask tool: one question per domain (tracker or primary label), options = tickets with id + one-line title, multi-select. After the ask, summarize the selected batch and await go-ahead before touching code.",
   ].join("\n");
 }

@@ -14,6 +14,7 @@ import {
   DEFAULT_PRIORITY,
   HEADING_RE,
   KEY_VALUE_RE,
+  PLAN_EPIC_HEADER_RE,
   STATUS_DONE_RE,
   STATUS_LINE_RE,
 } from "./keywords";
@@ -85,6 +86,11 @@ function planFileTicket(
   const id = file.replace(/\.md$/, "");
   const title = heading ? (HEADING_RE.exec(heading)?.[1] ?? "").trim() : id;
   const labels = readPlanLabels(text);
+  // Epic binding per the .plan format spec: `**Epic:** <name>` inside the
+  // header region (first 30 lines — the same bound as giwt's parseTicketFile;
+  // body prose must never pollute the field).
+  const epicLine = lines.slice(0, 30).find((line) => PLAN_EPIC_HEADER_RE.test(line));
+  const epic = epicLine ? (PLAN_EPIC_HEADER_RE.exec(epicLine)?.[1] ?? "").trim() : "";
   const status = lines.find((line) => STATUS_LINE_RE.test(line));
   const statusValue = status ? (STATUS_LINE_RE.exec(status)?.[1] ?? "") : "";
   if (STATUS_DONE_RE.test(statusValue)) return null; // labels never bypass done-detection
@@ -97,6 +103,8 @@ function planFileTicket(
     kind: fromMeta === "task" ? kind : fromMeta,
     priority: classifyPriority(labels),
     domain: domainOf(labels, dir),
+    tags: labels,
+    epic: epic || undefined,
   };
 }
 
@@ -145,6 +153,7 @@ export function parseGhIssues(stdout: string): WorkTicket[] {
       kind: classifyKind(labels, title),
       priority: classifyPriority(labels),
       domain: domainOf(labels, "github"),
+      tags: labels,
       url: issue.url,
     };
   });
@@ -167,6 +176,12 @@ const GIT_ISSUE_STATE_RE = /\s*\[[^\]]+\]\s+/;
 export function parseGitIssueList(stdout: string): WorkTicket[] {
   const tickets: WorkTicket[] = [];
   for (const rawLine of stdout.split(/\r?\n/)) {
+    // Capture the bracketed state (e.g. "[open]") before stripping, so closed
+    // issues don't surface as work items. `git-issue ls` defaults to
+    // `--state open`, but the consumer still filters: explicit `--state all`
+    // invocations and older shims may emit every issue.
+    const stateMatch = /^\s*\S+\s+\[(?<state>[^\]]+)\]\s+/.exec(rawLine);
+    if (stateMatch?.groups?.state?.toLowerCase() === "closed") continue;
     const line = rawLine.replace(GIT_ISSUE_STATE_RE, " ");
     const m = GIT_ISSUE_LINE_RE.exec(line);
     if (!m?.groups) continue;

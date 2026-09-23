@@ -23,6 +23,12 @@ export interface WorkTicket {
   /** Grouping key for batches and ask questions (label, else source). */
   domain: string;
   url?: string;
+  /** Label/tag tokens (plan labels, gh labels) — `-s` tag search input. */
+  tags?: string[];
+  /** `.plan` `**Epic:**` binding — `-s` connected-item search input. */
+  epic?: string;
+  /** Search-match provenance annotation (`tag:perf`, `fuzzy`, `epic:EPIC-4`). */
+  matchedVia?: string;
 }
 
 export interface FindWorkArgs {
@@ -31,6 +37,12 @@ export interface FindWorkArgs {
   batches: boolean;
   kinds: TicketKind[];
   query: string;
+  /** `-s` fuzzy search request — tiered tag/candidate/connection search. */
+  search?: string;
+  /** `-m`/`-d` user directive (with approach recommendation). */
+  directive?: string;
+  /** `--fast` (implied by `-s`): skip live tool findings. */
+  fast?: boolean;
 }
 
 export interface WorkSources {
@@ -45,6 +57,8 @@ export interface WorkSources {
   giwtRuns: boolean;
   todo: boolean;
   merges: boolean;
+  /** Dirty working tree — patch-review source (perf & bughunting pass). */
+  patches: boolean;
   lint: boolean;
   typecheck: boolean;
   tests: boolean;

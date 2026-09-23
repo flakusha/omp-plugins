@@ -6,6 +6,7 @@
 
 import { SOURCE_EXEC_TIMEOUT_MS } from "./keywords";
 import { fetchMergeTickets } from "./merge-queue";
+import { fetchPatchReviewTickets } from "./patch-review";
 import {
   giwtLedgerTickets,
   giwtRunTickets,
@@ -24,16 +25,29 @@ import type { FetchResult, WorkSources, WorkTicket } from "./types";
  * become warnings; the rest of the sources still contribute. Uncapped —
  * the caller filters and caps (see presentFindWork).
  *
- * Independent async sources (gh, git-issue, merges, tool cluster) run
- * concurrently; sync roster sources run inline. Results are concatenated in
- * a fixed order (sync roster, then gh, git-issue, merges, tools) so output
- * stays deterministic regardless of completion order.
+ * Independent async sources (gh, git-issue, merges, patch review, tool
+ * cluster) run concurrently; sync roster sources run inline. Results are
+ * concatenated in a fixed order (sync roster, then gh, git-issue, merges,
+ * patch review, tools) so output stays deterministic regardless of
+ * completion order.
  */
+export interface FetchOpts {
+  /** `--fast` (or `-s`, which implies it): skip the live tool cluster. */
+  fast?: boolean;
+}
+
 export async function fetchTickets(
   pi: ExecLike,
   root: string,
   sources: WorkSources,
+  opts?: FetchOpts,
 ): Promise<FetchResult> {
+  // Fast mode masks the tool-cluster sources — the "full repo check" — while
+  // every roster source (receipt/.plan/gh/git-issue/giwt/todo/merges/patch)
+  // still contributes. Never silently skipped: runFindWork notifies.
+  const effective: WorkSources = opts?.fast
+    ? { ...sources, lint: false, typecheck: false, tests: false, knip: false, jscpd: false }
+    : sources;
   const tickets: WorkTicket[] = [];
   const warnings: string[] = [];
 
@@ -58,7 +72,7 @@ export async function fetchTickets(
     warning?: string;
   }
   const slots: Array<Promise<Slot>> = [];
-  if (sources.gh) {
+  if (effective.gh) {
     slots.push(
       (async (): Promise<Slot> => {
         try {
@@ -86,24 +100,24 @@ export async function fetchTickets(
       })(),
     );
   }
-  if (sources.gitIssue) {
+  if (effective.gitIssue) {
     slots.push(
       (async (): Promise<Slot> => {
         try {
-          const res = await pi.exec("git-issue", ["list"], { timeout: SOURCE_EXEC_TIMEOUT_MS });
+          const res = await pi.exec("git-issue", ["ls"], { timeout: SOURCE_EXEC_TIMEOUT_MS });
           const parsed = parseGitIssueList(res.stdout ?? "");
           if (parsed.length > 0) return { tickets: parsed };
-          return { tickets: [], warning: "git-issue list returned no parseable items" };
+          return { tickets: [], warning: "git-issue ls returned no parseable items" };
         } catch {
-          return { tickets: [], warning: "git-issue list failed (not initialized in this repo?)" };
+          return { tickets: [], warning: "git-issue ls failed (not initialized in this repo?)" };
         }
       })(),
     );
   }
-  if (sources.trackerCli) {
+  if (effective.trackerCli) {
     warnings.push("worktree tracker CLI detected — resolve via `/bookkeep` or an ask turn");
   }
-  if (sources.giwtLedger) {
+  if (effective.giwtLedger) {
     try {
       const giwtTickets = giwtLedgerTickets(root);
       if (giwtTickets.length > 0) tickets.push(...giwtTickets);
@@ -112,7 +126,7 @@ export async function fetchTickets(
       warnings.push("giwt ledger unreadable (.ledger.jsonl malformed?)");
     }
   }
-  if (sources.giwtRuns) {
+  if (effective.giwtRuns) {
     try {
       const runTickets = giwtRunTickets(root);
       if (runTickets.length > 0) tickets.push(...runTickets);
@@ -120,7 +134,7 @@ export async function fetchTickets(
       warnings.push("giwt run records scan failed");
     }
   }
-  if (sources.todo) {
+  if (effective.todo) {
     try {
       const found = todoTickets(root);
       if (found.length > 0) tickets.push(...found);
@@ -131,7 +145,7 @@ export async function fetchTickets(
   // Merges and the tool cluster are async; their slots sit after the sync
   // sources in concat order (gh, git-issue, merges, tools) — deterministic
   // regardless of which resolves first.
-  if (sources.merges) {
+  if (effective.merges) {
     slots.push(
       fetchMergeTickets(pi, root).then(
         (t) => ({ tickets: t }),
@@ -139,7 +153,21 @@ export async function fetchTickets(
       ),
     );
   }
-  if (sources.lint || sources.typecheck || sources.tests || sources.knip || sources.jscpd) {
+  if (effective.patches) {
+    slots.push(
+      fetchPatchReviewTickets(pi, root).then(
+        (t) => ({ tickets: t }),
+        (): Slot => ({ tickets: [], warning: "patch review scan failed (not a git repo?)" }),
+      ),
+    );
+  }
+  if (
+    effective.lint ||
+    effective.typecheck ||
+    effective.tests ||
+    effective.knip ||
+    effective.jscpd
+  ) {
     slots.push(
       fetchToolTickets(pi, root, sources).then(
         (t) => ({

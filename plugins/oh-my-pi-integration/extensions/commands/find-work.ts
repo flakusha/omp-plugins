@@ -46,13 +46,16 @@ export {
   parseDoctorReport,
 } from "./find-work/doctor";
 // Fetch orchestration across all sources.
-export { fetchTickets } from "./find-work/fetch";
+export { type FetchOpts, fetchTickets } from "./find-work/fetch";
 // Tab completions + command registration.
 export { FIND_WORK_SUGAR, findWorkCompletions, registerFindWork } from "./find-work/handler";
 // Keyword tables, named regexes, tunables.
+// Search/flag vocabulary.
 export {
   ASK_DIALOG_TIMEOUT_MS,
   DEFAULT_PRIORITY,
+  DIRECTIVE_FLAG_RE,
+  FAST_FLAG_RE,
   GROUP_KEYWORDS,
   HEADING_RE,
   JSCPD_TIMEOUT_MS,
@@ -68,8 +71,11 @@ export {
   MAX_TITLE,
   MODE_KEYWORDS,
   NUMBERED_LINE_RE,
+  PLAN_EPIC_HEADER_RE,
   RECEIPT_ID_PREFIX_RE,
   SCHEME_KEYWORDS,
+  SEARCH_FLAG_RE,
+  SEARCH_MAX_TICKETS,
   SEVERITY_PRIORITIES,
   SOURCE_EXEC_TIMEOUT_MS,
   STATUS_DONE_RE,
@@ -87,7 +93,6 @@ export { parseJscpdReport, parseKnipIssues } from "./find-work/knip-jscpd";
 // Lint cluster (eslint / biome / oxlint).
 export type { BiomeFinding, EslintFinding, OxlintFinding } from "./find-work/lint";
 export { parseBiomeOutput, parseEslintJson, parseOxlintJson } from "./find-work/lint";
-
 // Merge-queue scan (pure parsers + live git fetch).
 export type { DirtyStat, MergeBranch, MergeWorktree } from "./find-work/merge-parse";
 export {
@@ -100,6 +105,15 @@ export {
 export { fetchMergeTickets, MERGE_MAX_BRANCHES, MERGE_MAX_TICKETS } from "./find-work/merge-queue";
 // Argument parsing.
 export { parseFindWorkArgs } from "./find-work/parse-args";
+// Patch-review roster source (dirty tree → perf/bughunt review item).
+export type { PatchCounts, PatchStat } from "./find-work/patch-review";
+export {
+  buildPatchTicket,
+  fetchPatchReviewTickets,
+  PATCH_BRANCH_RE,
+  parsePatchCounts,
+  parseShortstat,
+} from "./find-work/patch-review";
 // Directive filtering + turn prompts.
 export {
   buildChatPrompt,
@@ -127,6 +141,9 @@ export {
   planTickets,
   receiptTickets,
 } from "./find-work/roster";
+// `-s` tiered search extension (direct / fuzzy / connections).
+export type { SearchHit } from "./find-work/search";
+export { epicRefIndex, searchTickets } from "./find-work/search";
 export type { LintTool } from "./find-work/sources";
 // Source detection + usage summaries.
 export {

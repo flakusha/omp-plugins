@@ -11,12 +11,7 @@ import type {
 } from "@oh-my-pi/pi-coding-agent";
 import { argumentItems } from "../completions";
 import { fetchTickets } from "./fetch";
-import {
-  ASK_DIALOG_TIMEOUT_MS,
-  LIST_SUGAR_SUFFIXES,
-  MAX_TICKETS,
-  MODE_KEYWORDS,
-} from "./keywords";
+import { ASK_DIALOG_TIMEOUT_MS, LIST_SUGAR_SUFFIXES, MAX_TICKETS, MODE_KEYWORDS } from "./keywords";
 import { parseFindWorkArgs } from "./parse-args";
 import {
   buildChatPrompt,
@@ -32,6 +27,7 @@ import {
   renderList,
   renderTable,
 } from "./render";
+import { searchTickets } from "./search";
 import { detectWorkSources, findWorkUsage, hasFetchableSource } from "./sources";
 import type { FindWorkArgs, LabeledTicket, WorkSources, WorkTicket } from "./types";
 
@@ -66,7 +62,7 @@ async function runAsk(
       return;
     }
     if (result.kind === "chat") {
-      await pi.sendUserMessage(buildChatPrompt(labeled, args.query));
+      await pi.sendUserMessage(buildChatPrompt(labeled, args.directive ?? args.query, args.search));
       return;
     }
     const selected = result.results
@@ -77,12 +73,16 @@ async function runAsk(
       ctx.ui.notify("find-work: no tickets selected", "info");
       return;
     }
-    await pi.sendUserMessage(buildSelectedPrompt(selected, args.query));
+    await pi.sendUserMessage(
+      buildSelectedPrompt(selected, args.directive ?? args.query, args.search),
+    );
     return;
   }
   // No interactive ask surface (print/RPC mode, or dialogs unsupported):
   // let the turn search and present via the agent-side ask tool instead.
-  await pi.sendUserMessage(buildFindWorkAgentPrompt(root, sources, args.query));
+  await pi.sendUserMessage(
+    buildFindWorkAgentPrompt(root, sources, args.directive ?? args.query, args.search),
+  );
 }
 
 /** Fetch, filter, and present — everything after argument parsing. */
@@ -102,29 +102,42 @@ async function presentFindWork(
     ctx.ui.notify(`no open items match '${parsed.query}' — showing unfiltered`, "info");
     filtered = filterTickets(tickets, { ...parsed, query: "" });
   }
-  if (filtered.length === 0) {
+  if (filtered.length > MAX_TICKETS) {
+    ctx.ui.notify(`showing first ${MAX_TICKETS} of ${filtered.length} matching items`, "warning");
+    filtered = filtered.slice(0, MAX_TICKETS);
+  }
+  // `-s` search extension: tiered hits append AFTER the main roster, deduped
+  // against it — an item already surfaced keeps its higher main-roster slot.
+  let combined = filtered;
+  if (parsed.search) {
+    const shown = new Set(filtered.map((t) => t.id));
+    const hits = searchTickets(tickets, root, parsed.search).filter((h) => !shown.has(h.ticket.id));
+    if (hits.length > 0) {
+      combined = [...filtered, ...hits.map((h) => ({ ...h.ticket, matchedVia: h.via }))];
+    }
+  }
+  if (combined.length === 0) {
     // Ask mode with nothing fetched still serves the user: sources the
     // handler cannot exec (jira, glab, tracker CLI) are resolved by the
     // agent turn instead of dead-ending on a miss notice.
     if (parsed.mode === "ask") {
-      await pi.sendUserMessage(buildFindWorkAgentPrompt(root, sources, parsed.query));
+      await pi.sendUserMessage(
+        buildFindWorkAgentPrompt(root, sources, parsed.directive ?? parsed.query, parsed.search),
+      );
       return;
     }
     const suffix = parsed.query ? ` matching '${parsed.query}'` : "";
     ctx.ui.notify(`no open work items found${suffix}`, "info");
     return;
   }
-  if (filtered.length > MAX_TICKETS) {
-    ctx.ui.notify(`showing first ${MAX_TICKETS} of ${filtered.length} matching items`, "warning");
-    filtered = filtered.slice(0, MAX_TICKETS);
-  }
-  const labeled = labelTickets(filtered, parsed.scheme);
+  const directive = parsed.directive ?? parsed.query;
+  const labeled = labelTickets(combined, parsed.scheme);
   if (parsed.mode === "ask") {
     await runAsk(pi, ctx, root, sources, labeled, parsed);
     return;
   }
   if (parsed.mode === "orchestrate") {
-    await pi.sendUserMessage(buildOrchestratePrompt(labeled, sources, parsed.query));
+    await pi.sendUserMessage(buildOrchestratePrompt(labeled, sources, directive, parsed.search));
     return;
   }
   ctx.ui.notify(
@@ -152,7 +165,19 @@ async function runFindWork(
     ctx.ui.notify(findWorkUsage(sources), "info");
     return;
   }
-  const { tickets, warnings } = await fetchTickets(pi, root, sources);
+  // Search mode never runs the full repo check — the tool cluster is the
+  // slow lane (shared wall budget), so `-s` implies fast; `--fast` forces it.
+  const fast = parsed.fast || parsed.search !== undefined;
+  if (
+    fast &&
+    (sources.lint || sources.typecheck || sources.tests || sources.knip || sources.jscpd)
+  ) {
+    ctx.ui.notify(
+      "fast mode: skipping live tool findings (lint/typecheck/tests/knip/jscpd)",
+      "info",
+    );
+  }
+  const { tickets, warnings } = await fetchTickets(pi, root, sources, { fast });
   for (const warning of warnings) ctx.ui.notify(warning, "warning");
   await presentFindWork(pi, ctx, root, parsed, tickets);
 }
@@ -173,6 +198,12 @@ const OPTION_KEYWORDS = [
   "features",
   "epics",
   "tasks",
+  "-s",
+  "--search",
+  "-m",
+  "-d",
+  "--directive",
+  "--fast",
 ];
 
 /**
@@ -203,7 +234,8 @@ export function registerFindWork(pi: ExtensionAPI): void {
   pi.registerCommand("find-work", {
     description:
       "Find actionable tickets across trackers: " +
-      "/find-work [list|table|ask|orchestrate] [order|letters|priorities|types] [batches] [bugs|features|epics|tasks] [directive...]",
+      "/find-work [list|table|ask|orchestrate] [order|letters|priorities|types] [batches] [bugs|features|epics|tasks] " +
+      "[-s <search>] [-m|-d <directive>] [--fast] [directive...]",
     getArgumentCompletions: (argumentPrefix: string) =>
       argumentItems(argumentPrefix, findWorkCompletions(argumentPrefix)),
     handler: async (args, ctx) => {
