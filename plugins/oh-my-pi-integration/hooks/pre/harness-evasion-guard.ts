@@ -694,6 +694,104 @@ export function bashWriteReason(cmd: string): string | undefined {
   return undefined;
 }
 
+// ---- interpreter inline-code guard -----------------------------------------
+//
+// eval.py/eval.js are disabled in agent/config.yml — computation must go
+// through re-executable `.tmp/` scripts executed via bash. Inline interpreter
+// code (`python -c`, `node -e`, `perl -pe`, `deno eval`, heredoc-to-stdin, or
+// a bare interpreter reading a pipe) smuggles the same one-off computation
+// past that policy. File-based runs (`python .tmp/x.py`, `node server.js`,
+// `bun run dev`, `python -m venv .venv`) stay allowed. Static-analysis limits
+// apply: code assembled via `$(...)` before it reaches the interpreter, REPL
+// flag forms (`node -i`), and value-flag gaps are not inspected.
+
+export const INTERPRETER_INLINE_REASON =
+  "inline interpreter code (`-c`/`-e`/`--eval`/heredoc-to-stdin) bypasses the disabled `eval` tooling — " +
+  "write a re-executable script under an in-root `.tmp/` dir and run it " +
+  "(`python .tmp/x.py`, `bun .tmp/x.ts`)";
+
+/** Interpreters whose inline-code / stdin modes are gated by the eval policy. */
+const INTERPRETERS = new Set([
+  "python",
+  "python3",
+  "node",
+  "bun",
+  "deno",
+  "tsx",
+  "ts-node",
+  "perl",
+  "ruby",
+]);
+
+/** Wrappers skipped before the interpreter token; `timeout` consumes a duration. */
+const INTERP_WRAPPERS = new Set(["sudo", "env", "nohup", "nice", "time", "timeout"]);
+
+/** Short flags whose NEXT token is a value, not the program operand. */
+const INTERP_VALUE_FLAGS = new Set(["-m", "-W", "-X", "--input-type"]);
+
+/**
+ * Short-flag clusters that carry inline code. `-c`/`-e` plus perl/ruby
+ * combined forms (`-pe`, `-ne`); node/bun hosts add `-p`/`--print`, which
+ * evaluate an expression (perl's `-p` is a loop flag, not code — excluded).
+ */
+function inlineFlagsFor(head: string): (token: string) => boolean {
+  const jsHost = head === "node" || head === "bun" || head === "tsx" || head === "ts-node";
+  return (token) =>
+    token === "--eval" ||
+    token === "--command" ||
+    token === "--exec" ||
+    (jsHost && (token === "-p" || token === "--print")) ||
+    /^-[a-zA-Z]*[ce]$/.test(token);
+}
+
+/**
+ * One segment is an interpreter reading inline code: flag-based (`-c`/`-e`/
+ * `--eval` before the program operand), heredoc-to-stdin (`interp … <<`),
+ * stdin dash (`interp -`), or a bare interpreter (stdin/REPL mode, so a
+ * piped `echo x | python` is caught — the segment split keeps pipe stages).
+ * deno's `eval` is a subcommand, not a flag.
+ */
+function interpreterInlineForSegment(seg: string): boolean {
+  const tokens = words(seg);
+  let i = 0;
+  while (i < tokens.length && tokens[i] !== undefined && INTERP_WRAPPERS.has(tokens[i] as string)) {
+    i += 1;
+    if (tokens[i - 1] === "timeout") i += 1; // consume the duration value
+  }
+  if (i >= tokens.length) return false;
+  const head = tokens[i];
+  if (head === undefined || !INTERPRETERS.has(head)) return false;
+  if (head === "deno" && tokens[i + 1] === "eval") return true;
+  const inlineFlag = inlineFlagsFor(head);
+  let valueNext = false;
+  for (const token of tokens.slice(i + 1)) {
+    if (valueNext) {
+      valueNext = false;
+      continue;
+    }
+    if (token === "--") return false;
+    if (inlineFlag(token)) return true;
+    if (token === "-" || token.startsWith("<")) return true;
+    if (!token.startsWith("-")) return false; // script/module operand — file-based run
+    valueNext = INTERP_VALUE_FLAGS.has(token);
+  }
+  return tokens.length === i + 1; // bare interpreter → stdin/REPL mode
+}
+
+/**
+ * eval-policy guard: no inline interpreter code anywhere in the command —
+ * chained-prefix segments (`cd x && python -c …`) included via
+ * splitCommandSegments, `bash -c "python -c …"` inners via the recursive
+ * evasionReason evaluation in shellStringFlagReason.
+ */
+export function interpreterInlineReason(cmd: string): string | undefined {
+  if (!cmd || cmd.startsWith("#")) return undefined;
+  for (const seg of splitCommandSegments(cmd)) {
+    if (interpreterInlineForSegment(seg)) return INTERPRETER_INLINE_REASON;
+  }
+  return undefined;
+}
+
 export function evasionReason(cmd: string): string | undefined {
   if (!cmd || cmd.startsWith("#")) return undefined;
   const shellFlag = shellStringFlagReason(cmd);
@@ -702,6 +800,8 @@ export function evasionReason(cmd: string): string | undefined {
   if (git) return git;
   const write = bashWriteReason(cmd);
   if (write) return write;
+  const inline = interpreterInlineReason(cmd);
+  if (inline) return inline;
   return nonGitEvasion(splitCommandSegments(cmd));
 }
 export default function (pi: HookAPI): void {

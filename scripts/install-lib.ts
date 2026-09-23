@@ -520,6 +520,11 @@ const AGENT_PAYLOADS: readonly [string, string][] = [
     "extensions/commands/find-work/tool-cluster.ts",
     "extensions/commands/find-work/tool-cluster.ts",
   ],
+  ["extensions/commands/find-work/search.ts", "extensions/commands/find-work/search.ts"],
+  [
+    "extensions/commands/find-work/patch-review.ts",
+    "extensions/commands/find-work/patch-review.ts",
+  ],
   ["extensions/commands/find-work/fetch.ts", "extensions/commands/find-work/fetch.ts"],
   ["extensions/commands/find-work/prompts.ts", "extensions/commands/find-work/prompts.ts"],
   ["extensions/commands/find-work/handler.ts", "extensions/commands/find-work/handler.ts"],

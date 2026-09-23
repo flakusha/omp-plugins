@@ -1,20 +1,24 @@
-// Native tool reroute (pre-hook): escalate write/glob/edit to lean-ctx ctx_*.
+// Native tool reroute (pre-hook): gate eval; escalate write/glob/edit to lean-ctx ctx_*.
 //
 // 2026-09-16: reinstated, trimmed from the hook removed in e63c9ed. The new
 // rtk and lean-ctx releases integrate natively for bash (rtk installs its own
 // `~/.omp/agent/extensions/rtk.ts`) and for wrapped agents (`lean-ctx wrap`),
 // but lean-ctx has no omp wrap target — for omp the MCP server
 // (`~/.omp/agent/mcp.json`) plus this hook is the whole integration. Scope is
-// exactly the three tools whose native versions underperform:
+// exactly the tools whose native versions underperform:
 //
+//   eval  -> blocked outright — eval.py/eval.js are disabled in config.yml;
+//                       computation goes through re-executable `.tmp/` scripts
+//                       executed via bash (`python .tmp/x.py`, `bun .tmp/x.ts`).
 //   edit  -> ctx_patch — anchored, hash-validated patching: one
 //                       ctx_read(mode="anchored") + one ctx_patch instead of
 //                       repeated fuzzy `edit` retries that fail on drift.
 //   write -> ctx_patch (op: create) for in-root non-scratch creation. Native
 //                       `write` remains allowed inside any `.tmp/` scratch dir
-//                       (any depth); outside the project root native writes
-//                       are blocked outright — out-of-root writes belong to
-//                       trusted bash/installer flows, not ad-hoc tool calls.
+//                       (any depth); outside the project root and for `ssh://`
+//                       targets native writes are blocked outright — out-of-root
+//                       writes belong to trusted bash/installer flows, not
+//                       ad-hoc tool calls.
 //   glob  -> ctx_glob  — respects .gitignore, compact results.
 //
 // `read`/`grep` deliberately stay native: selector reads (`file.ts:50-200`,
@@ -24,9 +28,10 @@
 // Fail-open by exemption, mirroring ctx_* capabilities (source-code tools
 // jailed to the project root): internal URI schemes (memory://, skill://,
 // agent://, history://, artifact://, local://, mcp://, issue://, pr://,
-// omp://, ssh://, xd://), binary/document/archive/sqlite paths, and paths
-// outside the project root all pass through to the native tools — the
-// sanctioned fallback, never a dead end.
+// omp://, xd://), binary/document/archive/sqlite paths, and paths outside
+// the project root pass through to the native tools — the sanctioned
+// fallback, never a dead end. One exception: `write` to `ssh://` targets
+// is blocked (remote writes sit outside the in-repo write policy).
 
 import { isAbsolute, relative, resolve } from "node:path";
 import type { HookAPI } from "@oh-my-pi/pi-coding-agent/extensibility/hooks";
@@ -61,6 +66,13 @@ export const WRITE_REASON =
 export const WRITE_OUTSIDE_REASON =
   "Native `write` is allowed only for in-root `.tmp/` scratch files. For files outside the project root " +
   "use the native `bash` tool or the project installer.";
+export const SSH_WRITE_REASON =
+  "`write` does not reach `ssh://` targets — remote writes are outside the in-repo write policy. " +
+  "Remote changes need explicit user authorization (ask) or the project installer.";
+export const EVAL_REASON =
+  "The `eval` tool is disabled on this profile (config.yml `eval.py`/`eval.js` = false). For computation, " +
+  "write a re-executable script under `.tmp/` with `write` (allowed there) and run it via bash: " +
+  "`python .tmp/x.py` or `bun .tmp/x.ts`.";
 
 export function globBlockReason(path: string): { block: true; reason: string } | undefined {
   if (path && (isExempt(path) || isOutsideRoot(path))) return undefined;
@@ -79,7 +91,9 @@ function isUnderTmpDir(path: string): boolean {
 }
 
 export function writeBlockReason(path: string): { block: true; reason: string } | undefined {
-  if (!path || isExempt(path)) return undefined;
+  if (!path) return undefined;
+  if (/^ssh:/i.test(path)) return { block: true, reason: SSH_WRITE_REASON };
+  if (isExempt(path)) return undefined;
   if (isUnderTmpDir(path)) return undefined;
   return {
     block: true,
@@ -93,5 +107,6 @@ export default function (pi: HookAPI): void {
     if (toolName === "glob") return globBlockReason(input.path ? String(input.path) : "");
     if (toolName === "edit") return editBlockReason(String(input.path ?? ""));
     if (toolName === "write") return writeBlockReason(String(input.path ?? ""));
+    if (toolName === "eval") return { block: true, reason: EVAL_REASON };
   });
 }

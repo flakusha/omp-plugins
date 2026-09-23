@@ -4,9 +4,11 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import defaultHook, {
   EDIT_REASON,
+  EVAL_REASON,
   editBlockReason,
   GLOB_REASON,
   globBlockReason,
+  SSH_WRITE_REASON,
   WRITE_OUTSIDE_REASON,
   WRITE_REASON,
   writeBlockReason,
@@ -93,6 +95,22 @@ describe("writeBlockReason", () => {
     expect(writeBlockReason("memory://abc")).toBeUndefined();
     expect(writeBlockReason("")).toBeUndefined();
   });
+
+  test("blocks ssh:// targets (remote writes are outside the in-repo policy)", () => {
+    expect(writeBlockReason("ssh://host/etc/hosts")).toEqual({
+      block: true,
+      reason: SSH_WRITE_REASON,
+    });
+    expect(writeBlockReason("SSH://host/tmp/x")).toEqual({
+      block: true,
+      reason: SSH_WRITE_REASON,
+    });
+  });
+
+  test("keeps xd:// dispatch and local:// plan artifacts sanctioned", () => {
+    expect(writeBlockReason("xd://security_scan")).toBeUndefined();
+    expect(writeBlockReason("local://my-feature-plan.md")).toBeUndefined();
+  });
 });
 
 describe("default hook wiring", () => {
@@ -125,6 +143,17 @@ describe("default hook wiring", () => {
     expect(
       handler({ toolName: "write", input: { path: join(INSIDE_ROOT, ".tmp", "x.txt") } }),
     ).toBeUndefined();
+    expect(handler({ toolName: "eval", input: { language: "py" } })).toEqual({
+      block: true,
+      reason: EVAL_REASON,
+    });
+    expect(handler({ toolName: "eval", input: {} })).toEqual({
+      block: true,
+      reason: EVAL_REASON,
+    });
+    // xd:// device dispatch and local:// plan artifacts stay sanctioned
+    expect(handler({ toolName: "write", input: { path: "xd://security_scan" } })).toBeUndefined();
+    expect(handler({ toolName: "write", input: { path: "local://plan.md" } })).toBeUndefined();
 
     // read/grep are out of the hook's scope (native stays sanctioned);
     // unrelated tools pass through untouched

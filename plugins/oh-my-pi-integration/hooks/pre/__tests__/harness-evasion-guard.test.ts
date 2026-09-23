@@ -24,6 +24,8 @@ import {
   evasionReason,
   GIT_MUTATING_REASON,
   gitMutatingReason,
+  INTERPRETER_INLINE_REASON,
+  interpreterInlineReason,
   splitCommandSegments,
   stripChainPrefix,
   stripGitOptionPrefix,
@@ -164,7 +166,7 @@ describe("evasionReason", () => {
     expect(evasionReason("command -v git")).toBeUndefined();
     expect(evasionReason("which curl")).toBeUndefined();
     expect(evasionReason("git status")).toBeUndefined();
-    expect(evasionReason("python3 -c 'print(1)'")).toBeUndefined();
+    expect(evasionReason("python3 -c 'print(1)'")).toBe(INTERPRETER_INLINE_REASON);
     expect(evasionReason("bun run test")).toBeUndefined();
     expect(evasionReason("curl -s https://example.com")).toBeUndefined();
     expect(evasionReason("")).toBeUndefined();
@@ -380,14 +382,15 @@ describe("evasionReason", () => {
     expect(evasionReason('xd -c "echo hello"')).toBeUndefined();
   });
 
-  test("does NOT recurse into general-purpose scripting hosts", () => {
+  test("general-purpose scripting hosts: no INTERCEPTED-token recursion, but inline code is gated", () => {
     // `node -e` and `python -c` are NOT in SHELL_PASSTHROUGH — their
-    // string-literal contents frequently reference intercepted-token names
-    // (`node -e "require('cat')"`) without actually executing them. Keeping
-    // these out of the recursion prevents false-positive blocks on legit
-    expect(evasionReason('node -e "con' + 'sole.log(\\"cat\\")"')).toBeUndefined();
-    expect(evasionReason(String.raw`python -c "print('cat')"`)).toBeUndefined();
-    expect(evasionReason(String.raw`ruby -e "puts 'cat'"`)).toBeUndefined();
+    // string-literal contents are not scanned for intercepted-token names
+    // (`node -e "require('cat')"`). But the invocation itself is inline
+    // interpreter code, gated by the eval policy since eval.py/eval.js are
+    // disabled (INTERPRETER_INLINE_REASON supersedes the old allow).
+    expect(evasionReason('node -e "con' + 'sole.log(\\"cat\\")"')).toBe(INTERPRETER_INLINE_REASON);
+    expect(evasionReason(String.raw`python -c "print('cat')"`)).toBe(INTERPRETER_INLINE_REASON);
+    expect(evasionReason(String.raw`ruby -e "puts 'cat'"`)).toBe(INTERPRETER_INLINE_REASON);
   });
 
   test("does NOT confuse `git -c protocol.version=2 ...` with `-c` wrapper", () => {
@@ -441,5 +444,67 @@ describe("bashWriteReason", () => {
   test("does not regress existing evasion verdicts", () => {
     expect(evasionReason("bun test > /dev/null")).toBeUndefined();
     expect(evasionReason(`lean-ctx -c "echo x > ${OUTSIDE}"`)).toBe(WRITE_TARGET_REASON);
+  });
+});
+
+describe("interpreterInlineReason", () => {
+  test("blocks flag-based inline code across interpreters", () => {
+    expect(interpreterInlineReason(`python -c "print(1)"`)).toBe(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason(`python3 -c "print(1)"`)).toBe(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason(`env python -c "x"`)).toBe(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason(`sudo python3 -c "x"`)).toBe(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason(`timeout 10 python -c "x"`)).toBe(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason(`node -e "require('x')"`)).toBe(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason(`node --eval "x"`)).toBe(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason(`node -p "1+1"`)).toBe(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason(`bun -e "x"`)).toBe(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason(`bun --print "process.version"`)).toBe(
+      INTERPRETER_INLINE_REASON,
+    );
+    expect(interpreterInlineReason(`tsx -e "x"`)).toBe(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason(`deno eval "console.log(1)"`)).toBe(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason(`perl -e 'print 1;'`)).toBe(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason(`perl -pe 's/a/b/' f.txt`)).toBe(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason(`perl -ne 'print;' f.txt`)).toBe(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason(`ruby -e 'puts 1'`)).toBe(INTERPRETER_INLINE_REASON);
+    // python value flags (-W/-X) do not hide a following -c
+    expect(interpreterInlineReason(`python -X utf8 -c "x"`)).toBe(INTERPRETER_INLINE_REASON);
+  });
+
+  test("blocks stdin and heredoc program shapes", () => {
+    expect(interpreterInlineReason("python - <<EOF")).toBe(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason("python - <<'EOF'")).toBe(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason("python <<EOF")).toBe(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason("node - <<'EOF'")).toBe(INTERPRETER_INLINE_REASON);
+    // piped bare interpreter = stdin program
+    expect(interpreterInlineReason("echo 'print(1)' | python")).toBe(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason("echo x | python3")).toBe(INTERPRETER_INLINE_REASON);
+    // chained prefixes cannot hide it
+    expect(interpreterInlineReason(`cd /tmp && python -c "x"`)).toBe(INTERPRETER_INLINE_REASON);
+    // bash -c inner payload recursion
+    expect(evasionReason(`bash -c "python -c 'print(1)'"`)).toBe(INTERPRETER_INLINE_REASON);
+  });
+
+  test("allows file-based runs and non-interpreter flag users", () => {
+    expect(interpreterInlineReason("python .tmp/x.py")).toBeUndefined();
+    expect(interpreterInlineReason("python3 .tmp/x.py --flag")).toBeUndefined();
+    expect(interpreterInlineReason("python -m venv .venv")).toBeUndefined();
+    expect(interpreterInlineReason("python -m pytest .tmp/")).toBeUndefined();
+    expect(interpreterInlineReason("python -u .tmp/x.py")).toBeUndefined();
+    expect(interpreterInlineReason("node server.js")).toBeUndefined();
+    expect(interpreterInlineReason("node --watch .tmp/x.ts")).toBeUndefined();
+    expect(interpreterInlineReason("bun run dev")).toBeUndefined();
+    expect(interpreterInlineReason("bun .tmp/x.ts")).toBeUndefined();
+    expect(interpreterInlineReason("deno run -A .tmp/x.ts")).toBeUndefined();
+    expect(interpreterInlineReason("perl script.pl")).toBeUndefined();
+    // perl -p is a loop flag, not inline code
+    expect(interpreterInlineReason("perl -p in.txt")).toBeUndefined();
+    expect(interpreterInlineReason("ruby script.rb")).toBeUndefined();
+    // non-interpreter heads keep their own semantics
+    expect(interpreterInlineReason("grep -c foo file.txt")).toBeUndefined();
+    expect(interpreterInlineReason("git -c protocol.version=2 push")).toBeUndefined();
+    // a mention inside an echo argument is not an invocation
+    expect(interpreterInlineReason(`echo "python -c x"`)).toBeUndefined();
+    expect(evasionReason("python .tmp/x.py")).toBeUndefined();
   });
 });

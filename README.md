@@ -33,18 +33,28 @@ plugin can be installed directly with `omp plugin install`.
   opt out with `PI_RECEIPT_DISABLE=1`.
 - **`/find-work` command** — discovers open work items across the receipt
   ledger, `.plan/` docs (labels read from YAML frontmatter `labels:`,
-  `**Labels:**`, or `**Tags:**` headers drive kind/priority/domain), GitHub
-  (`gh`), and `git-issue`, and presents them as a flat `list` (`1,2,3`,
-  `A,B,C`, `P1,P2,P3`, or `B1,F1,E1` schemes, with `batches` grouping and
-  bug/feature/epic/task filters), a markdown `table`, or an interactive `ask`
-  dialog grouped by domain; `ask` filters dialog candidates by the topic when
-  a directive matches tickets and hands the selected batch (and any trailing
-  directive, e.g. `/find-work ask propose the next batch of fixes`) to an
-  agent turn. jira/glab are resolved inside that turn. Independent sources
-  fetch concurrently; live tool findings (lint/typecheck/tests/knip/jscpd,
-  via `giwt doctor check` when available) share a bounded wall budget
-  (`TOOL_CLUSTER_BUDGET_MS`, 120s) — on repos where they cannot finish in
-  budget the roster still presents, with a warning naming the direct command.
+  `**Labels:**`, or `**Tags:**` headers drive kind/priority/domain; the
+  `**Epic:**` binding feeds connected-item search), GitHub (`gh`),
+  `git-issue`, and the repo's own dirty working tree (a `PATCH` review item
+  scoped to a performance & bughunting pass), and presents them as a flat
+  `list` (`1,2,3`, `A,B,C`, `P1,P2,P3`, or `B1,F1,E1` schemes, with
+  `batches` grouping and bug/feature/epic/task filters), a markdown `table`,
+  or an interactive `ask` dialog grouped by domain; `ask` filters dialog
+  candidates by the topic when a directive matches tickets and hands the
+  selected batch (and any trailing directive, e.g. `/find-work ask propose
+  the next batch of fixes`) to an agent turn. jira/glab are resolved inside
+  that turn. Independent sources fetch concurrently; live tool findings
+  (lint/typecheck/tests/knip/jscpd, via `giwt doctor check` when available)
+  share a bounded wall budget (`TOOL_CLUSTER_BUDGET_MS`, 120s) — on repos
+  where they cannot finish in budget the roster still presents, with a
+  warning naming the direct command. Flags: `-s <search>` runs a tiered
+  search over the roster (direct tag/id/phrase hits, then fuzzy title
+  candidates, then potential connections via the `**Epic:**` binding, bare
+  `TASK-*` refs in `.plan/epics/*`, and shared tags) appended after the main
+  results with `match: …` annotations; `-m`/`-d <directive>` carries an
+  explicit user directive + approach recommendation into the dispatched turn
+  (distinct from the positional filter text); `--fast` skips the live tool
+  findings entirely (`-s` implies it).
 - **GPG & SSH hard-stop guards** — when a commit signing or ssh-agent/socket
   failure needs a human (locked GPG key, stale SSH agent), substitutes an
   imperative hard-stop directive and blocks the agent's usual self-recovery
@@ -58,10 +68,13 @@ plugin can be installed directly with `omp plugin install`.
   tool result (best-effort, bounded; resolves the repo-local biome from
   `node_modules/.bin`, falling back to PATH).
 - **Native tool reroute pre-hook** (`hooks/pre/lean-ctx-native-reroute.ts`) —
+  blocks the `eval` tool outright (both kernels are disabled in config; the
+  sanctioned workflow is a re-executable `.tmp/` script run via bash) and
   escalates in-root `edit`/`write`/`glob` to the lean-ctx MCP (`ctx_patch`
   anchored, hash-validated edits and creation; `ctx_glob` for globs). Native
   `write` stays allowed for `.tmp/` scratch at any depth and is blocked
-  outside the project root. `read`/`grep`, out-of-root paths, internal URIs,
+  outside the project root and for `ssh://` targets. `read`/`grep`,
+  out-of-root paths, internal URIs (except `ssh://` writes),
   and binary/document/archive paths keep the native tools — fail-open
   exemptions, never a dead end.
 - **Compaction preservation** — on `session.compacting`, injects the

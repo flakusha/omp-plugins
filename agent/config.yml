@@ -27,6 +27,14 @@ mnemopi:
   proactiveLinking: true
 edit:
   mode: hashline
+eval:
+  # Both eval kernels disabled — computation goes through re-executable
+  # .tmp/ scripts executed via bash (see the harness-tooling-discipline rule).
+  # The lean-ctx-native-reroute pre-hook blocks residual eval calls with the
+  # sanctioned workflow; harness-evasion-guard closes interpreter-inline
+  # bypasses (`python -c`, `node -e`, heredoc-to-interpreter).
+  py: false
+  js: false
 readLineNumbers: true
 read:
   renderMarkdown: true
@@ -34,6 +42,45 @@ read:
 lsp:
   lazy: false
   formatOnWrite: false
+skills:
+  # Initial-context reduction: these skills live in ~/.agents/skills and are
+  # otherwise listed with full descriptions in every session's system prompt
+  # (~13KB measured). arkcli-* is BytePlus Ark CLI work; re-enable by removing
+  # names here (or via `arkcli connect`, which re-adds the skills).
+  ignoredSkills:
+    - arkcli-agent
+    - arkcli-api-explorer
+    - arkcli-auth
+    - arkcli-billing
+    - arkcli-chat
+    - arkcli-config
+    - arkcli-connect
+    - arkcli-custommodel
+    - arkcli-deploy
+    - arkcli-doctor
+    - arkcli-gen
+    - arkcli-helper
+    - arkcli-iam
+    - arkcli-infer-endpoint
+    - arkcli-models
+    - arkcli-onboard
+    - arkcli-plans
+    - arkcli-pricing
+    - arkcli-profile
+    - arkcli-resources
+    - arkcli-shared
+    - arkcli-train-finetune
+    - arkcli-understand
+    - arkcli-update
+    - arkcli-usage
+    - cavecrew
+    - caveman
+    - caveman-commit
+    - caveman-compress
+    - caveman-help
+    - caveman-review
+    - caveman-stats
+    - find-skills
 bash:
   allowCompoundCommands: true
 bashInterceptor:
@@ -62,7 +109,7 @@ bashInterceptor:
       message: "Use the `edit` tool instead of awk -i inplace. It provides diff preview and fuzzy matching."
     - pattern: "^\\s*(echo|printf|cat\\s*<<)\\s+(?:(?:[^\"'>]|\"[^\"]*\"|'[^']*')|(?<!\\|)>{1,2}\\|?\\s*(?:\"/dev/(?:null|tty|stdout|stderr)\"|'/dev/(?:null|tty|stdout|stderr)'|/dev/(?:null|tty|stdout|stderr))(?:[\\s;&|]|$))*(?<!\\|)>{1,2}\\|?\\s*(?!(?:\"/dev/(?:null|tty|stdout|stderr)\"|'/dev/(?:null|tty|stdout|stderr)'|/dev/(?:null|tty|stdout|stderr))(?:[\\s;&|]|$))[$\\w./~\"'-]"
       tool: write
-      message: "Use the `write` tool instead of echo/cat redirection. It handles encoding and provides confirmation."
+      message: "Redirection writes: in-root `.tmp/` scratch via the `write` tool; in-repo project files via `ctx_patch` (lean-ctx, op `create`); targets outside the project root are blocked."
     - pattern: ^\s*nohup\s+|(?<!&)\&\s*$
       tool: hub
       message: "Use the `hub` tool (`op:\"start\"`) instead of nohup or background shell syntax so the process stays observable and managed."
