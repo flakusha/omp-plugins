@@ -625,6 +625,31 @@ describe("planTickets", () => {
     const ids = planTickets(dir).map((t) => t.id);
     expect(ids).toEqual(["B-5", "B-9"]);
   });
+  test("multiple status lines: ANY done-looking line closes the ticket", () => {
+    // BUG-find-work-closed-epic-reconciliation-stubs-leak-into-roster:
+    // reconciled EPIC stubs carry a legacy `**Status:** Not Started → closed
+    // (duplicate)` line plus a follow-up `**Status**: duplicate-of-…`; the
+    // first-match parser saw only the legacy line and leaked the ticket.
+    const dir = tempDir("fw-plan-multistatus-");
+    mkdirSync(join(dir, ".plan", "tickets"), { recursive: true });
+    writeFileSync(
+      join(dir, ".plan", "tickets", "E-30.md"),
+      "# Dup stub\n**Status:** Not Started → closed (duplicate)\n\n## Notes\n**Status**: duplicate-of-epic-llm-queue\n",
+    );
+    writeFileSync(
+      join(dir, ".plan", "tickets", "E-58.md"),
+      "# Dup stub 2\n**Status:** Not Started\n**Status**: duplicate-of-epic-locations\n",
+    );
+    // A genuinely open ticket with an in-prose mention of done wording on a
+    // LATER line must NOT be closed by that later line (legacy line wins as
+    // open only when no other line is done-looking).
+    writeFileSync(
+      join(dir, ".plan", "tickets", "E-59.md"),
+      "# Real work\n**Status:** In Progress\nrelated: duplicate-of-epic-frontend-admin needs splitting\n",
+    );
+    const ids = planTickets(dir).map((t) => t.id);
+    expect(ids).toEqual(["E-59"]);
+  });
   test("missing .plan dir yields nothing", () => {
     expect(planTickets(tempDir("fw-noplan-"))).toEqual([]);
   });

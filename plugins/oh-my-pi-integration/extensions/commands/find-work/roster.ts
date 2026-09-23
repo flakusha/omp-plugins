@@ -91,9 +91,13 @@ function planFileTicket(
   // body prose must never pollute the field).
   const epicLine = lines.slice(0, 30).find((line) => PLAN_EPIC_HEADER_RE.test(line));
   const epic = epicLine ? (PLAN_EPIC_HEADER_RE.exec(epicLine)?.[1] ?? "").trim() : "";
-  const status = lines.find((line) => STATUS_LINE_RE.test(line));
-  const statusValue = status ? (STATUS_LINE_RE.exec(status)?.[1] ?? "") : "";
-  if (STATUS_DONE_RE.test(statusValue)) return null; // labels never bypass done-detection
+  // Reconciled tickets may carry multiple status lines (legacy + follow-up
+  // marker); ANY done-looking line closes the ticket (BUG-find-work-closed-
+  // epic-reconciliation-stubs-leak-into-roster).
+  const statusValues = lines
+    .filter((line) => STATUS_LINE_RE.test(line))
+    .map((line) => STATUS_LINE_RE.exec(line)?.[1] ?? "");
+  if (statusValues.some((v) => STATUS_DONE_RE.test(v))) return null; // labels never bypass done-detection
   const fromMeta = classifyKind(labels, title);
   return {
     id,
