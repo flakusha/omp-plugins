@@ -3,7 +3,7 @@
 
 # FEAT: surface giwt run records in find-work discovery
 
-**Status:** ⬜ Not Started
+**Status:** ✅ Done (implemented as giwtRunTickets in roster.ts + fetch/sources wiring; abnormal-only P1 semantics; covered by find-work.test.ts; live-verified 2026-09-25 with an end-less meta.json fixture producing the exact Abnormal-exit ticket)
 **Priority:** Medium
 **Effort:** Medium
 

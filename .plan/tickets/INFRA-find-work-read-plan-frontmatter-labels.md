@@ -4,7 +4,7 @@
 # INFRA: /find-work reads YAML frontmatter `labels` from .plan/* tickets and epics
 
 **Labels:** find-work, labels
-**Status:** ⬜ Not Started
+**Status:** ✅ Done (readPlanLabels from extensions/util/plan-frontmatter.ts feeds kind/priority/domain/tags in planFileTicket; find-work.test.ts 135/135)
 **Priority:** Medium
 **Effort:** Medium
 
