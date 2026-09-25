@@ -22,7 +22,8 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@oh-my-pi/pi-coding-agent";
 import { argumentItems } from "./completions";
 import { detectTicketEnv } from "./ticket/env";
-import { buildTicketExec, parseTicketExec } from "./ticket/exec";
+import { buildTicketExec, parseTicketExec, type TicketExecResult } from "./ticket/exec";
+import type { ParsedTicket } from "./ticket/parse";
 import { parseTicketArgs } from "./ticket/parse";
 import { buildTicketFallbackPrompt, ticketCompletions, ticketUsage } from "./ticket/prompt";
 
@@ -33,6 +34,53 @@ export { buildTicketExec, kebabTicketTitle, parseTicketExec } from "./ticket/exe
 export type { ParsedTicket, TicketType } from "./ticket/parse";
 export { parseTicketArgs, TICKET_PRIORITIES, TICKET_TYPES } from "./ticket/parse";
 export { buildTicketFallbackPrompt, ticketCompletions, ticketUsage } from "./ticket/prompt";
+
+/** Extract the best error string from a thrown `pi.exec` failure (stderr > stdout). */
+function giwtExecErrorMessage(err: unknown): string {
+  const out = (err as { stdout?: unknown; stderr?: unknown }) ?? {};
+  if (typeof out.stderr === "string") return out.stderr;
+  return typeof out.stdout === "string" ? out.stdout : "";
+}
+
+/** Run `giwt ticket` with `parsed`, reporting failures on `ctx.ui`. Returns null on any failure. */
+async function runGiwtTicket(
+  pi: ExtensionAPI,
+  parsed: ParsedTicket,
+  ctx: ExtensionCommandContext,
+): Promise<{ stdout: string; stderr: string; exitCode?: number } | null> {
+  let res: { stdout: string; stderr: string; exitCode?: number };
+  try {
+    res = await pi.exec("giwt", buildTicketExec(parsed), { timeout: 30_000 });
+  } catch (err) {
+    ctx.ui.notify(`giwt ticket failed: ${giwtExecErrorMessage(err)}`, "error");
+    return null;
+  }
+  if (res.exitCode !== 0) {
+    ctx.ui.notify(
+      `giwt ticket failed (exit ${res.exitCode}):\n${res.stderr}${res.stdout}`,
+      "error",
+    );
+    return null;
+  }
+  return res;
+}
+
+/** Format the user-facing summary of a `giwt ticket` execution result. */
+function formatTicketSummary(exec: TicketExecResult): string {
+  let summary = exec.summary;
+  if (exec.file) summary += `\nFile: ${exec.file}`;
+  if (exec.issue) summary += `\nIssue: ${exec.issue}`;
+  return summary;
+}
+
+/** Notify with the existing-ticket listing (count + ids). */
+function notifyListMode(
+  ctx: ExtensionCommandContext,
+  env: { existingIds: readonly string[] },
+): void {
+  const ids = env.existingIds.length > 0 ? env.existingIds.join(", ") : "none";
+  ctx.ui.notify(`existing tickets: ${env.existingIds.length} (${ids})`, "info");
+}
 
 /** Register `/ticket` on the plugin factory's `pi`. */
 export function registerTicket(pi: ExtensionAPI): void {
@@ -64,8 +112,7 @@ export function registerTicket(pi: ExtensionAPI): void {
         return;
       }
       if (parsed.mode === "list") {
-        const ids = env.existingIds.length > 0 ? env.existingIds.join(", ") : "none";
-        ctx.ui.notify(`existing tickets: ${env.existingIds.length} (${ids})`, "info");
+        notifyListMode(ctx, env);
         return;
       }
       if (!parsed.title) {
@@ -78,29 +125,9 @@ export function registerTicket(pi: ExtensionAPI): void {
         return;
       }
 
-      let res: { stdout: string; stderr: string; exitCode?: number };
-      try {
-        res = await pi.exec("giwt", buildTicketExec(parsed), { timeout: 30_000 });
-      } catch (err) {
-        const out = (err as { stdout?: unknown; stderr?: unknown }) ?? {};
-        ctx.ui.notify(
-          `giwt ticket failed: ${typeof out.stderr === "string" ? out.stderr : ((out.stdout as string | undefined) ?? "")}`,
-          "error",
-        );
-        return;
-      }
-      if (res.exitCode !== 0) {
-        ctx.ui.notify(
-          `giwt ticket failed (exit ${res.exitCode}):\n${res.stderr}${res.stdout}`,
-          "error",
-        );
-        return;
-      }
-      const parsedExec = parseTicketExec(res);
-      let summary = parsedExec.summary;
-      if (parsedExec.file) summary += `\nFile: ${parsedExec.file}`;
-      if (parsedExec.issue) summary += `\nIssue: ${parsedExec.issue}`;
-      ctx.ui.notify(summary, "info");
+      const res = await runGiwtTicket(pi, parsed, ctx);
+      if (!res) return;
+      ctx.ui.notify(formatTicketSummary(parseTicketExec(res)), "info");
     },
   });
 }

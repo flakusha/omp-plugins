@@ -97,6 +97,87 @@ function findConfigFile(root: string): string | null {
   return null;
 }
 
+/** Apply [paths] overrides from a parsed giwt config to the resolved-state defaults. */
+function applyPathsSection(raw: string, root: string, state: ResolvedDirs): void {
+  const paths = tomlSection(raw, "paths");
+  const tree = tomlValue(paths, "tree");
+  const plan = tomlValue(paths, "plan");
+  const tickets = tomlValue(paths, "tickets");
+  const runlog = tomlValue(paths, "runlog");
+  const ompDirVal = tomlValue(paths, "omp_dir");
+  if (tree) state.treeDir = resolve(root, tree);
+  if (plan) state.planDir = resolve(root, plan);
+  if (tickets) state.ticketsDir = resolve(root, tickets);
+  if (runlog) state.runlogDir = resolve(root, runlog);
+  if (ompDirVal) state.ompDir = resolve(root, ompDirVal);
+}
+
+/** Apply [branches] overrides (protected list, root branch). */
+function applyBranchesSection(raw: string, state: ResolvedFields): void {
+  const branches = tomlSection(raw, "branches");
+  const prot = tomlArray(branches, "protected");
+  const rootVal = tomlBare(branches, "root");
+  if (prot) state.protectedBranches = prot;
+  if (rootVal) state.rootBranch = rootVal;
+}
+
+/** Apply [commands] overrides (check, test). */
+function applyCommandsSection(raw: string, state: ResolvedFields): void {
+  const commands = tomlSection(raw, "commands");
+  const check = tomlValue(commands, "check");
+  const test = tomlValue(commands, "test");
+  if (check) state.checkCommand = check;
+  if (test) state.testCommand = test;
+}
+
+/** Apply [runlog] overrides (max_runs). */
+function applyRunlogSection(raw: string, state: ResolvedFields): void {
+  const runlogSec = tomlSection(raw, "runlog");
+  const maxRunsVal = tomlInt(runlogSec, "max_runs");
+  if (maxRunsVal !== undefined) state.maxRuns = maxRunsVal;
+}
+
+/** Apply [output] overrides (format). */
+function applyOutputSection(raw: string, state: ResolvedFields): void {
+  const output = tomlSection(raw, "output");
+  const fmt = tomlBare(output, "format");
+  if (fmt) state.outputFormat = fmt;
+}
+
+interface ResolvedDirs {
+  treeDir: string;
+  planDir: string;
+  ticketsDir: string;
+  runlogDir: string;
+  ompDir: string;
+}
+
+interface ResolvedFields extends ResolvedDirs {
+  protectedBranches: string[];
+  rootBranch: string;
+  checkCommand: string;
+  testCommand: string;
+  maxRuns: number;
+  outputFormat: string;
+}
+
+/** Seed `state` from DEFAULTS + the repo root. */
+function seedResolvedState(root: string): ResolvedFields {
+  return {
+    treeDir: join(root, DEFAULTS.tree),
+    planDir: join(root, DEFAULTS.plan),
+    ticketsDir: join(root, DEFAULTS.tickets),
+    runlogDir: join(root, DEFAULTS.runlog),
+    ompDir: join(root, DEFAULTS.ompDir),
+    protectedBranches: DEFAULTS.protectedBranches,
+    rootBranch: DEFAULTS.rootBranch,
+    checkCommand: DEFAULTS.checkCommand,
+    testCommand: DEFAULTS.testCommand,
+    maxRuns: DEFAULTS.maxRuns,
+    outputFormat: DEFAULTS.outputFormat,
+  };
+}
+
 /**
  * Resolve giwt config from session cwd. Pure fs — no subprocess, no side
  * effects. Checks for `giwt.toml` first, then `.giwt.toml`. Falls back to
@@ -108,53 +189,16 @@ export function resolveGiwtConfig(cwd: string | undefined): GiwtConfig {
   const configFile = findConfigFile(root);
   const available = configFile !== null || existsSync(join(root, ".tmp", "giwt"));
 
-  let treeDir = join(root, DEFAULTS.tree);
-  let planDir = join(root, DEFAULTS.plan);
-  let ticketsDir = join(root, DEFAULTS.tickets);
-  let runlogDir = join(root, DEFAULTS.runlog);
-  let ompDir = join(root, DEFAULTS.ompDir);
-  let protectedBranches = DEFAULTS.protectedBranches;
-  let rootBranch = DEFAULTS.rootBranch;
-  let checkCommand = DEFAULTS.checkCommand;
-  let testCommand = DEFAULTS.testCommand;
-  let maxRuns = DEFAULTS.maxRuns;
-  let outputFormat = DEFAULTS.outputFormat;
+  const state = seedResolvedState(root);
 
   if (configFile) {
     try {
       const raw = readFileSync(configFile, "utf8");
-
-      const paths = tomlSection(raw, "paths");
-      const tree = tomlValue(paths, "tree");
-      const plan = tomlValue(paths, "plan");
-      const tickets = tomlValue(paths, "tickets");
-      const runlog = tomlValue(paths, "runlog");
-      const ompDirVal = tomlValue(paths, "omp_dir");
-      if (tree) treeDir = resolve(root, tree);
-      if (plan) planDir = resolve(root, plan);
-      if (tickets) ticketsDir = resolve(root, tickets);
-      if (runlog) runlogDir = resolve(root, runlog);
-      if (ompDirVal) ompDir = resolve(root, ompDirVal);
-
-      const branches = tomlSection(raw, "branches");
-      const prot = tomlArray(branches, "protected");
-      const rootVal = tomlBare(branches, "root");
-      if (prot) protectedBranches = prot;
-      if (rootVal) rootBranch = rootVal;
-
-      const commands = tomlSection(raw, "commands");
-      const check = tomlValue(commands, "check");
-      const test = tomlValue(commands, "test");
-      if (check) checkCommand = check;
-      if (test) testCommand = test;
-
-      const runlogSec = tomlSection(raw, "runlog");
-      const maxRunsVal = tomlInt(runlogSec, "max_runs");
-      if (maxRunsVal !== undefined) maxRuns = maxRunsVal;
-
-      const output = tomlSection(raw, "output");
-      const fmt = tomlBare(output, "format");
-      if (fmt) outputFormat = fmt;
+      applyPathsSection(raw, root, state);
+      applyBranchesSection(raw, state);
+      applyCommandsSection(raw, state);
+      applyRunlogSection(raw, state);
+      applyOutputSection(raw, state);
     } catch {
       // Keep defaults on parse failure
     }
@@ -164,75 +208,29 @@ export function resolveGiwtConfig(cwd: string | undefined): GiwtConfig {
     available,
     configFile,
     repoRoot: root,
-    treeDir,
-    runlogDir,
-    ledgerPath: join(treeDir, ".ledger.jsonl"),
-    planDir,
-    ticketsDir,
-    ompDir,
-    receiptPath: join(ompDir, "receipt.toml"),
-    protectedBranches,
-    rootBranch,
-    checkCommand,
-    testCommand,
-    maxRuns,
-    outputFormat,
+    treeDir: state.treeDir,
+    runlogDir: state.runlogDir,
+    ledgerPath: join(state.treeDir, ".ledger.jsonl"),
+    planDir: state.planDir,
+    ticketsDir: state.ticketsDir,
+    ompDir: state.ompDir,
+    receiptPath: join(state.ompDir, "receipt.toml"),
+    protectedBranches: state.protectedBranches,
+    rootBranch: state.rootBranch,
+    checkCommand: state.checkCommand,
+    testCommand: state.testCommand,
+    maxRuns: state.maxRuns,
+    outputFormat: state.outputFormat,
   };
 }
 
-/**
- * Check if giwt is available as a CLI tool (bun + giwt source or binary).
- * Pure PATH check — no subprocess.
- */
-export function giwtOnPath(pathEnv?: string): boolean {
-  const path = pathEnv ?? process.env.PATH ?? "";
-  return path.split(":").some((dir) => {
-    try {
-      return existsSync(join(dir, "giwt"));
-    } catch {
-      return false;
-    }
-  });
-}
-
-/**
- * Resolve TREE_DIR env for giwt subprocess calls. Aligns giwt's worktree
- * container with omp's OMP_WORKTREE_DIR when set.
- */
-export function giwtEnv(cwd: string | undefined): Record<string, string> {
-  const env: Record<string, string> = {};
-  const ompWt = process.env.OMP_WORKTREE_DIR;
-  if (ompWt) env.TREE_DIR = ompWt;
-  if (cwd) env.REPO_ROOT = cwd;
-  return env;
-}
-
-/**
- * Resolve the receipt.toml path for a session cwd, honoring
- * `paths.omp_dir` from giwt.toml / .giwt.toml (default: `<root>/.omp`).
- * Pure fs read of the config file at most — never throws; falls back to
- * the `.omp` default on any failure.
- */
-export function resolveReceiptPath(cwd: string | undefined): string | undefined {
-  if (!cwd) return undefined;
-  try {
-    return resolveGiwtConfig(cwd).receiptPath;
-  } catch {
-    return join(cwd, ".omp", "receipt.toml");
-  }
-}
-
-/** Planning subdirectories, resolved against the configured plan root. */
-export type PlanSubdir = "tickets" | "epics" | "backlog";
-
-/**
- * Resolve one planning subdirectory for a session cwd, honoring
- * `paths.plan` / `paths.tickets` from giwt.toml / .giwt.toml.
- * The tickets dir honors `paths.tickets` directly; epics/backlog hang
- * off the configured plan root. Defaults preserve the `.plan/*` layout.
- */
-export function resolvePlanDir(root: string, subdir: PlanSubdir): string {
-  const cfg = resolveGiwtConfig(root);
-  if (subdir === "tickets") return cfg.ticketsDir;
-  return join(cfg.planDir, subdir);
-}
+// Env + path resolvers (`giwtOnPath`, `giwtEnv`, `resolveReceiptPath`,
+// `resolvePlanDir`, `PlanSubdir`) live in `./giwt-resolve-env` and are
+// re-exported below for backward-compatible single-import callers.
+export {
+  giwtEnv,
+  giwtOnPath,
+  type PlanSubdir,
+  resolvePlanDir,
+  resolveReceiptPath,
+} from "./giwt-resolve-env";

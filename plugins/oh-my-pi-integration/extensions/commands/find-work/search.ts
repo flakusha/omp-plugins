@@ -85,6 +85,118 @@ function tokenQuality(token: string, words: string[]): number {
   return best;
 }
 
+/** Tier-1 direct hits: exact id, title phrase, or whole-token tag match. */
+function collectDirectHits(
+  tickets: WorkTicket[],
+  ql: string,
+  tokens: string[],
+  offer: (h: SearchHit) => void,
+): void {
+  for (const t of tickets) {
+    if (t.id.toLowerCase() === ql) offer({ ticket: t, tier: 1, score: 0, via: "id" });
+    if (t.title.toLowerCase().includes(ql))
+      offer({ ticket: t, tier: 1, score: 0.25, via: "phrase" });
+    for (const tag of t.tags ?? []) {
+      if (tokens.includes(tag.toLowerCase())) {
+        offer({ ticket: t, tier: 1, score: 0.1, via: `tag:${tag}` });
+      }
+    }
+  }
+}
+
+/** Lower-cased token-split words from id+title+tags, used for fuzzy tier-2 scoring. */
+function ticketWords(t: WorkTicket): string[] {
+  return `${t.id} ${t.title} ${(t.tags ?? []).join(" ")}`
+    .toLowerCase()
+    .split(/[^a-z0-9-]+/)
+    .filter(Boolean);
+}
+
+/** Tier-2 fuzzy candidates: every token must land somewhere (>= tier-1 already-wins short-circuit). */
+function collectFuzzyHits(
+  tickets: WorkTicket[],
+  tokens: string[],
+  hits: Map<string, SearchHit>,
+  offer: (h: SearchHit) => void,
+): void {
+  for (const t of tickets) {
+    const prev = hits.get(t.id);
+    if (prev && prev.tier === 1) continue;
+    const words = ticketWords(t);
+    const qualities = tokens.map((tok) => tokenQuality(tok, words));
+    if (!qualities.every((v) => v > 0)) continue;
+    const avg = qualities.reduce((a, b) => a + b, 0) / qualities.length;
+    offer({ ticket: t, tier: 2, score: 1 - avg, via: "fuzzy" });
+  }
+}
+
+/** Epic binding: target and seed share an epic, or target IS an item in seed's epic. */
+function seedConnectionVia(target: WorkTicket, seed: WorkTicket): string | undefined {
+  if (target.id === seed.id) return undefined;
+  if (seed.epic && target.epic && epicKey(seed.epic) === epicKey(target.epic)) {
+    return `epic:${seed.epic}`;
+  }
+  if (seed.epic && target.kind === "epic" && epicKey(target.id) === epicKey(seed.epic)) {
+    return `epic-item:${target.id}`;
+  }
+  return undefined;
+}
+
+/** Case-insensitive shared-tag lookup between target and seed. */
+function sharedTag(target: WorkTicket, seed: WorkTicket): string | undefined {
+  const targetTags = target.tags ?? [];
+  const seedTags = seed.tags ?? [];
+  for (const tag of targetTags) {
+    const lower = tag.toLowerCase();
+    if (seedTags.some((s) => s.toLowerCase() === lower)) return tag;
+  }
+  return undefined;
+}
+
+/** Pick the strongest connection via-label for `target` against any seed, or undefined. */
+function connectionVia(
+  target: WorkTicket,
+  seeds: WorkTicket[],
+  seedEpics: Map<string, string>,
+  epicRefs: Map<string, Set<string>> | undefined,
+): string | undefined {
+  for (const seed of seeds) {
+    const epic = seedConnectionVia(target, seed);
+    if (epic) return epic;
+    const tag = sharedTag(target, seed);
+    if (tag) return `tag:${tag}`;
+  }
+  if (epicRefs) {
+    for (const [epicFile, refIds] of epicRefs) {
+      if (seedEpics.has(epicKey(epicFile)) && refIds.has(target.id)) {
+        return `ref:${epicFile}`;
+      }
+    }
+  }
+  return undefined;
+}
+
+/** Tier-3 potential connections seeded by tier-1/2 hits (epic bindings, shared tags, file refs). */
+function collectConnectionHits(
+  tickets: WorkTicket[],
+  hits: Map<string, SearchHit>,
+  offer: (h: SearchHit) => void,
+  root: string,
+  epicsDir: string | undefined,
+): void {
+  const seeds = [...hits.values()].map((h) => h.ticket);
+  if (seeds.length === 0) return;
+  const seedEpics = new Map<string, string>(); // epicKey → display value
+  for (const seed of seeds) if (seed.epic) seedEpics.set(epicKey(seed.epic), seed.epic);
+  const epicRefs =
+    seedEpics.size > 0 ? epicRefIndex(epicsDir ?? resolvePlanDir(root, "epics")) : undefined;
+  for (const t of tickets) {
+    if (hits.has(t.id)) continue;
+    const via = connectionVia(t, seeds, seedEpics, epicRefs);
+    if (via) offer({ ticket: t, tier: 3, score: 0.5, via });
+  }
+}
+
 /**
  * Tiered `-s` search over the roster. `epicsDir` defaults to the repo's
  * `.plan/epics` (via resolvePlanDir); tests inject a fixture dir. Pure fs
@@ -110,75 +222,9 @@ export function searchTickets(
     }
   };
 
-  // Tier 1 — direct hits.
-  for (const t of tickets) {
-    if (t.id.toLowerCase() === ql) offer({ ticket: t, tier: 1, score: 0, via: "id" });
-    if (t.title.toLowerCase().includes(ql)) {
-      offer({ ticket: t, tier: 1, score: 0.25, via: "phrase" });
-    }
-    for (const tag of t.tags ?? []) {
-      if (tokens.includes(tag.toLowerCase())) {
-        offer({ ticket: t, tier: 1, score: 0.1, via: `tag:${tag}` });
-      }
-    }
-  }
-
-  // Tier 2 — fuzzy candidates: every query token must land somewhere.
-  for (const t of tickets) {
-    const prev = hits.get(t.id);
-    if (prev && prev.tier === 1) continue;
-    const words = `${t.id} ${t.title} ${(t.tags ?? []).join(" ")}`
-      .toLowerCase()
-      .split(/[^a-z0-9-]+/)
-      .filter(Boolean);
-    const qualities = tokens.map((tok) => tokenQuality(tok, words));
-    if (qualities.every((v) => v > 0)) {
-      const avg = qualities.reduce((a, b) => a + b, 0) / qualities.length;
-      offer({ ticket: t, tier: 2, score: 1 - avg, via: "fuzzy" });
-    }
-  }
-
-  // Tier 3 — potential connections seeded by tier-1/2 hits.
-  const seeds = [...hits.values()].map((h) => h.ticket);
-  if (seeds.length > 0) {
-    const seedEpics = new Map<string, string>(); // epicKey → display value
-    for (const seed of seeds) if (seed.epic) seedEpics.set(epicKey(seed.epic), seed.epic);
-    const epicRefs =
-      seedEpics.size > 0
-        ? epicRefIndex(opts?.epicsDir ?? resolvePlanDir(root, "epics"))
-        : undefined;
-    for (const t of tickets) {
-      if (hits.has(t.id)) continue;
-      let via: string | undefined;
-      for (const seed of seeds) {
-        if (t.id === seed.id) continue;
-        if (seed.epic && t.epic && epicKey(seed.epic) === epicKey(t.epic)) {
-          via = `epic:${seed.epic}`;
-          break;
-        }
-        if (seed.epic && t.kind === "epic" && epicKey(t.id) === epicKey(seed.epic)) {
-          via = `epic-item:${t.id}`;
-          break;
-        }
-        const shared = (t.tags ?? []).find((tag) =>
-          (seed.tags ?? []).some((s) => s.toLowerCase() === tag.toLowerCase()),
-        );
-        if (shared) {
-          via = `tag:${shared}`;
-          break;
-        }
-      }
-      if (!via && epicRefs) {
-        for (const [epicFile, refIds] of epicRefs) {
-          if (seedEpics.has(epicKey(epicFile)) && refIds.has(t.id)) {
-            via = `ref:${epicFile}`;
-            break;
-          }
-        }
-      }
-      if (via) offer({ ticket: t, tier: 3, score: 0.5, via });
-    }
-  }
+  collectDirectHits(tickets, ql, tokens, offer);
+  collectFuzzyHits(tickets, tokens, hits, offer);
+  collectConnectionHits(tickets, hits, offer, root, opts?.epicsDir);
 
   return [...hits.values()]
     .sort((a, b) => a.tier - b.tier || a.score - b.score || a.ticket.id.localeCompare(b.ticket.id))

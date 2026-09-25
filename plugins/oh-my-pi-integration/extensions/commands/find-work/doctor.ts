@@ -95,55 +95,73 @@ function mapDoctorCheck(
     warnings.push(`${id || "doctor"}: ${String(check.error)}`);
   }
   if (!Array.isArray(check.findings)) return { tickets, warnings };
-  const prefix =
-    id === "lint"
-      ? "LT"
-      : id === "typecheck"
-        ? "TS"
-        : id === "tests"
-          ? "TT"
-          : id === "knip"
-            ? "KN"
-            : id === "jscpd"
-              ? "CPD"
-              : "DR";
-  const domain =
-    id === "lint"
-      ? "lint"
-      : id === "typecheck"
-        ? "typecheck"
-        : id === "tests"
-          ? "tests"
-          : id === "knip"
-            ? "knip"
-            : id === "jscpd"
-              ? "duplication"
-              : "doctor";
+  const prefix = doctorPrefix(id);
+  const domain = doctorDomain(id);
   for (const raw of check.findings.slice(0, TOOL_MAX_TICKETS)) {
     const f = raw as DoctorFinding;
-    const error = f.severity === "error";
-    const file = doctorFindingFile(f, root);
-    const line = doctorFindingLine(f);
-    const title =
-      id === "lint"
-        ? `[${doctorFindingRule(f, "lint")}] ${doctorFindingText(f)} (${file}:${line})`
-        : id === "typecheck"
-          ? `${doctorFindingRule(f, "TS")}: ${doctorFindingText(f)} (${file}:${line})`
-          : id === "tests"
-            ? `FAIL ${doctorFindingText(f)}`
-            : id === "knip"
-              ? `knip ${doctorFindingRule(f, "issue")}: ${doctorFindingText(f)}${file ? ` (${file}${line ? `:${line}` : ""})` : ""}`
-              : `${doctorFindingText(f)}${file ? ` (${file}${line ? `:${line}` : ""})` : ""}`;
-    tickets.push({
-      id: `${prefix}-${pad2(seq.n++)}`,
-      title,
-      source: id || "doctor",
-      kind: error ? "bug" : "task",
-      priority: id === "typecheck" || id === "tests" ? "P1" : error ? "P2" : "P3",
-      domain,
-    });
+    tickets.push(doctorTicket(f, root, id, prefix, domain, seq));
   }
   return { tickets, warnings };
+}
+
+/** Priority bucket for one doctor finding: typecheck/tests errors are P1, other errors P2, warnings P3. */
+function doctorPriority(id: string, error: boolean): "P1" | "P2" | "P3" {
+  if (error && (id === "typecheck" || id === "tests")) return "P1";
+  return error ? "P2" : "P3";
+}
+
+/** Title for one doctor finding — check-id shapes it. */
+function doctorTitle(id: string, f: DoctorFinding, file: string, line: number): string {
+  const loc = file ? ` (${file}${line ? `:${line}` : ""})` : "";
+  if (id === "lint")
+    return `[${doctorFindingRule(f, "lint")}] ${doctorFindingText(f)} (${file}:${line})`;
+  if (id === "typecheck")
+    return `${doctorFindingRule(f, "TS")}: ${doctorFindingText(f)} (${file}:${line})`;
+  if (id === "tests") return `FAIL ${doctorFindingText(f)}`;
+  if (id === "knip") return `knip ${doctorFindingRule(f, "issue")}: ${doctorFindingText(f)}${loc}`;
+  return `${doctorFindingText(f)}${loc}`;
+}
+
+/** Build one ticket from a doctor finding (callers gate on id+domain). */
+function doctorTicket(
+  f: DoctorFinding,
+  root: string,
+  id: string,
+  prefix: string,
+  domain: string,
+  seq: { n: number },
+): WorkTicket {
+  const error = f.severity === "error";
+  const file = doctorFindingFile(f, root);
+  const line = doctorFindingLine(f);
+  return {
+    id: `${prefix}-${pad2(seq.n++)}`,
+    title: doctorTitle(id, f, file, line),
+    source: id || "doctor",
+    kind: error ? "bug" : "task",
+    priority: doctorPriority(id, error),
+    domain,
+  };
+}
+
+/** Two-letter ticket prefix for a doctor check id (unknown ids → "DR"). */
+function doctorPrefix(id: string): string {
+  if (id === "lint") return "LT";
+  if (id === "typecheck") return "TS";
+  if (id === "tests") return "TT";
+  if (id === "knip") return "KN";
+  if (id === "jscpd") return "CPD";
+  return "DR";
+}
+
+/** Domain label for a doctor check id (unknown ids → "doctor"). */
+function doctorDomain(id: string): string {
+  if (id === "lint") return "lint";
+  if (id === "typecheck") return "typecheck";
+  if (id === "tests") return "tests";
+  if (id === "knip") return "knip";
+  if (id === "jscpd") return "duplication";
+  return "doctor";
 }
 
 /**

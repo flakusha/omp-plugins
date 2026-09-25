@@ -39,6 +39,28 @@ function flowOrBare(rest: string): string[] {
   return splitList(flow ? (flow[1] ?? "") : rest);
 }
 
+/** True when `rest` is empty or the literal `|` / `>` marker that opens block-list form. */
+function isBlockListMarker(rest: string): boolean {
+  return !rest || rest === "|" || rest === ">";
+}
+
+/** Append one `- item` line to the block-list accumulator, or stop the accumulator. */
+function collectBlockItem(line: string, block: string[]): boolean {
+  const item = BLOCK_ITEM_RE.exec(line);
+  if (!item) return false;
+  block.push(unquote(item[1] ?? "").trim());
+  return true;
+}
+
+/** Process the `labels:` key line and decide block-list vs inline form. */
+function handleLabelsKey(line: string): { done: boolean; result?: string[]; inLabels: boolean } {
+  const key = LABELS_KEY_RE.exec(line);
+  if (!key) return { done: false, inLabels: false };
+  const rest = (key[1] ?? "").trim();
+  if (isBlockListMarker(rest)) return { done: false, inLabels: true };
+  return { done: true, result: flowOrBare(rest), inLabels: false };
+}
+
 /** Labels from a leading `---` frontmatter block, or [] when none. */
 function frontmatterLabels(lines: string[]): string[] {
   if (!FENCE_RE.test(lines[0] ?? "")) return [];
@@ -48,19 +70,13 @@ function frontmatterLabels(lines: string[]): string[] {
     const line = lines[i] ?? "";
     if (FENCE_RE.test(line)) break;
     if (inLabels) {
-      const item = BLOCK_ITEM_RE.exec(line);
-      if (!item) break; // any non-list line ends the labels block
-      block.push(unquote(item[1] ?? "").trim());
+      // any non-list line ends the labels block
+      if (!collectBlockItem(line, block)) break;
       continue;
     }
-    const key = LABELS_KEY_RE.exec(line);
-    if (!key) continue;
-    const rest = (key[1] ?? "").trim();
-    if (!rest || rest === "|" || rest === ">") {
-      inLabels = true; // block form: collect following `- item` lines
-      continue;
-    }
-    return flowOrBare(rest);
+    const step = handleLabelsKey(line);
+    if (step.done) return step.result ?? [];
+    inLabels = step.inLabels;
   }
   return block.filter(Boolean);
 }

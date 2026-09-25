@@ -130,6 +130,51 @@ function applyOptionToken(word: string, args: FindWorkArgs): { consumed: boolean
   return { consumed: applyKeyword(word, args) };
 }
 
+/** Apply a leading mode keyword to `args` if `argv[0]` is one; advance the cursor on match. */
+function consumeLeadingMode(argv: string[], args: FindWorkArgs): number {
+  const head = normToken(argv[0] ?? "");
+  if (!(MODE_KEYWORDS as readonly string[]).includes(head)) return 0;
+  args.mode = head as WorkMode;
+  return 1;
+}
+
+/** Try to consume argv[i] as an option-region keyword; null when not consumed. */
+function consumeOption(
+  argv: string[],
+  i: number,
+  args: FindWorkArgs,
+): { consumed: true } | { error: string } | null {
+  const applied = applyOptionToken(normToken(argv[i] ?? ""), args);
+  if (applied.error) return { error: applied.error };
+  if (applied.consumed) return { consumed: true };
+  return null;
+}
+
+/** Apply one argv slot as either a flag, an option-region keyword, or directive text. */
+function advanceToken(
+  argv: string[],
+  i: number,
+  args: FindWorkArgs,
+  queryParts: string[],
+  inDirective: boolean,
+): { i: number; inDirective: boolean; error?: string } {
+  const flag = applyFlagToken(argv, i, args);
+  if (flag) {
+    if (flag.error) return { i, inDirective, error: flag.error };
+    return { i: i + flag.consumed, inDirective };
+  }
+  if (!inDirective) {
+    const option = consumeOption(argv, i, args);
+    if (option && "error" in option) return { i, inDirective, error: option.error };
+    if (option) return { i: i + 1, inDirective };
+    // A later mode word (or any unrecognized token) starts the directive —
+    // e.g. `ask List bug items and propose…` keeps mode=ask.
+    inDirective = true;
+  }
+  queryParts.push(argv[i] ?? "");
+  return { i: i + 1, inDirective };
+}
+
 export function parseFindWorkArgs(argv: string[]): { args: FindWorkArgs; error?: string } {
   const args: FindWorkArgs = {
     mode: "list",
@@ -140,35 +185,15 @@ export function parseFindWorkArgs(argv: string[]): { args: FindWorkArgs; error?:
   };
   if (argv.length === 0) return { args };
 
-  let i = 0;
-  if ((MODE_KEYWORDS as readonly string[]).includes(normToken(argv[0] ?? ""))) {
-    args.mode = normToken(argv[0] ?? "") as WorkMode;
-    i = 1;
-  }
+  let i = consumeLeadingMode(argv, args);
 
   const queryParts: string[] = [];
   let inDirective = false;
   while (i < argv.length) {
-    const flag = applyFlagToken(argv, i, args);
-    if (flag) {
-      if (flag.error) return { args, error: flag.error };
-      i += flag.consumed;
-      continue;
-    }
-    const word = normToken(argv[i] ?? "");
-    if (!inDirective) {
-      // A later mode word (or any unrecognized token) starts the directive —
-      // e.g. `ask List bug items and propose…` keeps mode=ask.
-      const applied = applyOptionToken(word, args);
-      if (applied.error) return { args, error: applied.error };
-      if (applied.consumed) {
-        i++;
-        continue;
-      }
-      inDirective = true;
-    }
-    queryParts.push(argv[i] ?? "");
-    i++;
+    const step = advanceToken(argv, i, args, queryParts, inDirective);
+    if (step.error) return { args, error: step.error };
+    i = step.i;
+    inDirective = step.inDirective;
   }
   args.query = queryParts.join(" ");
   return { args };

@@ -724,31 +724,37 @@ function words(seg: string): string[] {
   const out: string[] = [];
   let cur = "";
   let q: string | null = null;
-  for (let i = 0; i < seg.length; i++) {
-    const ch = seg[i] ?? "";
-    if (q) {
-      if (ch === q) q = null;
-      else cur += ch;
-      continue;
-    }
-    if (ch === "'" || ch === '"') {
-      q = ch;
-      continue;
-    }
-    if (ch === "\\" && i + 1 < seg.length) {
-      cur += seg[i + 1] ?? "";
-      i++;
-      continue;
-    }
-    if (/\s/.test(ch)) {
-      if (cur) out.push(cur);
-      cur = "";
-      continue;
-    }
-    cur += ch;
+  let i = 0;
+  while (i < seg.length) {
+    const step = wordsStep(seg, i, q, cur);
+    q = step.q;
+    cur = step.cur;
+    if (step.flushed) out.push(step.flushed);
+    i = step.nextI;
   }
   if (cur) out.push(cur);
   return out;
+}
+type WordsStep = { q: string | null; cur: string; flushed: string | null; nextI: number };
+
+/** Single-character decision in the quote-aware word splitter. */
+function wordsStep(seg: string, i: number, qIn: string | null, curIn: string): WordsStep {
+  const ch = seg[i] ?? "";
+  if (qIn) return wordsInQuote(seg, i, ch, qIn, curIn);
+  if (ch === "'" || ch === '"') return { q: ch, cur: curIn, flushed: null, nextI: i + 1 };
+  if (ch === "\\" && i + 1 < seg.length) {
+    return { q: null, cur: curIn + (seg[i + 1] ?? ""), flushed: null, nextI: i + 2 };
+  }
+  if (/\s/.test(ch)) {
+    return { q: null, cur: "", flushed: curIn || null, nextI: i + 1 };
+  }
+  return { q: null, cur: curIn + ch, flushed: null, nextI: i + 1 };
+}
+
+/** Inside a quoted run: closing quote ends it, anything else is literal. */
+function wordsInQuote(_seg: string, i: number, ch: string, q: string, curIn: string): WordsStep {
+  if (ch === q) return { q: null, cur: curIn, flushed: null, nextI: i + 1 };
+  return { q, cur: curIn + ch, flushed: null, nextI: i + 1 };
 }
 
 /** Step `i` past a quoted region (single/double quotes) starting at `seg[i]`. */
@@ -835,11 +841,6 @@ function redirectTargets(seg: string): string[] {
   return targets;
 }
 
-/**
- * Block bash file writes landing outside the project root: redirection
- * targets and `tee` file arguments. Complements the `write`-tool gate —
- * without this, `echo x > ~/file` smuggles the same write past it.
- */
 /** Scan one segment for any redirection write target landing outside the root. */
 function redirectWriteReasonFor(seg: string): string | undefined {
   for (const target of redirectTargets(seg)) {
@@ -878,17 +879,6 @@ export function bashWriteReason(cmd: string): string | undefined {
   }
   return undefined;
 }
-
-// ---- interpreter inline-code guard -----------------------------------------
-//
-// eval.py/eval.js are disabled in agent/config.yml — computation must go
-// through re-executable `.tmp/` scripts executed via bash. Inline interpreter
-// code (`python -c`, `node -e`, `perl -pe`, `deno eval`, heredoc-to-stdin, or
-// a bare interpreter reading a pipe) smuggles the same one-off computation
-// past that policy. File-based runs (`python .tmp/x.py`, `node server.js`,
-// `bun run dev`, `python -m venv .venv`) stay allowed. Static-analysis limits
-// apply: code assembled via `$(...)` before it reaches the interpreter, REPL
-// flag forms (`node -i`), and value-flag gaps are not inspected.
 
 export const INTERPRETER_INLINE_REASON =
   "inline interpreter code (`-c`/`-e`/`--eval`/heredoc-to-stdin) bypasses the disabled `eval` tooling — " +
@@ -938,18 +928,33 @@ function inlineFlagsFor(head: string): (token: string) => boolean {
  */
 function interpreterInlineForSegment(seg: string): boolean {
   const tokens = words(seg);
+  const headIdx = skipInterpWrappers(tokens);
+  if (headIdx >= tokens.length) return false;
+  const head = tokens[headIdx];
+  if (head === undefined || !INTERPRETERS.has(head)) return false;
+  if (head === "deno" && tokens[headIdx + 1] === "eval") return true;
+  return looksLikeInlineCode(tokens, headIdx, inlineFlagsFor(head));
+}
+
+/** Skip leading `sudo`/`env`/`timeout …`/etc. before the interpreter token. */
+function skipInterpWrappers(tokens: string[]): number {
   let i = 0;
   while (i < tokens.length && tokens[i] !== undefined && INTERP_WRAPPERS.has(tokens[i] as string)) {
+    const tok = tokens[i] as string;
     i += 1;
-    if (tokens[i - 1] === "timeout") i += 1; // consume the duration value
+    if (tok === "timeout") i += 1; // consume the duration value
   }
-  if (i >= tokens.length) return false;
-  const head = tokens[i];
-  if (head === undefined || !INTERPRETERS.has(head)) return false;
-  if (head === "deno" && tokens[i + 1] === "eval") return true;
-  const inlineFlag = inlineFlagsFor(head);
+  return i;
+}
+
+/** Walk interpreter-relative tokens for inline-code shapes. */
+function looksLikeInlineCode(
+  tokens: string[],
+  headIdx: number,
+  inlineFlag: (token: string) => boolean,
+): boolean {
   let valueNext = false;
-  for (const token of tokens.slice(i + 1)) {
+  for (const token of tokens.slice(headIdx + 1)) {
     if (valueNext) {
       valueNext = false;
       continue;
@@ -960,9 +965,8 @@ function interpreterInlineForSegment(seg: string): boolean {
     if (!token.startsWith("-")) return false; // script/module operand — file-based run
     valueNext = INTERP_VALUE_FLAGS.has(token);
   }
-  return tokens.length === i + 1; // bare interpreter → stdin/REPL mode
+  return tokens.length === headIdx + 1; // bare interpreter → stdin/REPL mode
 }
-
 /**
  * eval-policy guard: no inline interpreter code anywhere in the command —
  * chained-prefix segments (`cd x && python -c …`) included via

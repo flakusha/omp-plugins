@@ -105,6 +105,21 @@ async function unmergedBranchTickets(
   return tickets;
 }
 
+/** Read one worktree's `--short` status (or null on failure). */
+async function worktreeStatus(pi: ExecLike, path: string): Promise<DirtyStat | null> {
+  try {
+    const raw = await execTool(
+      pi,
+      "git",
+      ["-C", path, "status", "--short"],
+      SOURCE_EXEC_TIMEOUT_MS,
+    );
+    return parseStatusShort(raw);
+  } catch {
+    return null; // worktree metadata broken; `git worktree repair` territory
+  }
+}
+
 /** Dirty-worktree tickets: uncommitted changes per checkout. */
 async function worktreeDirtyTickets(pi: ExecLike, root: string): Promise<WorkTicket[]> {
   const out = await execTool(
@@ -131,19 +146,8 @@ async function worktreeDirtyTickets(pi: ExecLike, root: string): Promise<WorkTic
       });
       continue;
     }
-    let stat: DirtyStat;
-    try {
-      const raw = await execTool(
-        pi,
-        "git",
-        ["-C", wt.path, "status", "--short"],
-        SOURCE_EXEC_TIMEOUT_MS,
-      );
-      stat = parseStatusShort(raw);
-    } catch {
-      continue; // worktree metadata broken; `git worktree repair` territory
-    }
-    if (stat.total === 0) continue;
+    const stat = await worktreeStatus(pi, wt.path);
+    if (!stat || stat.total === 0) continue;
     const bits = [
       stat.modified > 0 ? `${stat.modified} modified` : null,
       stat.untracked > 0 ? `${stat.untracked} untracked` : null,

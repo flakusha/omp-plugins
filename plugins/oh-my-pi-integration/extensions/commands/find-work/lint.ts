@@ -35,18 +35,27 @@ export function parseEslintJson(stdout: string, root: string): EslintFinding[] {
   for (const file of data) {
     const f = file as { filePath?: unknown; messages?: unknown };
     if (typeof f.filePath !== "string" || !Array.isArray(f.messages)) continue;
+    const filePath = relToRoot(root, f.filePath);
     for (const raw of f.messages) {
       const m = raw as { ruleId?: unknown; severity?: unknown; message?: unknown; line?: unknown };
-      out.push({
-        file: relToRoot(root, f.filePath),
-        line: typeof m.line === "number" ? m.line : 0,
-        rule: typeof m.ruleId === "string" && m.ruleId ? m.ruleId : "eslint",
-        message: typeof m.message === "string" ? m.message : "",
-        error: m.severity === 2,
-      });
+      out.push(eslintFinding(m, filePath));
     }
   }
   return out;
+}
+
+/** Project one raw eslint message entry into a finding. */
+function eslintFinding(
+  m: { ruleId?: unknown; severity?: unknown; message?: unknown; line?: unknown },
+  file: string,
+): EslintFinding {
+  return {
+    file,
+    line: typeof m.line === "number" ? m.line : 0,
+    rule: typeof m.ruleId === "string" && m.ruleId ? m.ruleId : "eslint",
+    message: typeof m.message === "string" ? m.message : "",
+    error: m.severity === 2,
+  };
 }
 
 // ---- biome ----
@@ -131,18 +140,32 @@ export function parseOxlintJson(stdout: string, root: string): OxlintFinding[] {
       filename?: unknown;
       labels?: unknown;
     };
-    const spans = Array.isArray(d.labels) ? d.labels : [];
-    const first = spans[0] as { span?: { line?: unknown } } | undefined;
-    const line = first?.span && typeof first.span.line === "number" ? first.span.line : 0;
-    out.push({
-      file: typeof d.filename === "string" ? relToRoot(root, d.filename) : "",
-      line,
-      rule: typeof d.code === "string" && d.code ? d.code : "oxlint",
-      message: typeof d.message === "string" ? d.message : "",
-      error: d.severity === "error",
-    });
+    out.push(oxlintFinding(d, root));
   }
   return out;
+}
+
+/** Project one raw oxlint diagnostic entry into a finding. */
+function oxlintFinding(
+  d: {
+    message?: unknown;
+    code?: unknown;
+    severity?: unknown;
+    filename?: unknown;
+    labels?: unknown;
+  },
+  root: string,
+): OxlintFinding {
+  const spans = Array.isArray(d.labels) ? d.labels : [];
+  const first = spans[0] as { span?: { line?: unknown } } | undefined;
+  const line = first?.span && typeof first.span.line === "number" ? first.span.line : 0;
+  return {
+    file: typeof d.filename === "string" ? relToRoot(root, d.filename) : "",
+    line,
+    rule: typeof d.code === "string" && d.code ? d.code : "oxlint",
+    message: typeof d.message === "string" ? d.message : "",
+    error: d.severity === "error",
+  };
 }
 
 // ---- runners ----

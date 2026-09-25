@@ -1330,6 +1330,67 @@ describe("giwtLedgerTickets", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  test("✅-resolved outcomes and bare observation records are not work", () => {
+    const dir = mkdtempSync(join(tmpdir(), "fw-giwt-leg2-"));
+    try {
+      mkdirSync(join(dir, "tree"), { recursive: true });
+      writeFileSync(join(dir, "giwt.toml"), '[paths]\ntree = "tree"\n');
+      const records = [
+        JSON.stringify({
+          v: 1,
+          ts: "t",
+          pid: 1,
+          cmd: "commit-wt",
+          branch: "auth",
+          msg: "commit-wt auth :: ✅ abc1234 fix: done",
+        }),
+        JSON.stringify({
+          v: 1,
+          ts: "t",
+          pid: 2,
+          cmd: "show",
+          branch: "auth",
+          msg: "show abc1234",
+        }),
+        JSON.stringify({
+          v: 1,
+          ts: "t",
+          pid: 3,
+          cmd: "issues",
+          branch: "",
+          msg: "issues",
+        }),
+        JSON.stringify({
+          v: 1,
+          ts: "t",
+          pid: 4,
+          cmd: "sync",
+          branch: "dev",
+          msg: "sync",
+        }),
+        JSON.stringify({
+          v: 1,
+          ts: "t",
+          pid: 5,
+          cmd: "show",
+          branch: "auth",
+          msg: "show abc :: inspect race window",
+        }),
+      ];
+      writeFileSync(join(dir, "tree", ".ledger.jsonl"), `${records.join("\n")}\n`);
+      const tickets = giwtLedgerTickets(dir);
+      // ✅ outcome and bare observations (show/issues) drop; bare mutating
+      // sync stays as P3 recent-activity, say-annotated show stays as P2.
+      // Order-agnostic: readGiwtLedger reassigns ids/sort order.
+      const byTitle = new Map(tickets.map((t) => [t.title, t]));
+      expect([...byTitle.keys()].sort()).toEqual(["inspect race window", "sync"]);
+      expect(byTitle.get("inspect race window")?.priority).toBe("P2");
+      expect(byTitle.get("sync")?.priority).toBe("P3");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("giwtRunTickets", () => {

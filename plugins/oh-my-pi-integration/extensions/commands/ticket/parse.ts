@@ -53,45 +53,44 @@ function isPriority(value: string): boolean {
   return (TICKET_PRIORITIES as readonly string[]).includes(value);
 }
 
+/** Apply one flag-with-value (`--label`/`--priority`/`--epic`/`--effort`) to `state`. */
+function applyFlagWithValue(token: string, value: string, state: FlagAccum): void {
+  if (token === "--label") state.labels.push(value);
+  else if (token === "--priority") state.priority = value;
+  else if (token === "--epic") state.epic = value;
+  else if (token === "--effort") state.effort = value;
+}
+
+interface FlagAccum {
+  labels: string[];
+  priority: string | undefined;
+  epic: string | undefined;
+  effort: string | undefined;
+}
+
 /** Pure parser for positional title/body + flag pairs. */
 function parseFlags(args: string[]): FlagResult {
-  const labels: string[] = [];
+  const accum: FlagAccum = { labels: [], priority: undefined, epic: undefined, effort: undefined };
   let title: string | null = null;
   let titleSeen = false;
   const bodyParts: string[] = [];
-  let priority: string | undefined;
-  let epic: string | undefined;
-  let effort: string | undefined;
   for (let i = 0; i < args.length; i++) {
     const token = args[i];
     if (token === undefined) break;
     if (isFlagWithValue(token)) {
       const next = args[i + 1];
       if (next === undefined) {
-        return { title: null, body: "", labels, error: `${token} requires a value` };
+        return { title: null, body: "", labels: accum.labels, error: `${token} requires a value` };
       }
       if (token === "--priority" && !isPriority(next)) {
         return {
           title: null,
           body: "",
-          labels,
+          labels: accum.labels,
           error: `invalid priority '${next}'. Expected one of ${TICKET_PRIORITIES.join(", ")}`,
         };
       }
-      switch (token) {
-        case "--label":
-          labels.push(next);
-          break;
-        case "--priority":
-          priority = next;
-          break;
-        case "--epic":
-          epic = next;
-          break;
-        case "--effort":
-          effort = next;
-          break;
-      }
+      applyFlagWithValue(token, next, accum);
       i++;
       continue;
     }
@@ -102,7 +101,14 @@ function parseFlags(args: string[]): FlagResult {
       bodyParts.push(token);
     }
   }
-  return { title, body: bodyParts.join(" "), labels, priority, epic, effort };
+  return {
+    title,
+    body: bodyParts.join(" "),
+    labels: accum.labels,
+    priority: accum.priority,
+    epic: accum.epic,
+    effort: accum.effort,
+  };
 }
 
 /** Parse `argv` (no leading command token) into a `ParsedTicket`. */

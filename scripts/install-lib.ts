@@ -30,6 +30,7 @@ import { readFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { mergeInterceptorPatterns } from "./install-bash-interceptor";
 
 /** rel path -> sha256 for files we own, or the literal "dir" marker. */
 export type Manifest = Map<string, string | "dir">;
@@ -228,149 +229,14 @@ export function serializeManifest(manifest: Manifest): string {
 }
 
 // ---- bashInterceptor pattern merge ----------------------------------------
-
-const BASH_INTERCEPTOR_RE = /^bashInterceptor:\s*$/;
-const PATTERNS_KEY_RE = /^\s+patterns:\s*$/;
-const PATTERN_ENTRY_RE = /^\s+- pattern:/;
-const TOP_LEVEL_RE = /^\S/;
-
-/**
- * Unescape a quoted YAML scalar: single-quoted `''` -> `'`; double-quoted
- * escapes (\\, \", \n, \t, \r, \xNN, \uNNNN) -> their characters. Required so
- * a dst pattern stored as `"^\\s*git..."` compares equal to the same regex
- * stored unquoted in src.
- */
-function unescapeYamlScalar(s: string, quote: string): string {
-  if (quote === "'") return s.replace(/''/g, "'");
-  return s.replace(/\\(u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2}|[0"ntr\\])/g, (_m, esc: string) => {
-    if (esc[0] === "u" || esc[0] === "x") {
-      return String.fromCharCode(Number.parseInt(esc.slice(1), 16));
-    }
-    switch (esc) {
-      case "n":
-        return "\n";
-      case "t":
-        return "\t";
-      case "r":
-        return "\r";
-      case '"':
-        return '"';
-      case "\\":
-        return "\\";
-      default:
-        return esc;
-    }
-  });
-}
-
-/**
- * Normalize a `- pattern:` entry line for matching: strip the list marker and
- * key, surrounding quotes (unescaping quoted YAML scalars), and surrounding
- * whitespace. Quote-tolerant: a quoted dst pattern matches an unquoted src
- * pattern and vice versa.
- */
-export function normalizePatternLine(line: string): string {
-  let s = line.trim();
-  const marker = /^-\s*pattern:\s*/.exec(s);
-  if (marker !== null) s = s.slice(marker[0]?.length ?? 0).trim();
-  if (s.length >= 2) {
-    const first = s.charAt(0);
-    const last = s.charAt(s.length - 1);
-    if (first === last && (first === '"' || first === "'")) {
-      s = unescapeYamlScalar(s.slice(1, -1), first).trim();
-    }
-  }
-  return s;
-}
-
-/** Split a `bashInterceptor.patterns` list into verbatim entry blocks. */
-function parsePatternBlocks(text: string): string[][] {
-  const lines = text.split("\n");
-  let start: number | null = null;
-  for (let i = 0; i < lines.length; i++) {
-    if (!BASH_INTERCEPTOR_RE.test(lines[i] ?? "")) continue;
-    for (let j = i + 1; j < lines.length; j++) {
-      const probe = lines[j] ?? "";
-      if (PATTERNS_KEY_RE.test(probe)) {
-        start = j + 1;
-        break;
-      }
-      if (TOP_LEVEL_RE.test(probe)) break;
-    }
-    break;
-  }
-  if (start === null) return [];
-  const blocks: string[][] = [];
-  let current: string[] | null = null;
-  for (let i = start; i < lines.length; i++) {
-    const line = lines[i] ?? "";
-    if (PATTERN_ENTRY_RE.test(line)) {
-      if (current !== null) blocks.push(current);
-      current = [line];
-    } else if (current !== null) {
-      if (TOP_LEVEL_RE.test(line)) break; // next top-level key: list ended
-      current.push(line);
-    } else if (TOP_LEVEL_RE.test(line)) {
-      break;
-    }
-  }
-  if (current !== null) blocks.push(current);
-  return blocks;
-}
-
-export interface MergeResult {
-  text: string;
-  added: string[];
-}
-
-/**
- * Compute the merged config for a user-modified config.yml: append every src
- * `- pattern:` entry whose normalized pattern line is absent from dst at the
- * end of dst's `bashInterceptor.patterns` list. Everything else in dst is
- * preserved byte-for-byte; the result always ends with a newline. Returns
- * null when dst has no patterns list (we do not invent YAML structure).
- */
-export function mergeInterceptorPatterns(srcYaml: string, dstYaml: string): MergeResult | null {
-  const present = new Set(parsePatternBlocks(dstYaml).map((b) => normalizePatternLine(b[0] ?? "")));
-  const missing = parsePatternBlocks(srcYaml).filter(
-    (block) => !present.has(normalizePatternLine(block[0] ?? "")),
-  );
-  if (missing.length === 0) return { text: dstYaml, added: [] };
-  const lines = dstYaml.replace(/\n+$/, "").split("\n");
-  // Anchor to the bashInterceptor section: never enter list-tracking from an
-  // unrelated `patterns:` key elsewhere in the file.
-  let bi = -1;
-  for (let i = 0; i < lines.length; i++) {
-    if (BASH_INTERCEPTOR_RE.test(lines[i] ?? "")) {
-      bi = i;
-      break;
-    }
-  }
-  let last: number | null = null;
-  let inList = false;
-  let entryOpen = false;
-  for (let i = bi + 1; i < lines.length; i++) {
-    const line = lines[i] ?? "";
-    if (TOP_LEVEL_RE.test(line)) break; // left the bashInterceptor section
-    if (PATTERNS_KEY_RE.test(line)) {
-      inList = true;
-      entryOpen = false;
-      continue;
-    }
-    if (!inList) continue;
-    if (PATTERN_ENTRY_RE.test(line)) entryOpen = true;
-    if (entryOpen) last = i; // end of the last entry block (pattern + tool/message lines)
-  }
-  if (!inList || last === null) return null;
-
-  const addition: string[] = [];
-  for (const block of missing) addition.push(...block);
-  lines.splice(last + 1, 0, ...addition);
-  return {
-    text: `${lines.join("\n")}\n`,
-    added: missing.map((block) => normalizePatternLine(block[0] ?? "")),
-  };
-}
+// (`normalizePatternLine`, `mergeInterceptorPatterns`, `MergeResult` live in
+// `./install-bash-interceptor.ts`; re-exported below for back-compat with
+// `installer.test.ts` and any external callers.)
+export {
+  type MergeResult,
+  mergeInterceptorPatterns,
+  normalizePatternLine,
+} from "./install-bash-interceptor";
 
 // ---- CLI arg parsing ------------------------------------------------------
 
@@ -479,6 +345,7 @@ const AGENT_PAYLOADS: readonly [string, string][] = [
   ["extensions/receipt/giwt-bridge.ts", "extensions/receipt/giwt-bridge.ts"],
   ["extensions/util/giwt-toml.ts", "extensions/util/giwt-toml.ts"],
   ["extensions/util/giwt-resolve.ts", "extensions/util/giwt-resolve.ts"],
+  ["extensions/util/giwt-resolve-env.ts", "extensions/util/giwt-resolve-env.ts"],
   ["extensions/util/giwt-dump.ts", "extensions/util/giwt-dump.ts"],
   ["extensions/plugin/guards.ts", "extensions/plugin/guards.ts"],
   ["extensions/plugin/post-edit-lint.ts", "extensions/plugin/post-edit-lint.ts"],
@@ -505,7 +372,19 @@ const AGENT_PAYLOADS: readonly [string, string][] = [
   ["extensions/commands/find-work/render.ts", "extensions/commands/find-work/render.ts"],
   ["extensions/commands/find-work/sources.ts", "extensions/commands/find-work/sources.ts"],
   ["extensions/commands/find-work/roster.ts", "extensions/commands/find-work/roster.ts"],
+  [
+    "extensions/commands/find-work/roster-receipt-plan.ts",
+    "extensions/commands/find-work/roster-receipt-plan.ts",
+  ],
+  [
+    "extensions/commands/find-work/roster-external.ts",
+    "extensions/commands/find-work/roster-external.ts",
+  ],
   ["extensions/commands/find-work/todo-scan.ts", "extensions/commands/find-work/todo-scan.ts"],
+  [
+    "extensions/commands/find-work/handler-present.ts",
+    "extensions/commands/find-work/handler-present.ts",
+  ],
   ["extensions/commands/find-work/merge-parse.ts", "extensions/commands/find-work/merge-parse.ts"],
   ["extensions/commands/find-work/merge-queue.ts", "extensions/commands/find-work/merge-queue.ts"],
   ["extensions/commands/find-work/tool-exec.ts", "extensions/commands/find-work/tool-exec.ts"],
@@ -678,28 +557,39 @@ function pruneShippedTree(root: string): void {
     for (const entry of entries) {
       const p = join(dir, entry.name);
       if (entry.isDirectory()) {
-        if (entry.name === "__tests__") {
-          rmSync(p, { recursive: true, force: true });
-          continue;
-        }
-        try {
-          addUWrite(p);
-        } catch {
-          // ignore chmod failures on odd fs nodes
-        }
-        stack.push(p);
-        continue;
-      }
-      if (entry.name.endsWith(".bak") || entry.name.endsWith(".original")) {
-        rmSync(p, { force: true });
-        continue;
-      }
-      try {
-        addUWrite(p);
-      } catch {
-        // ignore chmod failures (e.g. dangling symlinks)
+        if (handlePruneDirectory(p, entry.name, stack)) continue;
+      } else {
+        handlePruneFile(p, entry.name);
       }
     }
+  }
+}
+
+/** Directories under shipped tree: drop `__tests__`, otherwise descend. */
+function handlePruneDirectory(p: string, name: string, stack: string[]): boolean {
+  if (name === "__tests__") {
+    rmSync(p, { recursive: true, force: true });
+    return true;
+  }
+  try {
+    addUWrite(p);
+  } catch {
+    // ignore chmod failures on odd fs nodes
+  }
+  stack.push(p);
+  return true;
+}
+
+/** Files under shipped tree: drop leftovers, otherwise chmod u+w. */
+function handlePruneFile(p: string, name: string): void {
+  if (name.endsWith(".bak") || name.endsWith(".original")) {
+    rmSync(p, { force: true });
+    return;
+  }
+  try {
+    addUWrite(p);
+  } catch {
+    // ignore chmod failures (e.g. dangling symlinks)
   }
 }
 
@@ -808,7 +698,7 @@ async function syncText(ctx: InstallCtx, text: string, dst: string, rel: string)
 async function syncFile(ctx: InstallCtx, src: string, dst: string, rel: string): Promise<void> {
   const srcSha = await fileSha(src);
   ctx.shipped.set(rel, srcSha);
-  const { manifest, counts, flags, deps } = ctx;
+  const { manifest, counts } = ctx;
   if (!existsSync(dst) && lstatKind(dst) !== "symlink") {
     if (doWrite(ctx, src, dst, rel, "install")) {
       manifest.set(rel, srcSha);
@@ -818,42 +708,69 @@ async function syncFile(ctx: InstallCtx, src: string, dst: string, rel: string):
   }
   const owned = manifest.get(rel);
   if (typeof owned === "string" && owned !== "dir") {
-    const curSha = await fileSha(dst);
-    if (curSha === owned) {
-      if (srcSha === owned) {
-        counts.unchanged += 1;
-        deps.out(`  = ${rel} (up to date)`);
-      } else if (doWrite(ctx, src, dst, rel, "update")) {
-        manifest.set(rel, srcSha);
-        counts.updated += 1;
-      }
-    } else if (flags.force) {
-      warn(ctx, `force-overwriting locally-modified: ${rel}`);
-      if (doWrite(ctx, src, dst, rel, "force-overwrite")) {
-        manifest.set(rel, srcSha);
-        counts.updated += 1;
-      }
-    } else {
-      warn(ctx, `modified locally, keeping: ${rel}`);
-      if (rel.endsWith("config.yml")) await mergeConfigPatterns(ctx, src, dst, rel);
-      counts.kept += 1;
-    }
+    await syncOwnedFile(ctx, src, dst, rel, srcSha, owned);
     return;
   }
   if (owned === "dir") {
     if (doReplaceDir(ctx, src, dst, rel, "update")) counts.updated += 1;
     return;
   }
+  await syncUntrackedFile(ctx, src, dst, rel, srcSha);
+}
+
+/** Sync a file we previously wrote: unchanged/update/force-overwrite/keep+merge. */
+async function syncOwnedFile(
+  ctx: InstallCtx,
+  src: string,
+  dst: string,
+  rel: string,
+  srcSha: string,
+  ownedSha: string,
+): Promise<void> {
+  const { manifest, counts, flags, deps } = ctx;
+  const curSha = await fileSha(dst);
+  if (curSha === ownedSha) {
+    if (srcSha === ownedSha) {
+      counts.unchanged += 1;
+      deps.out(`  = ${rel} (up to date)`);
+    } else if (doWrite(ctx, src, dst, rel, "update")) {
+      manifest.set(rel, srcSha);
+      counts.updated += 1;
+    }
+    return;
+  }
+  if (flags.force) {
+    warn(ctx, `force-overwriting locally-modified: ${rel}`);
+    if (doWrite(ctx, src, dst, rel, "force-overwrite")) {
+      manifest.set(rel, srcSha);
+      counts.updated += 1;
+    }
+    return;
+  }
+  warn(ctx, `modified locally, keeping: ${rel}`);
+  if (rel.endsWith("config.yml")) await mergeConfigPatterns(ctx, src, dst, rel);
+  counts.kept += 1;
+}
+
+/** Sync an untracked dst file: force-overwrite under --force, else keep. */
+async function syncUntrackedFile(
+  ctx: InstallCtx,
+  src: string,
+  dst: string,
+  rel: string,
+  srcSha: string,
+): Promise<void> {
+  const { manifest, counts, flags } = ctx;
   if (flags.force) {
     warn(ctx, `force-overwriting untracked: ${rel}`);
     if (doWrite(ctx, src, dst, rel, "force-overwrite")) {
       manifest.set(rel, srcSha);
       counts.updated += 1;
     }
-  } else {
-    warn(ctx, `exists, keeping: ${rel}`);
-    counts.kept += 1;
+    return;
   }
+  warn(ctx, `exists, keeping: ${rel}`);
+  counts.kept += 1;
 }
 
 // ---- sync one bundle-owned directory --------------------------------------
@@ -934,69 +851,106 @@ async function syncProfilePayloads(ctx: InstallCtx): Promise<void> {
   if (ctx.profiles.length === 0) return;
   ctx.deps.out("==> per-profile payloads");
   for (const name of ctx.profiles) {
-    const profileAgentDir = join(ctx.ompRoot, "profiles", name, "agent");
-    const srcDir = join(ctx.repoRoot, "profiles", name, "agent");
-    let srcNames: string[];
-    try {
-      srcNames = readdirSync(srcDir);
-    } catch {
-      srcNames = [];
+    await syncOneProfile(ctx, name);
+  }
+}
+
+/** Lay down one profile's agent payloads (config.yml / fragment / retired). */
+async function syncOneProfile(ctx: InstallCtx, name: string): Promise<void> {
+  const profileAgentDir = join(ctx.ompRoot, "profiles", name, "agent");
+  const srcDir = join(ctx.repoRoot, "profiles", name, "agent");
+  let srcNames: string[];
+  try {
+    srcNames = readdirSync(srcDir);
+  } catch {
+    srcNames = [];
+  }
+  if (!bootstrapProfileAgentDir(ctx, profileAgentDir, srcNames)) return;
+  ctx.deps.out(`    profile: ${name}`);
+  // config.yml (full override) wins over config.fragment.yml (deep-merged
+  // over the base agent/config.yml) when both ship.
+  const hasFull = srcNames.includes("config.yml");
+  for (const base of srcNames.sort()) {
+    const srcFile = join(srcDir, base);
+    if (!isFileFollow(srcFile)) continue;
+    if (base === "AGENTS.md") {
+      // Universal AGENTS.md ships once via agent/AGENTS.md + profile
+      // symlinks (syncProfileSymlinks); repo profile copies are retired.
+      continue;
     }
-    if (!isDirectory(profileAgentDir)) {
-      const hasPayload = srcNames.some(
-        (b) => b === "config.yml" || b === "AGENTS.md" || b === "config.fragment.yml",
-      );
-      if (!hasPayload) {
-        continue;
-      }
-      if (!ctx.flags.dryRun) {
-        mkdirSync(profileAgentDir, { recursive: true });
-      } else {
-        ctx.deps.out(`  + mkdir ${profileAgentDir} (bootstrap from repo source)`);
-      }
+    if (base === "config.yml") {
+      await syncProfileConfigOverride(ctx, name, srcFile, profileAgentDir, base, srcNames, hasFull);
+      continue;
     }
-    ctx.deps.out(`    profile: ${name}`);
-    // config.yml (full override) wins over config.fragment.yml (deep-merged
-    // over the base agent/config.yml) when both ship.
-    const hasFull = srcNames.includes("config.yml");
-    for (const base of srcNames.sort()) {
-      const srcFile = join(srcDir, base);
-      if (!isFileFollow(srcFile)) continue;
-      if (base === "AGENTS.md") {
-        // Universal AGENTS.md ships once via agent/AGENTS.md + profile
-        // symlinks (syncProfileSymlinks); repo profile copies are retired.
-        continue;
-      }
-      if (base === "config.yml") {
-        if (!hasFull) continue;
-        if (srcNames.includes("config.fragment.yml")) {
-          warn(
-            ctx,
-            `profiles/${name}/agent: config.yml overrides config.fragment.yml (full override)`,
-          );
-        }
-        await syncFile(
-          ctx,
-          srcFile,
-          join(profileAgentDir, base),
-          `${ctx.rlob}profiles/${name}/agent/${base}`,
-        );
-        continue;
-      }
-      if (base === "config.fragment.yml" && !hasFull) {
-        const assembled = assembleProfileConfig(
-          readFileSync(join(ctx.repoRoot, "agent", "config.yml"), "utf8"),
-          readFileSync(srcFile, "utf8"),
-        );
-        await syncText(
-          ctx,
-          assembled,
-          join(profileAgentDir, "config.yml"),
-          `${ctx.rlob}profiles/${name}/agent/config.yml`,
-        );
-      }
+    if (base === "config.fragment.yml") {
+      await syncProfileConfigFragment(ctx, name, srcFile, profileAgentDir, hasFull);
     }
   }
+}
+
+/**
+ * Ensure the profile's agent/ dst exists when src ships a payload file.
+ * Returns true when the profile should be synced; false to skip.
+ */
+function bootstrapProfileAgentDir(
+  ctx: InstallCtx,
+  profileAgentDir: string,
+  srcNames: string[],
+): boolean {
+  if (isDirectory(profileAgentDir)) return true;
+  const hasPayload = srcNames.some(
+    (b) => b === "config.yml" || b === "AGENTS.md" || b === "config.fragment.yml",
+  );
+  if (!hasPayload) return false;
+  if (!ctx.flags.dryRun) {
+    mkdirSync(profileAgentDir, { recursive: true });
+  } else {
+    ctx.deps.out(`  + mkdir ${profileAgentDir} (bootstrap from repo source)`);
+  }
+  return true;
+}
+
+/** Sync a profile's full `config.yml` override; warn when fragment also ships. */
+async function syncProfileConfigOverride(
+  ctx: InstallCtx,
+  name: string,
+  srcFile: string,
+  profileAgentDir: string,
+  base: string,
+  srcNames: string[],
+  hasFull: boolean,
+): Promise<void> {
+  if (!hasFull) return;
+  if (srcNames.includes("config.fragment.yml")) {
+    warn(ctx, `profiles/${name}/agent: config.yml overrides config.fragment.yml (full override)`);
+  }
+  await syncFile(
+    ctx,
+    srcFile,
+    join(profileAgentDir, base),
+    `${ctx.rlob}profiles/${name}/agent/${base}`,
+  );
+}
+
+/** Sync a profile's `config.fragment.yml` as an assembled full override. */
+async function syncProfileConfigFragment(
+  ctx: InstallCtx,
+  name: string,
+  srcFile: string,
+  profileAgentDir: string,
+  hasFull: boolean,
+): Promise<void> {
+  if (hasFull) return;
+  const assembled = assembleProfileConfig(
+    readFileSync(join(ctx.repoRoot, "agent", "config.yml"), "utf8"),
+    readFileSync(srcFile, "utf8"),
+  );
+  await syncText(
+    ctx,
+    assembled,
+    join(profileAgentDir, "config.yml"),
+    `${ctx.rlob}profiles/${name}/agent/config.yml`,
+  );
 }
 
 /**
@@ -1045,42 +999,52 @@ function syncCanonicalFileLink(ctx: InstallCtx, profileAgentDir: string, fileNam
 function syncProfileSymlinks(ctx: InstallCtx): void {
   if (ctx.profiles.length === 0) return;
   for (const name of ctx.profiles) {
-    const profileAgentDir = join(ctx.ompRoot, "profiles", name, "agent");
-    if (!isDirectory(profileAgentDir)) {
-      // syncProfilePayloads is responsible for bootstrapping; if it skipped
-      // this profile (no repo source and no dst), symlinks have nothing to
-      // attach to. Silently no-op — the gate already surfaced empty profiles.
-      continue;
-    }
-    ctx.deps.out(`==> profile runtime symlinks: ${name}`);
-    for (const fileName of ["AGENTS.md", "APPEND_SYSTEM.md"]) {
-      syncCanonicalFileLink(ctx, profileAgentDir, fileName);
-    }
-    for (const sub of PROFILE_RUNTIME_SUBDIRS) {
-      const linkPath = join(profileAgentDir, sub);
-      if (!isDirectory(join(ctx.agentDir, sub))) continue;
-      if (existsSync(linkPath) || lstatKind(linkPath) === "symlink") continue;
-      const linkValue = `../../../agent/${sub}`;
-      if (ctx.flags.dryRun) {
-        ctx.deps.out(`  + symlink ${linkPath} -> ${linkValue}`);
-        continue;
-      }
-      let realmOk = false;
-      try {
-        realmOk = inRealm(ctx, realpathMissing(join(dirname(linkPath), "..", "..", "..", "agent")));
-      } catch {
-        realmOk = false;
-      }
-      if (!realmOk) {
-        warn(
-          ctx,
-          `skipping symlink ${linkPath} -> ${join(ctx.agentDir, sub)} (target outside realm)`,
-        );
-        continue;
-      }
-      symlinkSync(linkValue, linkPath);
-      ctx.deps.out(`  + symlink ${linkPath} -> ${linkValue}`);
-    }
+    syncOneProfileSymlinks(ctx, name);
+  }
+}
+
+/** Lay down canonical-file links and runtime-subdir links for one profile. */
+function syncOneProfileSymlinks(ctx: InstallCtx, name: string): void {
+  const profileAgentDir = join(ctx.ompRoot, "profiles", name, "agent");
+  if (!isDirectory(profileAgentDir)) {
+    // syncProfilePayloads is responsible for bootstrapping; if it skipped
+    // this profile (no repo source and no dst), symlinks have nothing to
+    // attach to. Silently no-op — the gate already surfaced empty profiles.
+    return;
+  }
+  ctx.deps.out(`==> profile runtime symlinks: ${name}`);
+  for (const fileName of ["AGENTS.md", "APPEND_SYSTEM.md"]) {
+    syncCanonicalFileLink(ctx, profileAgentDir, fileName);
+  }
+  for (const sub of PROFILE_RUNTIME_SUBDIRS) {
+    syncProfileRuntimeSubdirLink(ctx, profileAgentDir, sub);
+  }
+}
+
+/** Link one runtime subdir (`rules`/`hooks`/`extensions`/...) into a profile. */
+function syncProfileRuntimeSubdirLink(ctx: InstallCtx, profileAgentDir: string, sub: string): void {
+  const linkPath = join(profileAgentDir, sub);
+  if (!isDirectory(join(ctx.agentDir, sub))) return;
+  if (existsSync(linkPath) || lstatKind(linkPath) === "symlink") return;
+  const linkValue = `../../../agent/${sub}`;
+  if (ctx.flags.dryRun) {
+    ctx.deps.out(`  + symlink ${linkPath} -> ${linkValue}`);
+    return;
+  }
+  if (!realmAllowsProfileSymlink(ctx, linkPath)) {
+    warn(ctx, `skipping symlink ${linkPath} -> ${join(ctx.agentDir, sub)} (target outside realm)`);
+    return;
+  }
+  symlinkSync(linkValue, linkPath);
+  ctx.deps.out(`  + symlink ${linkPath} -> ${linkValue}`);
+}
+
+/** Verify the symlink's eventual target resolves inside the install realm. */
+function realmAllowsProfileSymlink(ctx: InstallCtx, linkPath: string): boolean {
+  try {
+    return inRealm(ctx, realpathMissing(join(dirname(linkPath), "..", "..", "..", "agent")));
+  } catch {
+    return false;
   }
 }
 
@@ -1171,47 +1135,70 @@ function cleanBackups(ctx: InstallCtx): void {
 // ---- reconcile -------------------------------------------------------------
 
 async function reconcile(ctx: InstallCtx): Promise<void> {
-  const { manifest, shipped, counts, flags, deps, target } = ctx;
+  const { manifest, shipped } = ctx;
   for (const rel of [...manifest.keys()].sort()) {
     if (shipped.has(rel)) continue;
-    const owned = manifest.get(rel);
-    manifest.delete(rel);
-    const dst = join(target, rel);
-    if (typeof owned === "string" && owned !== "dir") {
-      if (!existsSync(dst) && lstatKind(dst) !== "symlink") {
-        deps.out(`  - ${rel} (already gone)`);
-        continue;
-      }
-      const curSha = await fileSha(dst);
-      if (curSha === owned) {
-        if (inRealm(ctx, dst)) {
-          if (!flags.dryRun) rmSync(dst, { force: true });
-          deps.out(`  - ${rel} (no longer shipped)`);
-          counts.removed += 1;
-        } else {
-          warn(ctx, `outside target, keeping: ${rel}`);
-          counts.kept += 1;
-        }
-      } else {
-        warn(ctx, `no longer shipped but modified locally, keeping: ${rel}`);
-        counts.kept += 1;
-      }
-      continue;
-    }
-    if (flags.noPlugin) {
-      warn(ctx, `plugin package not reconciled (--no-plugin): ${rel}`);
-      manifest.set(rel, "dir"); // bash keeps the entry in this case
-      continue;
-    }
-    if (inRealm(ctx, dst)) {
-      if (!flags.dryRun) rmSync(dst, { recursive: true, force: true });
-      deps.out(`  - ${rel}/ (no longer shipped)`);
-      counts.removed += 1;
-    } else {
-      warn(ctx, `outside target, keeping: ${rel}`);
-      counts.kept += 1;
-    }
+    await reconcileOne(ctx, rel);
   }
+}
+
+/** Reconcile one no-longer-shipped manifest entry (file or plugin dir). */
+async function reconcileOne(ctx: InstallCtx, rel: string): Promise<void> {
+  const { manifest, target } = ctx;
+  const owned = manifest.get(rel);
+  manifest.delete(rel);
+  const dst = join(target, rel);
+  if (typeof owned === "string" && owned !== "dir") {
+    await reconcileRetiredFile(ctx, rel, dst, owned);
+    return;
+  }
+  reconcileRetiredPluginDir(ctx, rel, dst);
+}
+
+/** Reconcile a no-longer-shipped file: drop if hash matches, else keep. */
+async function reconcileRetiredFile(
+  ctx: InstallCtx,
+  rel: string,
+  dst: string,
+  ownedSha: string,
+): Promise<void> {
+  const { counts, flags, deps } = ctx;
+  if (!existsSync(dst) && lstatKind(dst) !== "symlink") {
+    deps.out(`  - ${rel} (already gone)`);
+    return;
+  }
+  const curSha = await fileSha(dst);
+  if (curSha !== ownedSha) {
+    warn(ctx, `no longer shipped but modified locally, keeping: ${rel}`);
+    counts.kept += 1;
+    return;
+  }
+  if (!inRealm(ctx, dst)) {
+    warn(ctx, `outside target, keeping: ${rel}`);
+    counts.kept += 1;
+    return;
+  }
+  if (!flags.dryRun) rmSync(dst, { force: true });
+  deps.out(`  - ${rel} (no longer shipped)`);
+  counts.removed += 1;
+}
+
+/** Reconcile the no-longer-shipped plugin package dir; honor --no-plugin. */
+function reconcileRetiredPluginDir(ctx: InstallCtx, rel: string, dst: string): void {
+  const { manifest, counts, flags, deps } = ctx;
+  if (flags.noPlugin) {
+    warn(ctx, `plugin package not reconciled (--no-plugin): ${rel}`);
+    manifest.set(rel, "dir"); // bash keeps the entry in this case
+    return;
+  }
+  if (!inRealm(ctx, dst)) {
+    warn(ctx, `outside target, keeping: ${rel}`);
+    counts.kept += 1;
+    return;
+  }
+  if (!flags.dryRun) rmSync(dst, { recursive: true, force: true });
+  deps.out(`  - ${rel}/ (no longer shipped)`);
+  counts.removed += 1;
 }
 
 function saveManifest(ctx: InstallCtx): void {

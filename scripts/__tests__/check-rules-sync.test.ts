@@ -203,7 +203,8 @@ describe("check-rules-sync CLI", () => {
       const r = await runCli("check-rules-sync.ts");
       expect(r.code).toBe(0);
       const m = /shipped: (\d+) {3}laid: (\d+) \(expected: (\d+)\)/.exec(r.stdout);
-      const [, shipped, laid, expected] = m!;
+      expect(m).toBeDefined();
+      const [, shipped, laid, expected] = m as RegExpExecArray;
       expect(Number(laid)).toBe(Number(expected));
       expect(Number(expected)).toBe(Number(shipped) * 2);
     },

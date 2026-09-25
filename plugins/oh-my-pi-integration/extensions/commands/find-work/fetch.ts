@@ -36,6 +36,93 @@ export interface FetchOpts {
   fast?: boolean;
 }
 
+interface Slot {
+  tickets: WorkTicket[];
+  warning?: string;
+}
+
+/** gh `issue list --json` slot (subprocess → tickets). */
+function ghIssuesSlot(pi: ExecLike): Promise<Slot> {
+  return (async (): Promise<Slot> => {
+    try {
+      const res = await pi.exec(
+        "gh",
+        ["issue", "list", "--state", "open", "--limit", "30", "--json", "number,title,labels,url"],
+        { timeout: SOURCE_EXEC_TIMEOUT_MS },
+      );
+      return { tickets: parseGhIssues(res.stdout ?? "") };
+    } catch {
+      return {
+        tickets: [],
+        warning: "gh issue list failed (not a repo checkout, unauthenticated, or offline)",
+      };
+    }
+  })();
+}
+
+/** `git-issue ls` slot (subprocess → tickets or empty warning). */
+function gitIssueSlot(pi: ExecLike): Promise<Slot> {
+  return (async (): Promise<Slot> => {
+    try {
+      const res = await pi.exec("git-issue", ["ls"], { timeout: SOURCE_EXEC_TIMEOUT_MS });
+      const parsed = parseGitIssueList(res.stdout ?? "");
+      if (parsed.length > 0) return { tickets: parsed };
+      return { tickets: [], warning: "git-issue ls returned no parseable items" };
+    } catch {
+      return { tickets: [], warning: "git-issue ls failed (not initialized in this repo?)" };
+    }
+  })();
+}
+
+/** Run a sync roster source: collect tickets, warn on empty/error. */
+function collectSyncRoster(opts: {
+  enabled: boolean;
+  load: () => WorkTicket[];
+  emptyMsg?: string;
+  errMsg: string;
+  tickets: WorkTicket[];
+  warnings: string[];
+}): void {
+  if (!opts.enabled) return;
+  try {
+    const found = opts.load();
+    if (found.length > 0) opts.tickets.push(...found);
+    else if (opts.emptyMsg) opts.warnings.push(opts.emptyMsg);
+  } catch {
+    opts.warnings.push(opts.errMsg);
+  }
+}
+
+/** Wrap an async ticket fetch so its rejection becomes a warning slot. */
+function guardSlot(p: Promise<WorkTicket[]>, onFail: string): Promise<Slot> {
+  return p.then(
+    (t) => ({ tickets: t }),
+    (): Slot => ({ tickets: [], warning: onFail }),
+  );
+}
+
+/** Run the tool-cluster and project the (tickets, warnings) shape into a Slot. */
+function toolClusterSlot(pi: ExecLike, root: string, sources: WorkSources): Promise<Slot> {
+  return fetchToolTickets(pi, root, sources).then(
+    (t) => ({
+      tickets: t.tickets,
+      warning: t.warnings.length > 0 ? t.warnings.join("; ") : undefined,
+    }),
+    (): Slot => ({ tickets: [], warning: "tool findings failed" }),
+  );
+}
+
+/**
+ * Fetch tickets from every handler-fetchable source. Per-source failures
+ * become warnings; the rest of the sources still contribute. Uncapped —
+ * the caller filters and caps (see presentFindWork).
+ *
+ * Independent async sources (gh, git-issue, merges, patch review, tool
+ * cluster) run concurrently; sync roster sources run inline. Results are
+ * concatenated in a fixed order (sync roster, then gh, git-issue, merges,
+ * patch review, tools) so output stays deterministic regardless of
+ * completion order.
+ */
 export async function fetchTickets(
   pi: ExecLike,
   root: string,
@@ -67,116 +154,51 @@ export async function fetchTickets(
   // roster — measured 35ms planTickets (1829 files) + 11ms todoTickets
   // (600-file cap) on loop-lore, far below perceptibility; revisit when
   // planTickets exceeds ~1s or the corpus grows ~5×.
-  interface Slot {
-    tickets: WorkTicket[];
-    warning?: string;
-  }
   const slots: Array<Promise<Slot>> = [];
-  if (effective.gh) {
-    slots.push(
-      (async (): Promise<Slot> => {
-        try {
-          const res = await pi.exec(
-            "gh",
-            [
-              "issue",
-              "list",
-              "--state",
-              "open",
-              "--limit",
-              "30",
-              "--json",
-              "number,title,labels,url",
-            ],
-            { timeout: SOURCE_EXEC_TIMEOUT_MS },
-          );
-          return { tickets: parseGhIssues(res.stdout ?? "") };
-        } catch {
-          return {
-            tickets: [],
-            warning: "gh issue list failed (not a repo checkout, unauthenticated, or offline)",
-          };
-        }
-      })(),
-    );
-  }
-  if (effective.gitIssue) {
-    slots.push(
-      (async (): Promise<Slot> => {
-        try {
-          const res = await pi.exec("git-issue", ["ls"], { timeout: SOURCE_EXEC_TIMEOUT_MS });
-          const parsed = parseGitIssueList(res.stdout ?? "");
-          if (parsed.length > 0) return { tickets: parsed };
-          return { tickets: [], warning: "git-issue ls returned no parseable items" };
-        } catch {
-          return { tickets: [], warning: "git-issue ls failed (not initialized in this repo?)" };
-        }
-      })(),
-    );
-  }
+  if (effective.gh) slots.push(ghIssuesSlot(pi));
+  if (effective.gitIssue) slots.push(gitIssueSlot(pi));
   if (effective.trackerCli) {
     warnings.push("worktree tracker CLI detected — resolve via `/bookkeep` or an ask turn");
   }
-  if (effective.giwtLedger) {
-    try {
-      const giwtTickets = giwtLedgerTickets(root);
-      if (giwtTickets.length > 0) tickets.push(...giwtTickets);
-      else warnings.push("giwt ledger empty (.ledger.jsonl has no records)");
-    } catch {
-      warnings.push("giwt ledger unreadable (.ledger.jsonl malformed?)");
-    }
-  }
-  if (effective.giwtRuns) {
-    try {
-      const runTickets = giwtRunTickets(root);
-      if (runTickets.length > 0) tickets.push(...runTickets);
-    } catch {
-      warnings.push("giwt run records scan failed");
-    }
-  }
-  if (effective.todo) {
-    try {
-      const found = todoTickets(root);
-      if (found.length > 0) tickets.push(...found);
-    } catch {
-      warnings.push("TODO comment scan failed");
-    }
-  }
+  collectSyncRoster({
+    enabled: effective.giwtLedger,
+    load: () => giwtLedgerTickets(root),
+    emptyMsg: "giwt ledger empty (.ledger.jsonl has no records)",
+    errMsg: "giwt ledger unreadable (.ledger.jsonl malformed?)",
+    tickets,
+    warnings,
+  });
+  collectSyncRoster({
+    enabled: effective.giwtRuns,
+    load: () => giwtRunTickets(root),
+    errMsg: "giwt run records scan failed",
+    tickets,
+    warnings,
+  });
+  collectSyncRoster({
+    enabled: effective.todo,
+    load: () => todoTickets(root),
+    errMsg: "TODO comment scan failed",
+    tickets,
+    warnings,
+  });
   // Merges and the tool cluster are async; their slots sit after the sync
   // sources in concat order (gh, git-issue, merges, tools) — deterministic
   // regardless of which resolves first.
+  const anyTool =
+    effective.lint || effective.typecheck || effective.tests || effective.knip || effective.jscpd;
   if (effective.merges) {
     slots.push(
-      fetchMergeTickets(pi, root).then(
-        (t) => ({ tickets: t }),
-        (): Slot => ({ tickets: [], warning: "git branch/worktree scan failed (not a git repo?)" }),
-      ),
+      guardSlot(fetchMergeTickets(pi, root), "git branch/worktree scan failed (not a git repo?)"),
     );
   }
   if (effective.patches) {
     slots.push(
-      fetchPatchReviewTickets(pi, root).then(
-        (t) => ({ tickets: t }),
-        (): Slot => ({ tickets: [], warning: "patch review scan failed (not a git repo?)" }),
-      ),
+      guardSlot(fetchPatchReviewTickets(pi, root), "patch review scan failed (not a git repo?)"),
     );
   }
-  if (
-    effective.lint ||
-    effective.typecheck ||
-    effective.tests ||
-    effective.knip ||
-    effective.jscpd
-  ) {
-    slots.push(
-      fetchToolTickets(pi, root, sources).then(
-        (t) => ({
-          tickets: t.tickets,
-          warning: t.warnings.length > 0 ? t.warnings.join("; ") : undefined,
-        }),
-        (): Slot => ({ tickets: [], warning: "tool findings failed" }),
-      ),
-    );
+  if (anyTool) {
+    slots.push(toolClusterSlot(pi, root, sources));
   }
 
   for (const slot of await Promise.all(slots)) {

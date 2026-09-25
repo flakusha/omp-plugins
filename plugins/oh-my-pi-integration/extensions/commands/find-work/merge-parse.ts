@@ -84,7 +84,7 @@ export function parseWorktreePorcelain(stdout: string): MergeWorktree[] {
   const out: MergeWorktree[] = [];
   let cur: MergeWorktree | null = null;
   const flush = () => {
-    if (cur && cur.path) out.push(cur);
+    if (cur?.path) out.push(cur);
     cur = null;
   };
   for (const rawLine of stdout.split(/\r?\n/)) {

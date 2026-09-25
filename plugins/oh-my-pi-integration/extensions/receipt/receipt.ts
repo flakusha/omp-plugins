@@ -111,9 +111,8 @@ export async function carryReceipt(
 ): Promise<{ message: CustomMessagePayload } | undefined> {
   if (!cwd || env.PI_RECEIPT_DISABLE === "1") return undefined;
 
-  // ── TOML receipt (job ledger with state) ──────────────────────────
-  // omp dir is configurable via giwt.toml/.giwt.toml `paths.omp_dir`.
   const giwtConfig = resolveGiwtConfig(cwd);
+  // ── TOML receipt (job ledger with state) ──────────────────────────
   const tomlFooter = readAndCarryToml(giwtConfig.receiptPath);
 
   // ── giwt ledger (append-only agent activity, read-only) ──────────
