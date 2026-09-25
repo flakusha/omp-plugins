@@ -5,20 +5,16 @@ condition: ["^(?=[\\s\\S]*(rm -f|rm|delete|remove|unlink))(?=[\\s\\S]*\\.lock)(?
 scope: ["tool:bash", "text"]
 ---
 
-When an external system is unavailable or blocked — GPG/SSH signing, ssh-agent/gpg-agent, daemons, lock files, service availability — STOP. Do not attempt recovery by destructive or system-level actions:
+When an external system is unavailable or blocked — GPG/SSH signing, ssh-agent/gpg-agent, daemons, lock files, services — STOP. Never self-recover destructively:
 
-- NEVER delete, remove, or rename lock files (`*.lock`, pidfiles) to "clear stale state". Another agent, session, or user may hold that lock right now; removing it breaks their in-flight work.
-- NEVER kill or restart agents, daemons, or services (`kill gpg-agent`, `gpgconf --kill`, `killall`, `systemctl restart|stop`, `service … restart`) — parallel agents and human sessions share them.
-- NEVER restart the program, harness, or system to "reset state" — a blockage is not a crash; restarting destroys the very locks/agents/states other work depends on.
-- NEVER run experiments or tests in `/tmp` that delete, overwrite, or clobber existing files or state as a way to "prove" or clear a blockage. `/tmp` is shared and non-exclusive; a test that `rm`s or writes over an existing path can destroy another agent's working state.
+- NEVER delete/rename lock files/pidfiles to "clear stale state" — may be held.
+- NEVER kill/restart agents, daemons, or services (`gpgconf --kill`, `killall`, `systemctl restart|stop`) — shared.
+- NEVER restart the program/harness/system to "reset state" — restarting destroys state other work depends on.
+- NEVER run `/tmp` experiments that delete/overwrite existing state — `/tmp` is shared.
 
-Escalate instead — two allowed paths:
-1. Ask the user to resolve the block (they own the keys, agents, services, and credentials).
+ESCALATE — two allowed paths:
+1. Ask the user to resolve the block (they own the keys/services).
 2. Propose a concrete plan and wait for approval before acting on the "fix" path.
 
-Do not self-authorize destructive recovery. If a lock looks genuinely stale (owning process verifiably dead), still ASK before removing it. Blocked signing or an unavailable agent is a human decision point, not an automation problem — that is exactly why the GPG/SSH guard extension exists: it substitutes a hard-stop directive and blocks self-recovery commands. Match that discipline in your own behavior.
-
-Examples:
-- ✗ `gpgconf --kill gpg-agent; …` → ✓ "GPG signing is blocked (secret key unavailable). Please unlock the key, or approve a plan to restart the agent."
-- ✗ `rm /tmp/proj.lock; re-run` → ✓ "A lock file exists at /tmp/proj.lock. Is it yours or another agent's? I will not remove it without your confirmation."
-- ✗ restarting the harness to clear state → ✓ report the block and the options; let the user decide.
+No self-authorized destructive recovery: even a verifiably stale lock → ASK first. Blocked signing is a human decision point — match the GPG/SSH guard's hard-stop discipline.
+Example: ✗ `gpgconf --kill gpg-agent` → ✓ "GPG signing is blocked — please unlock the key."

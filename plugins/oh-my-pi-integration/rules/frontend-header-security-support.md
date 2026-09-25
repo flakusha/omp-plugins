@@ -5,16 +5,14 @@ condition: ["^(?=[\\s\\S]*frontend|client|browser|page|app|spa)(?=[\\s\\S]*heade
 scope: ["text", "thinking"]
 ---
 
-Review and CONFIRM the security AND support for headers on the frontend. An incorrect initialization, a MISSING header, or a misconfiguration can make the ENTIRE PAGE dysfunctional — not just one feature.
+Confirm BOTH security and support for frontend headers — a wrong/missing/mis-initialized header breaks the ENTIRE PAGE. The required set is environment/implementation-dependent: NAME which apply HERE.
 
-THE RULE:
-- SECURITY HEADERS: confirm the relevant security headers are set AND correct for the deployment — CSP, X-Frame-Options/frame-ancestors, Referrer-Policy, HSTS, CORS — because a wrong or missing one is a security hole (see avoid-inline-style-script: CSP and inline scripts; see data-sanitization: XSS; see authorization-confirmed).
-- SUPPORT/REQUIRED HEADERS: confirm any headers the app REQUIRES to function are initialized and passed — auth/authorization tokens, custom app headers, contentType, origin/referrer, and any meta equivalents. INCORRECT INITIALIZATION is the failure mode: an absent or malformed required header breaks the page's requests or rendering.
-- ENVIRONMENT / IMPLEMENTATION DEPENDENT: the required header set depends on the environment (browser vs native, host, proxy, server) and the frontend implementation (SPA vs server-rendered, meta vs real header). NAME which apply to THIS app rather than assuming a universal set.
-- MAY BE POSTPONED FOR MVP/POC: for a primitive MVP/POC, header HARDENING may be postponed — but that is an explicit, stated decision (state it, like the prototype exception in frontend-backend-validation), never a silent absence. Reactive correction of a functional break (a required header missing killing the page) is NEVER postponed.
+- SECURITY HEADERS: confirm CSP, X-Frame-Options/frame-ancestors, Referrer-Policy, HSTS, CORS are present AND correct — a wrong/missing one is a security hole (see avoid-inline-style-script, data-sanitization, authorization-confirmed).
+- SUPPORT HEADERS: confirm required headers are initialized and passed — auth tokens, app headers, contentType, origin/referrer, meta equivalents. INCORRECT INITIALIZATION breaks requests or rendering.
+- MVP/POC: HARDENING MAY be postponed — as an explicit, stated decision (see frontend-backend-validation), never silent. Functional-break fixes are NEVER postponed.
 
-WHY: headers are a silent, high-leverage surface — a missing CSP or a misconfigured auth header is both a security hole and a whole-page functional break, easy to miss because it manifests opaquely as "the page does not work".
+WHY: a missing CSP or misconfigured auth header is both a security hole and an opaque whole-page break.
 
-TIES: authorization-confirmed, wrap-unsafe-language-apis, data-sanitization, avoid-inline-style-script, frontend-backend-validation, api-schema-versioning (header negotiation), strict-review-standards (check the negative space).
+TIES: authorization-confirmed, wrap-unsafe-language-apis, data-sanitization, avoid-inline-style-script, frontend-backend-validation, api-schema-versioning, strict-review-standards.
 
-DON'T OVER-APPLY: not every header applies to every app — confirm the subset this environment requires; and respect the postponed-for-MVP/POC stance rather than forcing a full hardening pass on a throwaway prototype.
+DON'T OVER-APPLY: only the required subset; respect MVP/POC postponement on throwaway prototypes.

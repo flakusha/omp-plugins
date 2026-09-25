@@ -5,18 +5,15 @@ condition: ["^(?=[\\s\\S]*regexp?|regular expression)(?=[\\s\\S]*pattern match(i
 scope: ["text", "thinking"]
 ---
 
-Avoid bare, naked, untested regular expressions inline in code. A regex is logic — treat it with the same discipline as any other non-trivial logic.
-
-PROBLEMS WITH BARE INLINE REGEXES:
-- DUPLICATION: the same pattern re-typed at several call sites drifts over time — one site gets fixed, the others silently disagree. This is a magic value; handle it as one (see wiring-sync-and-consolidation).
-- UNTESTED: edge cases fail silently — anchors, empty input, unicode, malformed input, capture groups, catastrophic backtracking. A bare pattern has no name, so no test can target it.
-- OPAQUE: no name means no intent; the reader must reverse-engineer the pattern.
-- SLOW / STATE-STRIPPED: `new RegExp(...)` inside a function body recompiles on every call; `/g` flags keep mutable `lastIndex` state that leaks across calls.
+A regex is logic — no bare, naked, untested inline regexes. Bare patterns:
+- DUPLICATE: re-typed per site, they drift — a magic value (see wiring-sync-and-consolidation).
+- SKIP TESTS: anchors, empty/unicode/malformed input, capture groups, catastrophic backtracking fail silently; unnamed = untestable.
+- HIDE INTENT: reader reverse-engineers it.
+- RECOMPILE/LEAK STATE: `new RegExp` in a body per call; `/g` keeps mutable `lastIndex`.
 
 HOW:
-- DECLARE STATIC REGEXES AS NAMED CONSTANTS at module scope: `const EMAIL_RE = /.../` — one definition, imported/reused everywhere the pattern applies. Compile once, name the intent, single source of truth.
-- UNIT-TEST THEM, by name: match and no-match cases, boundaries (start/end, empty input), unicode and escaping, malformed input, capture groups, and performance (no exponential/catastrophic-backtracking patterns). A named constant is testable; a bare inline pattern is not.
-- IF REUSED, WRAP: a pattern used in more than one place is a constant; a pattern used with options is a named factory function (`makeSlugRe(options)`) with its own tests.
+- DECLARE STATIC REGEXES AS NAMED CONSTANTS at module scope (`const EMAIL_RE = /.../`) — compile once, single source of truth.
+- UNIT-TEST BY NAME: match/no-match, boundaries, empty input, unicode/escaping, malformed input, capture groups, backtracking.
+- REUSED-WITH-OPTIONS: named factory (`makeSlugRe(options)`) with tests.
 
-EXCEPTION — DYNAMIC REGEXES (built at runtime from input, `new RegExp(str)`):
-- Cannot be module constants — but still: validate and escape the input, test the wrapper, and give it a named function if reused. Dynamic patterns are exactly where injection and catastrophic-backtracking bugs live; untested dynamic regexes are the most dangerous kind.
+EXCEPTION — DYNAMIC (`new RegExp(str)` at runtime): cannot be constants; still validate/escape input, test the wrapper, name it if reused — where injection and backtracking bugs live.

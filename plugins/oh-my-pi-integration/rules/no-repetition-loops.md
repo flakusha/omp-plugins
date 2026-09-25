@@ -5,22 +5,12 @@ condition: ["^(?=[\\s\\S]*as I (said|mentioned|established))(?=[\\s\\S]*as estab
 scope: ["thinking", "text"]
 ---
 
-Repetition is a hallucination warning, not a style tic. When the same or near-identical phrase, justification, or tool-call intent appears 3+ times within a reasoning window — or you find yourself echoing your own prior claims verbatim — your reasoning is pattern-matching on your own output, not grounding in evidence. Long thinking/monologue phases make this worse: models drift into repeating n-grams as their context fills with self-generated text, and fluent repetition is how confabulation fills gaps in thin evidence.
-
-Steer out of it:
-
-1. STOP repeating. Do not restate, re-justify, or "double-check" the same claim in the same words — that adds no information and entrenches the loop.
-2. RE-GROUND: re-read the actual source code, tool output, or document the claim rests on. Evidence first, memory never.
-3. STATE ONCE, FRESHLY: each claim appears exactly once, phrased from the evidence, with its citation (file:line, tool result, command output). No padding restatements.
-4. DOWNGRADE OR DROP: if re-grounding yields no new evidence, the claim is a guess — mark it as such or drop it. Never substitute restatement for evidence.
-5. TOOL LOOPS ARE THE SAME DISEASE: identical tool-call intent (`i`) fields or identical commands re-run with no state change mean the loop is self-feeding. Re-check the state that would change, then act — or escalate.
-
-Common pattern signatures (research-backed — arXiv 2601.05693, 2310.10226):
-- SEMANTIC ECHO: the same claim reworded. Semantic repetition precedes textual repetition — catch it at the paraphrase stage, before verbatim loops form.
-- CIRCULAR SELF-CITATION: your own earlier output used as a premise ("as established above", "this confirms my previous finding"). Generated content acting as evidence for its own recurrence is the core loop mechanism.
-- NUMERICAL LOOPS: re-computing or re-reporting the same numbers (counts, metrics, timings) with no new input.
-- STATEMENT LOOPS: verbatim or near-verbatim claim repetition.
-- IMPASSE-TRIGGERED ONSET: loops start when reasoning stalls. The moment you cannot advance, that is the danger zone — escalate immediately instead of re-attempting.
-- TOOL DEGENERATION: repeated identical tool calls until the token limit — wasted compute and cost (SpecRA: agents hit this like chatbots do).
-
-ESCALATE when stuck: if the same conclusion with the same reasoning has been attempted 3+ times, do not try a 4th phrasing — report the loop, propose a new decomposition or a different source of evidence, or ask the user. Loops are solved by new input, not more output.
+Repetition is a hallucination warning: a same/near-identical phrase, justification, or tool-call intent 3+ times in a reasoning window = reasoning pattern-matching its own output, not grounding in evidence (long thinking worsens it; fluent repetition is how confabulation fills thin evidence).
+STEER OUT:
+1. STOP — no restating/re-justifying/double-checking the same claim in the same words.
+2. RE-GROUND — re-read the actual source/tool output/document; evidence, never memory.
+3. STATE ONCE — each claim once, from evidence, cited (file:line, tool result, output).
+4. DOWNGRADE OR DROP — no new evidence after re-grounding = guess; mark or drop.
+5. TOOL LOOPS — identical `i` fields/commands re-run with no state change: re-check what would change, act, or escalate.
+SIGNATURES (arXiv 2601.05693, 2310.10226): semantic echo (reworded claim — catch before verbatim loops); circular self-citation (own output as premise); numerical loops (same numbers, no new input); statement loops (verbatim); impasse onset (loops start at stalls — escalate); tool degeneration (identical calls until token limit).
+ESCALATE: same conclusion + reasoning 3+ times → no 4th phrasing; report the loop; propose a new decomposition/evidence source or ask the user. Loops die by new input, not more output.

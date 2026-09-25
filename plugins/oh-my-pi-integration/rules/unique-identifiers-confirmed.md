@@ -5,15 +5,14 @@ condition: ["^(?=[\\s\\S]*unique id|uuid|guid|idempoten|primary key|identity|col
 scope: ["text", "thinking"]
 ---
 
-For API, DB-access and data-storage implementations, CONFIRM unique ids are actually used — identify and record the identity scheme before/while building.
+API/DB work: CONFIRM unique ids are actually used; name the identity scheme.
 
-THE RULE — check each:
-- COLLISION-SAFE IDENTITY: every stored record has a true unique id — a DB primary key (serial/identity/auto-increment) or an application-generated UUID — NOT something derived from user-supplied or mutable data (a name, email, natural key) that can collide or silently change identity. Uniqueness must be enforced by a DB constraint, not by an app-level "check-then-insert" (that races — TOCTOU — see parallel-safe-tests for the same race class).
-- IDEMPOTENCY KEYS: for write operations that may be retried (see db-access-performance, async-collector-selection), confirm an idempotency key exists so a duplicate retry cannot double-apply. Retrying a write without idempotency is a correctness bug, not a nicety.
-- EXTERNAL EXPOSURE: where a resource is exposed publicly, confirm the id is opaque and unguessable (UUID over sequential ints) when enumerability is a concern. And never rely on an unguessable id AS authorization — see authorization-confirmed: an unguessable id must still be access-checked (IDOR is a top API vulnerability).
+- COLLISION-SAFE: true unique id per record — DB PK (serial) or UUID, never user-supplied/mutable data (name/email/natural key); uniqueness by DB constraint, not check-then-insert (TOCTOU; see parallel-safe-tests).
+- IDEMPOTENCY KEYS: retryable writes need one (see db-access-performance, async-collector-selection) — a retry must never double-apply; retrying without is a bug.
+- EXTERNAL EXPOSURE: exposed ids opaque/unguessable (UUID over sequential) where enumerability matters; unguessable is not authorization (IDOR; see authorization-confirmed).
 
-WHY: identity is the foundation of correctness (which record), idempotency (how many times applied), and security (which resource is reachable). A broken or absent identity scheme fails silently across all three.
+WHY: identity grounds correctness, idempotency, security — a broken scheme fails silently.
 
-TIES: authorization-confirmed (IDOR — unguessable ≠ authorized), db-access-performance (idempotency on retry), async-collector-selection (retry under idempotency constraints), forward-compatible-datastructures, strict-review-standards.
+TIES: authorization-confirmed, db-access-performance, async-collector-selection, forward-compatible-datastructures, strict-review-standards.
 
-DON'T OVER-APPLY: a serial PK is a valid unique id — the rule is "confirm uniqueness and its guarantees", not "mandate UUIDs everywhere". Read-only caches or reports may key on natural keys only when they are genuinely unique and immutable; confirm that before relying on it.
+DON'T OVER-APPLY: serial PKs are valid — confirm uniqueness, don't mandate UUIDs; natural keys OK for read-only caches/reports only if genuinely unique + immutable; confirm first.

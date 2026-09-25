@@ -5,16 +5,11 @@ condition: ["^(?=[\\s\\S]*performance|optimiz|fast|speed|slow|latency|lookup|sea
 scope: ["text", "thinking"]
 ---
 
-CONSIDER effective structures and algorithms up front ("premature optimization") for cases you would otherwise return to later — dynamic programming, dicts vs arrays, sets for lookups when the set is big — and weigh the memory cost.
-
-THE RULE:
-- DICT VS ARRAY: for lookup-by-key, a dict/map/set beats a linear array scan when lookups are frequent or N is large (see hot-code-datastructure-todos: container choice is the highest-leverage performance decision). Use a SET for membership when N is big — `s.has(x)` is O(1) vs an `array.includes` scan.
-- DP / REUSE: where a computation repeats subproblems, consider memoization/dynamic programming instead of recomputing (name the tradeoff).
-- THE MEMORY COUNTERPOINT: if MEMORY IS CONSTRAINED, prefer the NAIVE solution that may be slower but does NOT ALLOCATE uncontrollably — a set/dict/memo can balloon memory; the bounded naive approach is the correct call there. NAME the constraint that decides.
-- AVOID RETURNING LATER: settle the structure decision NOW (see hot-code-datastructure-todos; avoid-intermediate-array-allocations for the memory/alloc side) so the topic does not resurface as a refactor.
-
-WHY: the structure/algorithm decision is the highest-leverage and cheapest to change at design time; revisiting it later is a refactor. The buffer against over-optimization is the memory constraint: structure-aware when memory allows, naive when it does not.
-
+CONSIDER structures/algorithms up front — DP, dicts vs arrays, sets for lookups — and weigh memory.
+- DICT VS ARRAY: lookup-by-key → dict/map/set when frequent or N large; SET for membership — `has` is O(1) (see hot-code-datastructure-todos).
+- DP: repeated subproblems → memoization; name the tradeoff.
+- MEMORY COUNTERPOINT: MEMORY CONSTRAINED → NAIVE, non-allocating solution; set/dict/memo can balloon — NAME the deciding constraint.
+- SETTLE NOW: decide up front (see avoid-intermediate-array-allocations); not resurface as a refactor.
+WHY: highest-leverage, cheapest at design time; the over-optimization buffer is memory.
 TIES: hot-code-datastructure-todos, avoid-intermediate-array-allocations, async-collector-selection, prefer-async-parallelism, bounded-paginated-reads.
-
-DON'T OVER-APPLY: optimize only where the cost is real (hot path, large N, frequent lookups) — premature optimization of cold, tiny code is wasted complexity. The rule is "consider and settle the decision", not "micro-optimize everything".
+DON'T OVER-APPLY: optimize only where cost is real (hot path, large N, hot lookups) — "consider and settle", not micro-optimize.

@@ -5,16 +5,15 @@ condition: ["^(?=[\\s\\S]*\\bapi\\b|endpoint|route|handler|controller)(?=[\\s\\S
 scope: ["text", "thinking"]
 ---
 
-Confirm there is some kind of filter or validation REUSED for API inputs — a shared validation layer, not ad-hoc per-handler checks that drift and get skipped.
+API inputs require a REUSED validation layer (schema/DTO/filter), not ad-hoc per-handler checks:
 
-THE RULE — check each:
-- SHARED/CENTRAL VALIDATION: a schema validator, DTO, or request filter that related endpoints consume — type, shape, length, format, and allowed values checked at the boundary (see config-established-interfaces: reuse established interface/contract types).
-- REUSED AT EVERY ENTRY POINT: the same rules apply to the public API and to internal callers — one endpoint must not be reachable through a less-validated path. A validators that exists but is not wired everywhere is the bug.
-- FAST-FAIL: reject invalid input quickly with a clear error (see db-access-performance: fast-fail path), before any query or side effect (see sql-injection-free).
-- PER-RESOURCE, NOT "ONE MONOLITH": related endpoints share a schema/DTO per resource; the point is no ad-hoc bypass path, not one global function for everything.
+- CENTRAL: type, shape, length, format, allowed values checked at the boundary (see config-established-interfaces).
+- EVERY ENTRY POINT: no endpoint reachable through a less-validated path; an unwired validator is the bug.
+- FAST-FAIL: clear error before any query or side effect (see db-access-performance: fast-fail; sql-injection-free).
+- PER-RESOURCE: schema/DTO per resource — no bypass path, not one global function.
 
-WHY: validation scattered per-handler is duplicated truth that drifts — validated on one endpoint, skipped on the twin that shares its logic. A reused layer keeps one source of truth and closes the bypass class.
+WHY: per-handler checks drift — validated on one endpoint, skipped on its twin; reuse keeps one source of truth and closes the bypass class.
 
-TIES: config-established-interfaces (reuse established types), api-schema-versioning (the contract), data-sanitization, sql-injection-free, authorization-confirmed.
+TIES: config-established-interfaces, api-schema-versioning, data-sanitization, sql-injection-free, authorization-confirmed.
 
-DON'T OVER-APPLY: "reused" means no bypass path and no duplicated drift — it does not force one validator for unrelated resources. Match the project's API structure; a schema/DTO per resource with shared helpers is enough.
+DON'T OVER-APPLY: "reused" = no bypass path/drift, not one validator for unrelated resources.

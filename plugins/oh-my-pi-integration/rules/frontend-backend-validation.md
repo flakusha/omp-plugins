@@ -5,16 +5,15 @@ condition: ["^(?=[\\s\\S]*frontend|client|browser|ui|form|input (field)|client-s
 scope: ["text", "thinking"]
 ---
 
-Validate on BOTH frontend and backend, each for its own reason — never frontend-only, and never trusting the frontend.
+Validate BOTH frontend and backend, for distinct reasons — never frontend-only, never trusting it.
 
-THE RULE — division of labor:
-- FRONTEND VALIDATION (UX + early feedback): validates to avoid sending requests that cannot be satisfied — required fields, format, length — giving fast feedback without a round trip. This is NOT a security boundary: the frontend can be modified/hacked in place, so it is never trusted for enforcement.
-- BACKEND/API/DB VALIDATION (the authoritative boundary): the real enforcement that rejects bad input at the API and DB, BY DEFAULT (see api-input-validation, sql-injection-free). The backend never assumes the frontend validated — confirm it validates independently; a frontend-only check the backend trusts is a bug.
-- SAME RULES, TWO IMPLEMENTATIONS: wherever possible both sides enforce the same constraints (they are duplicated by necessity — the frontend copy is UX, the backend copy is truth). Mismatch is a bug: a field the backend accepts but the frontend blocks (and vice versa) breaks the contract (see wiring-sync-and-consolidation, api-schema-versioning).
-- PROTOTYPE EXCEPTION: for a fast prototype (spike, proof of concept), backend/API/DB validation MAY be deferred — but STATE that this is a prototype shortcut and name what must be added before real use (see documentation-and-planning-audit). The deferral is explicit, never silent.
+- FRONTEND (UX): required fields, format, length — fast feedback, no round trip. NOT security: modifiable, never trusted.
+- BACKEND/API/DB (authoritative): enforcement, BY DEFAULT (see api-input-validation, sql-injection-free). Never assume the frontend validated.
+- SAME RULES TWICE: frontend copy is UX, backend copy is truth; mismatch breaks the contract (see wiring-sync-and-consolidation, api-schema-versioning).
+- PROTOTYPE EXCEPTION: MAY defer backend validation for prototypes — STATE the shortcut and what to add (see documentation-and-planning-audit).
 
-WHY: frontend-only validation is bypassable (security + correctness), backend-only validation couples UX to a round trip and clobbers fields the user could have fixed first. Both, for distinct reasons, is the correct default — and the rule names the one legitimate exception (prototype) so it is not silently permanent.
+WHY: frontend-only is bypassable; backend-only couples UX to a round trip and clobbers fixable fields — the named exception never becomes silent.
 
 TIES: api-input-validation, authorization-confirmed, sql-injection-free, api-idempotency, wiring-sync-and-consolidation, documentation-and-planning-audit.
 
-DON'T OVER-APPLY: not every field needs heavy frontend validation — validate what prevents unsatisfiable requests and gives real feedback. And the prototype exception is for throwaway prototypes; a shipping feature without backend validation is a bug.
+DON'T OVER-APPLY: validate only what prevents unsatisfiable requests or gives real feedback; the exception is for throwaway prototypes — shipping without backend validation is a bug.

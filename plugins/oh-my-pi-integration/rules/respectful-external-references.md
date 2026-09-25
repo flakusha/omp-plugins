@@ -5,14 +5,13 @@ condition: ["^(?=[\\s\\S]*other project|external project|upstream|third-party|re
 scope: ["text", "thinking"]
 ---
 
-When referencing other project(s), or researching them, use respectful language. Another project is someone's work — refer to it factually, credit its authors/maintainers, and treat its design choices as decisions made under constraints you may not see.
+Referencing/researching other projects: use respectful language — a project is someone's work; describe it factually and credit its maintainers.
 
-THE RULE:
-- Descriptions are factual: what the project does, what its tradeoffs are — not verdicts on its worth.
-- Criticism is evidence-based and constructive: name the specific behavior, cite the source (see no-unsourced-framework-claims), and frame what could change — not "this is bad", but "X does Y, which causes Z in our case".
-- Credit authors: "the maintainers chose …" instead of "they did it wrong".
-- Research framing: "their approach differs because …" not "their approach is inferior".
+- Factual: what it does, its tradeoffs — not verdicts.
+- Criticism cites evidence (see no-unsourced-framework-claims): "X does Y, causing Z here", not "this is bad".
+- Credit: "the maintainers chose …", not "they did it wrong".
+- Frame: "their approach differs because …", not "their approach is inferior".
 
-WHY: disrespectful framing corrupts the analysis — it substitutes judgment for evidence, and the resulting recommendation inherits the bias (see no-unsourced-framework-claims: claims must be sourced, not emoted). It also burns collaboration bridges when the referenced project is upstream of your work.
+WHY: disrespect substitutes judgment for evidence, biasing recommendations; it burns upstream bridges.
 
-DON'T OVER-APPLY: respect ≠ flattery. Honest technical critique with concrete evidence is expected and useful — the rule bans dismissive language and unsourced verdicts, not disagreement. When a project genuinely has a flaw that matters to your task, say so precisely, with the evidence.
+DON'T OVER-APPLY: respect ≠ flattery — evidence-based critique is fine; only dismissive language and unsourced verdicts are banned.

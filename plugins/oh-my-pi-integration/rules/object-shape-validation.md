@@ -5,16 +5,11 @@ condition: ["^(?=[\\s\\S]*\\bjson\\b|deserializ|untyped|dynamic (data|object)|\\
 scope: ["text", "thinking"]
 ---
 
-Whenever an object arrives untyped — deserialized JSON, a dynamic API response, a parsed config, an `unknown`/`any` payload out of your control — apply object shape validation and ESTIMATE/CONFIRM the type(s) at runtime before relying on the object's fields.
-
-THE RULE:
-- VALIDATE THE SHAPE: confirm the object has the expected fields, field types, and nesting (a type guard, schema validator, or structural check) before reading those fields — feed this through the reused validation layer where one exists (see api-input-validation).
-- ESTIMATE/CONFIRM RUNTIME TYPES: for live/untyped data, confirm the actual runtime type (typeof/instanceof/type guard; see wiring-sync-and-consolidation: typeof/satisfies for live data structures) rather than assuming the static type. This is the correct way to avoid `any`-escape-hatch handling (see strict-types-and-reuse: avoid untyped payload handling).
-- AVOID THE SHALLOW TRAP: shape validation is not merely "the property exists" — the value may be present but the wrong type or shape (a string where a number is expected, a nested object where an array belongs). Detect and handle that (see boundary-value-handling for the value-variety handling).
-- An unchecked untyped field is a crash (`undefined`-property access) or a silent-wrong-value source.
-
-WHY: an untyped object is a contract you have not verified; trusting its shape is the same class of bug as trusting an unsourced claim (see verify-api-actuality). Confirming the shape at the boundary is cheap and removes the crash/wrong-value class.
-
+Untyped objects — deserialized JSON, API responses, configs, `unknown`/`any` — get shape validation + ESTIMATE/CONFIRM runtime types before field access.
+- VALIDATE THE SHAPE: fields, types, nesting via type guard/schema validator — via the reused validation layer if any (see api-input-validation).
+- ESTIMATE/CONFIRM RUNTIME TYPES: typeof/instanceof/type guard (see wiring-sync-and-consolidation), not the static type — avoids `any`-escape handling (see strict-types-and-reuse).
+- SHALLOW TRAP: "property exists" is not enough — value may be wrong type/shape; detect and handle (see boundary-value-handling).
+- Unchecked untyped fields crash or silently corrupt.
+WHY: an untyped object is an unverified contract — trusting its shape = trusting an unsourced claim (see verify-api-actuality).
 TIES: api-input-validation, strict-types-and-reuse, wiring-sync-and-consolidation, boundary-value-handling, verify-api-actuality, prefer-repo-json-buffer-wrappers.
-
-DON'T OVER-APPLY: for typed, trusted data (type-checked at compile time, no external boundary), runtime re-validation is redundant — apply shape validation where data crosses an untyped/deserialization boundary, not to every object you touch.
+DON'T OVER-APPLY: compile-time-typed, trusted data needs no runtime re-validation — boundaries only.

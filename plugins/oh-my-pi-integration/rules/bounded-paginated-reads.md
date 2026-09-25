@@ -5,15 +5,14 @@ condition: ["^(?=[\\s\\S]*pagination|paginate|page\\b|batch|limit\\b|offset|next
 scope: ["text", "thinking"]
 ---
 
-For reads that can return LARGE or MANY results, read in BOUNDED, BATCHED chunks rather than one unbounded single read.
+For reads that can return LARGE or MANY results, read in BOUNDED, BATCHED chunks, never one unbounded read:
 
-THE RULE — name each:
-- PAGINATE: read in pages/batches (limit+offset, or keyset/cursor pagination) instead of a single query whose buffer grows with the dataset (see protocol-timeout-streaming: do not buffer unbounded data; see data-size-extensibility).
-- "TIMEOUT REMAINING" CHECKS: in a batch/pagination LOOP, check the remaining time/deadline between small batches — a long loop must not run past the overall timeout. This is exactly where "honor the timeout" is a LOOP BOUND, not a one-shot: read a small batch, check the remaining budget, stop gracefully when it is nearly exhausted (see protocol-timeout-streaming, db-access-performance). Without this check, a 10k-row pagination loop blows the deadline even though each page was fast.
-- PARALLEL SMALL SELECTs: where reads are INDEPENDENT, prefer several small parallel SELECTs over one giant join/cartesian read (see db-access-performance: many-vs-one — small parallel wins when independent; see prefer-async-parallelism, async-collector-selection: bounded concurrency for large counts). Name which strategy fits the read's shape.
-- Each is a decision, not an afterthought: name the batch/page size and the read strategy.
+- PAGINATE: pages/batches (limit+offset or keyset/cursor) instead of a query whose buffer grows with the dataset (see protocol-timeout-streaming: do not buffer unbounded data; data-size-extensibility).
+- "TIMEOUT REMAINING" CHECKS: in a pagination loop, check remaining time/deadline between small batches — "honor the timeout" is a LOOP BOUND, not a one-shot: read a small batch, check the budget, stop gracefully when nearly exhausted (see protocol-timeout-streaming, db-access-performance). Without it, a 10k-row loop blows the deadline even though each page was fast.
+- PARALLEL SMALL SELECTs: where reads are INDEPENDENT, prefer several small parallel SELECTs over one giant join/cartesian read (see db-access-performance: many-vs-one; prefer-async-parallelism; async-collector-selection: bounded concurrency for large counts).
+- Each is a decision: name the batch/page size and the read strategy.
 
-WHY: an unbounded single read or an unguarded pagination loop either exhausts memory or runs past the deadline; bounded batches with timeout-remaining checks and small parallel reads keep memory, latency, and responsiveness bounded.
+WHY: an unbounded read or unguarded pagination loop exhausts memory or runs past the deadline; bounded batches with timeout-remaining checks and small parallel reads keep memory, latency, and responsiveness bounded.
 
 TIES: db-access-performance, protocol-timeout-streaming, prefer-async-parallelism, async-collector-selection, data-size-extensibility.
 

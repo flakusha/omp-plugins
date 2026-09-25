@@ -5,17 +5,10 @@ condition: ["^(?=[\\s\\S]*handlebar|mustache|template (engine|syntax)|\\{\\{|\\{
 scope: ["text", "thinking"]
 ---
 
-When the application supports constants, dynamic syntax, replacements, handlebars, or any template interpolation, design NEW named constants from the start — every user-visible string becomes a key/placeholder, not a hardcoded literal.
+Constants or template interpolation supported → NEW named constants from the start: user-visible strings become keys, not literals — the default when multi-language or dynamic content is possible.
 
-WHY:
-- FUTURE i18n BECOMES TRIVIAL: translation = filling values into keys that already exist. Retrofitting i18n to hardcoded strings is a full-content sweep over every page, with missed-string bugs in between.
-- FUTURE DYNAMIC CONTENT BECOMES TRIVIAL: dynamic data binds to the same slots the constants occupy — the placeholder is already there; only the source changes.
-- THE CONSTANT IS THE CONTRACT: the key lives in one catalog (message file, constants module, i18n dictionary); templates reference it. One source of truth (see wiring-sync-and-consolidation) — and a hardcoded user-facing string is just a magic value in markup.
+WHY: i18n later = filling existing keys (retrofit = full sweep, missed strings); dynamic later = same slots, source swaps; the key is the contract — one catalog, one source of truth (see wiring-sync-and-consolidation).
 
-WHAT GETS A CONSTANT: button text, labels, titles, headings, errors, aria-labels, toasts, alt text, empty states — anything a user reads. The moment the app may ever ship in more than one language or render dynamic content, the key is the default.
+KEY-IFY what a user reads: buttons, labels, titles, headings, errors, aria-labels, toasts, alt text, empty states. NOT structural/invisible strings (ids, classes, data attrs, internal keys).
 
-WHAT DOES NOT: structural, non-visible strings — ids, classes, data attributes, internal keys that users never read. Do not key-ify the invisible.
-
-DON'T OVER-APPLY:
-- Follow the project's templating and i18n conventions; if the project has no i18n story and hardcodes everything, introduce the constants discipline for NEW code and note the gap rather than inventing a full i18n framework (see repo-tooling-scoped-usage: discover patterns first).
-- Do not invent a parallel syntax when the project already has one — use its existing placeholder/constant mechanism.
+DON'T OVER-APPLY: no i18n story → apply to NEW code, note the gap, don't invent a framework (see repo-tooling-scoped-usage: discover patterns first); use the project's existing placeholder/constant mechanism, no parallel syntax.

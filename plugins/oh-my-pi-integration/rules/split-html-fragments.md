@@ -5,17 +5,14 @@ condition: ["^(?=[\\s\\S]*big html|large html|html file[\\s\\S]{0,40}?(big|large
 scope: ["text", "thinking"]
 ---
 
-If the project supports it, split big HTML files into fragments loaded at render time — includes, partials, or components. Big markup files have the same problem as big code files (see split-large-files-classes): hard to read, hard to change, one responsibility buried among many.
+Where supported, split big HTML files into render-time fragments — includes, partials, components (see split-large-files-classes).
 
-WHY FRAGMENTS:
-- RESPONSIBILITY: each fragment has one job (header, nav, footer, card, form) — the same cohesion axis as split-large-files-classes, applied to markup.
-- REUSE: shared pieces live in one place and are included everywhere — one source of truth, not N copied blocks (see wiring-sync-and-consolidation).
-- PERFORMANCE: fragments cache independently and can stream/render incrementally.
+- RESPONSIBILITY: one job per fragment.
+- REUSE: shared pieces in one place — one source of truth (see wiring-sync-and-consolidation).
+- PERFORMANCE: cache independently, stream incrementally.
 
-USE THE PROJECT'S MECHANISM — server-side includes, template partials, component systems, static-site include tooling. Do not invent a parallel mechanism (see repo-tooling-scoped-usage). A fragment system is only as good as the project's support for it.
+USE THE PROJECT'S MECHANISM — includes, partials, components, SSG tooling; never invent one (see repo-tooling-scoped-usage).
 
-MAY BE PROHIBITED OR UNSUPPORTED — then do not fight the constraint:
-- If the project forbids fragments (single-file constraint, email HTML, certain static exports, strict deployment shape) or the stack simply does not support them, KEEP THE FILE WHOLE and state the constraint explicitly — a forced "split" into an unsupported mechanism is fake structure that breaks the build.
-- A single-file constraint is a legitimate design decision; respect it and keep the file organized with clear section comments instead.
+PROHIBITED/UNSUPPORTED: if fragments are forbidden (single-file, email HTML, deployment-shape constraints) or unsupported, KEEP THE FILE WHOLE and state the constraint — a forced split is fake structure that breaks the build. Respect it; organize with clear section comments.
 
-FRAGMENTS ARE DYNAMIC LIKE EVERYTHING ELSE: within each fragment, apply the same constants/replacements discipline as the main template (see template-constants-for-i18n) — dynamic content and i18n keys bind inside fragments exactly as they do in the parent.
+FRAGMENTS ARE DYNAMIC: template-constants-for-i18n discipline binds inside fragments exactly as in the parent.

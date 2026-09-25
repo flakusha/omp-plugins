@@ -5,17 +5,16 @@ condition: ["^(?=[\\s\\S]*\\bsql\\b|query|select|insert|update|delete|where|join
 scope: ["text", "thinking"]
 ---
 
-For DB-access implementations, CONFIRM DB injections are not possible.
+CONFIRM DB injections are not possible.
 
-THE RULE — check each:
-- PARAMETERIZED/PREPARED for ALL queries that incorporate user-derived or dynamic values: never string-concatenate or interpolate user input into SQL. This is the one rule that never bends.
-- ORM/QUERY-BUILDER: confirm the framework parameterizes by default and you are not bypassing it; confirm no raw-SQL escape hatches where the framework's parameterization is swapped for string-building.
-- DYNAMIC IDENTIFIERS: table/column names, order-by clauses, and batch/array expansion must never come from user input — when dynamic, validate them against an explicit ALLOWLIST (enum/const set), never concatenate (see api-input-validation, named-tested-regexes).
-- BLIND SPOTS: LIKE patterns, `IN`-expansion, JSON/ARRAY parameters, and ORDER BY are where injection sneaks past a happy-path check — confirm those paths are parameterized or allowlisted, not concatenated.
-- TEST THE SURFACE: errors/negative paths (see strict-review-standards, parallel-safe-tests): a test that feeds malicious input and asserts no injection/error should exist for user-input-touching queries.
+- PARAMETERIZED/PREPARED for ALL queries with user-derived or dynamic values — never interpolate user input into SQL.
+- ORM/QUERY-BUILDER: confirm default parameterization; no raw-SQL string-building bypass.
+- DYNAMIC IDENTIFIERS: table/column names, order-by, batch expansion never from user input — ALLOWLIST when dynamic, never concatenate (see api-input-validation, named-tested-regexes).
+- BLIND SPOTS: LIKE, `IN`-expansion, JSON/ARRAY params, ORDER BY — parameterized or allowlisted, never concatenated.
+- TEST THE SURFACE (see strict-review-standards, parallel-safe-tests): user-input-touching queries need an injection test.
 
-WHY: injection is the highest-severity DB vulnerability (data exfiltration, destruction, lateral movement). The parameterize-everything invariant, checked on every dynamic-value path, removes the entire class rather than patching individual holes.
+WHY: parameterize-everything removes the entire injection class — the highest-severity DB vulnerability.
 
-TIES: wrap-unsafe-language-apis (escape the code-execution class; parameterize at the boundary), api-input-validation (validate before querying), data-sanitization, strict-review-standards, named-tested-regexes.
+TIES: wrap-unsafe-language-apis, api-input-validation, data-sanitization, strict-review-standards, named-tested-regexes.
 
-DON'T OVER-APPLY: static/constant SQL fragments with no user-derived values need no parameterization — the rule is about user-derived or dynamic values. And you are not required to eliminate dynamic queries — parameterize them via a safe API or allowlist them.
+DON'T OVER-APPLY: static/constant SQL needs no parameterization; dynamic queries stay allowed if parameterized/allowlisted.

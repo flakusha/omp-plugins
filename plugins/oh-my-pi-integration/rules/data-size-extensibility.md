@@ -5,15 +5,11 @@ condition: ["^(?=[\\s\\S]*size|length|max (size|length)|limit|truncat|buffer|pay
 scope: ["text", "thinking"]
 ---
 
-OPTIONALLY confirm data size/length constraints and future extensibility, where they are a real requirement (large payloads, long-lived schemas, external contracts). Apply where needed; skip where speculative.
+OPTIONALLY confirm size constraints and extensibility where they are a real requirement; skip where speculative.
 
-THE RULE — check each (only as required):
-- SIZE/LENGTH CONSTRAINTS ENFORCED: declared limits (column sizes, payload/buffer caps, input length limits) match reality and are enforced — no silent truncation of data that must be preserved, no unbounded reads or buffers (see wrap-unsafe-language-apis: safe defaults include size limits).
-- FUTURE EXTENSIBILITY: where the data structure may evolve, use forward-compatible shapes (extras catch-all at external boundaries, see forward-compatible-datastructures) and schema versioning (see api-schema-versioning) so a changed payload does not break old readers.
-- EXPLICIT, NOT SPECULATIVE: this item is OPTIONAL BY DESIGN — add size/extensibility handling only where there is a real limit or a real evolution path; avoid premature abstraction for schemas that will not change (see multi-env-shared-logic for the same anti-premature-abstraction stance).
-
-WHY: size limits and schema extensibility are cheap to decide early and costly to retrofit; but equally, scaffolding for hypothetical limits is waste. Confirming the decision — enforced limit vs none, extensible shape vs frozen — is the deliverable.
-
-TIES: forward-compatible-datastructures, api-schema-versioning, config-merge-precedence, wrap-unsafe-language-apis, db-access-performance (payload size vs one-big-request).
-
-DON'T OVER-APPLY: by design, optional. Do not add length constraints where no real limit exists, and do not add extensibility scaffolding for schemas that will not evolve — a one-line note that the shape is frozen is often the whole deliverable.
+- SIZE LIMITS ENFORCED: declared limits match reality — no silent truncation of preserved data, no unbounded reads/buffers (see wrap-unsafe-language-apis).
+- EXTENSIBILITY: where the structure may evolve — forward-compatible shapes (see forward-compatible-datastructures) + schema versioning (see api-schema-versioning).
+- NOT SPECULATIVE: no premature abstraction for schemas that won't change (see multi-env-shared-logic).
+- WHY: cheap early, costly to retrofit. Deliverable: the confirmed decision — enforced limit vs none, extensible vs frozen.
+- TIES: forward-compatible-datastructures, api-schema-versioning, config-merge-precedence, wrap-unsafe-language-apis, db-access-performance.
+- DON'T OVER-APPLY: optional — no limits where none exist, no scaffolding for frozen schemas; a "shape is frozen" note is often the deliverable.

@@ -5,19 +5,13 @@ condition: ["^(?=[\\s\\S]*console\\.log|console\\.error|console\\.warn|\\bprint\
 scope: ["text", "thinking"]
 ---
 
-Use the logger(s) configured and provided by the application. The app's logger exists precisely for the properties a bare default lacks — reach for it first, every time (see log-boundary-events: follow the project's logging conventions; see repo-tooling-scoped-usage: the existing pattern wins).
+Use the app's configured logger(s) — reach for it first, every time (see log-boundary-events for conventions; see repo-tooling-scoped-usage: existing pattern wins).
 
-AVOID NON-SET-UP DEFAULT LOGGERS: bare `console.log`/`print`/`println`, the unconfigured root logger, the stdlib `log` package with no setup. They are a fallback of last resort, not the default, because they typically:
-- BLOCK: synchronous writes on the hot path stall the caller; the configured logger is async/batched.
-- UNDERPERFORM: unbuffered, no batching or sampling, string-concat churn on every call.
-- LACK FORMAT: no timestamps, structure, levels, or correlation — ungreppable, unparseable output that the boundary-observability rules (see log-boundary-events) depend on.
-- MIS-HANDLE INCOMING DATA: no redaction (secrets leak — see log-boundary-events: never log secrets), no dropping/shortening/summarization — a giant raw payload dumped to the log is memory + noise + a possible secret leak. The configured logger handles exactly that: SAMPLING/dropping under load, TRUNCATION over a size budget, SUMMARIZATION (counts, sizes, ids) instead of full contents.
+AVOID non-set-up defaults (bare `console.log`/`print`/`println`, unconfigured root, unset stdlib `log`) — fallback of last resort: they BLOCK (sync writes stall the hot path), UNDERPERFORM (unbuffered, no batching/sampling), LACK FORMAT (no timestamps/structure/levels/correlation — ungreppable, unparseable; see log-boundary-events), MIS-HANDLE DATA (no redaction — secrets leak; see log-boundary-events: never log secrets; no drop/shorten/summarize). The configured logger handles it: sampling, truncation over budget, summarization (counts/sizes/ids), not raw contents.
 
 HOW:
-- Find the app's logger — dependency-injected, module-level, config-provided — and use its API and its level discipline. Do not re-implement what it already does.
-- If a spot needs logging where no configured logger exists (early bootstrap, library code), keep it minimal and note the gap — do not invent a parallel logger mechanism (see repo-tooling-scoped-usage).
-- TEMPORARY DEBUG PRINTS: during active investigation, a quick `console.log`/`print` is an acceptable scratch tool — but it is NOT the deliverable: convert it to the configured logger or remove it before the code lands.
+- Use the app's logger (DI/module/config-provided), its API + levels; never re-implement it.
+- No logger where needed (bootstrap, library code): minimal logging, note the gap, no parallel mechanism (see repo-tooling-scoped-usage).
+- DEBUG PRINTS: fine as scratch, never the deliverable — convert or remove before landing.
 
-DON'T OVER-APPLY:
-- Do not refactor existing logging from one logger to another as busywork — the rule governs NEW code and touched lines (see strict-types-and-reuse: enforce on new/touched code, propose rather than silently rewriting).
-- If the application genuinely has no configured logger, a minimal standard one is the honest choice — state that explicitly rather than pretending the bare print is equivalent.
+DON'T OVER-APPLY: no busywork logger swaps — NEW/touched lines only (see strict-types-and-reuse); no configured logger at all → a minimal standard one is honest; say so.

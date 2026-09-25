@@ -90,9 +90,11 @@ const FULL_PATH = new RegExp(`/(?:usr/)?(?:bin|sbin)/(${BIN_ALT})\\b`);
 
 // Git mutating subcommand alternation (without the leading `\bgit\s+(`)
 // so FULL_PATH_GIT can compose it after `/usr/bin/git `.
+// Read-only stash inspection (`list`/`show`) stays allowed on ALL reaches;
+// `stash pop`/`apply`/`drop` mutate shared worktree state and stay blocked.
 const GIT_MUTATING_SUB =
   "push\\b" +
-  "|stash\\b(?!\\s+push\\b(?:\\s+--\\s+\\S|\\s+--include-untracked\\b))" +
+  "|stash\\b(?!\\s+(?:push\\b(?:\\s+--\\s+\\S|\\s+--include-untracked\\b)|list\\b|show\\b))" +
   "|reset\\s+--hard\\b" +
   "|clean\\s+-f?d\\b" +
   "|branch\\s+-[dD]\\b" +
@@ -309,18 +311,106 @@ export function stripGitOptionPrefix(seg: string): string {
 }
 
 export const EVASION_REASON =
-  "`command`/`builtin`/`bash -c`/full-path form bypasses harness interception — " +
-  "use the dedicated `read`/`grep`/`glob`/`edit` tools (or `mcp__lean_ctx_ctx_*`) instead. " +
-  "Tool discovery via `which`/`command -v` stays allowed.";
+  "`command`/`builtin`/`bash -c`/full-path form bypasses harness interception — the " +
+  "wrapper runs the binary behind bash's back, so the line-anchored bashInterceptor " +
+  "never rewrites it. Tool discovery via `which`/`command -v` stays allowed.";
+
+// A dedicated-tool binary reached through a chain separator (`cd`-prefix,
+// `&&`/`||`/`;`/`|`/`&`/newline): bashInterceptor anchors every pattern on
+// `^\s*`, so the chain hides the binary from the rewrite layer.
+export const CHAIN_REASON =
+  "chained-segment reach: a binary with a dedicated harness tool runs behind a chain " +
+  "separator — the line-anchored bashInterceptor only rewrites command-initial " +
+  "shapes, so the chain hides it from the rewrite layer.";
 
 export const GIT_MUTATING_REASON =
   "git mutating subcommand (`push`/`stash`/`reset --hard`/`clean -fd`/`branch -D`/" +
-  "`commit --amend`) reached via evasion form (chained-prefix `cd … && …`, `command`/" +
-  "`builtin`/`bash -c`/full-path, or `git -C/-c/--git-dir=` global-option prefix) — the " +
-  "bashInterceptor line-anchored regex misses this shape; the rule on `git push`/" +
-  "`git stash` (see agent/config.yml bashInterceptor) still applies. Run `git status`/" +
-  "`git log`/`git diff` directly for read-only inspection; for mutating operations, ask " +
-  "the user per the rule.";
+  "`commit --amend`) reached via an evasion or chain form the line-anchored " +
+  "bashInterceptor misses. Read-only inspection (`git status`/`git log`/`git diff`) " +
+  "stays allowed; mutating operations need the user.";
+
+/** Per-subcommand fix for git mutating blocks. */
+const GIT_FIX: Record<string, string> = {
+  push: "commit locally and present the hash; `git push` needs explicit user authorization (ask). `git push --dry-run` and `git push -h` are allowed (information only).",
+  stash:
+    "sanctioned stash shape: `git stash push -- <pathspec-you-own>` (optionally `--include-untracked`); otherwise commit the change.",
+  "reset --hard":
+    "irreversible history mutation — inspect with `git status`/`git log`/`git diff` and ask the user before destroying state.",
+  "clean -fd":
+    "irreversible history mutation — inspect with `git status`/`git log`/`git diff` and ask the user before destroying state.",
+  "branch -D":
+    "irreversible history mutation — inspect with `git status`/`git log`/`git diff` and ask the user before destroying state.",
+  "commit --amend":
+    "irreversible history mutation — inspect with `git status`/`git log`/`git diff` and ask the user before destroying state.",
+};
+
+/** Per-wrapper-form fix for evasion blocks. */
+const WRAPPER_FIX: Record<string, string> = {
+  command:
+    "drop the `command` prefix so the binary is the command head, or use the dedicated tool.",
+  builtin:
+    "drop the `builtin` prefix so the binary is the command head, or use the dedicated tool.",
+  "shell-c":
+    "run the inner command directly as the bash command — no `sh -c`/`bash -c` wrapper — or use the dedicated tool.",
+  "full-path":
+    "invoke the binary by name, without the `/usr/bin/`-style prefix, or use the dedicated tool.",
+};
+
+/**
+ * Dedicated-tool fix per intercepted binary — mirrors the agent/config.yml
+ * bashInterceptor routing (read/grep/glob/edit).
+ */
+const TOOL_FIX: Record<string, string> = {
+  cat: '`read` tool: {"path": "<file>"} — selectors: `:-N` last N lines, `N-M` range, `:raw`.',
+  head: '`read` tool: {"path": "<file>:N-M"} (leading range).',
+  tail: '`read` tool: {"path": "<file>:-N"} (last N lines).',
+  less: '`read` tool: {"path": "<file>"}.',
+  more: '`read` tool: {"path": "<file>"}.',
+  ls: '`read` tool on the directory: {"path": "<dir>"} (or ctx_tree).',
+  grep: '`grep` tool: {"pattern": "…", "path": "…"}; for command OUTPUT capture to an in-root `.tmp/` file first, or use the command\'s own filter (e.g. `git log --grep=`).',
+  rg: '`grep` tool: {"pattern": "…", "path": "…"}.',
+  ripgrep: '`grep` tool: {"pattern": "…", "path": "…"}.',
+  ag: '`grep` tool: {"pattern": "…", "path": "…"}.',
+  ack: '`grep` tool: {"pattern": "…", "path": "…"}.',
+  find: '`glob` tool: {"pattern": "**/<name>"}; directory listings: `read` on the dir.',
+  fd: '`glob` tool: {"pattern": "**/<name>"}.',
+  locate: '`glob` tool: {"pattern": "**/<name>"}.',
+  sed: "in-place edits (`-i`) go through the `edit` tool/ctx_patch; stream `sed` — rerun it as the command head.",
+  awk: "in-place edits (`-i inplace`) go through the `edit` tool/ctx_patch; stream `awk` — rerun it as the command head.",
+  sort: "harmless bare — rerun as the command head so the interceptor sees it.",
+  uniq: "harmless bare — rerun as the command head so the interceptor sees it.",
+  wc: "harmless bare — rerun as the command head so the interceptor sees it.",
+  diff: "harmless bare — rerun as the command head so the interceptor sees it.",
+};
+const DEFAULT_TOOL_FIX =
+  "use the dedicated harness tool for this binary (read/grep/glob/edit per agent/config.yml bashInterceptor).";
+
+const WRITE_TARGET_FIX =
+  "redirect into an in-root `.tmp/` scratch path; for existing out-of-root files use the native `edit` tool; installs go through the project installer.";
+
+const INTERPRETER_FIX =
+  "write the code to a re-executable script — native `write` into an in-root `./.tmp/` dir — then run it via bash: `python ./.tmp/x.py` or `bun ./.tmp/x.ts`.";
+
+/** Collapse whitespace and bound the evidence span length. */
+function truncSpan(text: string, max = 90): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length <= max ? flat : `${flat.slice(0, max - 1)}…`;
+}
+
+/** Append matched-span + fix evidence to a static reason base. */
+function withEvidence(base: string, matched: string, seg: string, fix: string): string {
+  return `${base}\nmatched: \`${truncSpan(matched)}\` in segment \`${truncSpan(seg)}\`\nfix: ${fix}`;
+}
+
+/** Full git-mutating block message for one matched subcommand. */
+function gitReason(sub: string, seg: string): string {
+  return withEvidence(
+    GIT_MUTATING_REASON,
+    `git ${sub}`,
+    seg,
+    GIT_FIX[sub] ?? "ask the user before mutating shared state.",
+  );
+}
 
 /**
  * Test a single segment for git mutating subcommands after normalizing
@@ -332,40 +422,37 @@ const GIT_MUTATING_RE = new RegExp(GIT_MUTATING);
 
 function gitMutatingForSegment(seg: string, inChain: boolean): string | undefined {
   if (!seg || seg.startsWith("#")) return undefined;
-  const origHit =
-    COMMAND_GIT.test(seg) ||
-    BUILTIN_GIT.test(seg) ||
-    SHELL_C_GIT.test(seg) ||
-    FULL_PATH_GIT.test(seg);
-  if (origHit) return GIT_MUTATING_REASON;
+  const subOf = (re: RegExp, text: string): string | undefined => re.exec(text)?.[1];
+  const orig =
+    subOf(COMMAND_GIT, seg) ??
+    subOf(BUILTIN_GIT, seg) ??
+    subOf(SHELL_C_GIT, seg) ??
+    subOf(FULL_PATH_GIT, seg);
+  if (orig) return gitReason(orig, seg);
   const deChained = stripChainPrefix(seg);
   // `cd /repo && git push …` — second segment saw no chain prefix on itself,
   // but the WHOLE command had a separator so the segment is reached via an
   // evasion (chain prefix hides `git` from bashInterceptor's `^` anchor).
-  if (inChain && deChained && GIT_MUTATING_RE.test(deChained)) {
-    return GIT_MUTATING_REASON;
+  if (inChain && deChained) {
+    const chainSub = GIT_MUTATING_RE.exec(deChained)?.[1];
+    if (chainSub) return gitReason(chainSub, seg);
   }
   // Repeated `cd /a; cd /b; git push` — the chain prefix DID change the text.
-  if (
-    deChained &&
-    deChained !== seg &&
-    (COMMAND_GIT.test(deChained) ||
-      BUILTIN_GIT.test(deChained) ||
-      SHELL_C_GIT.test(deChained) ||
-      FULL_PATH_GIT.test(deChained) ||
-      (inChain && GIT_MUTATING_RE.test(deChained)))
-  ) {
-    return GIT_MUTATING_REASON;
+  if (deChained && deChained !== seg) {
+    const wrappedSub =
+      subOf(COMMAND_GIT, deChained) ??
+      subOf(BUILTIN_GIT, deChained) ??
+      subOf(SHELL_C_GIT, deChained) ??
+      subOf(FULL_PATH_GIT, deChained) ??
+      (inChain ? GIT_MUTATING_RE.exec(deChained)?.[1] : undefined);
+    if (wrappedSub) return gitReason(wrappedSub, seg);
   }
   // `git -C /repo push …` — global-option prefix breaks `\bgit\s+push` adjacency;
   // only flag when the prefix was actually stripped.
   const deGitOpt = stripGitOptionPrefix(deChained);
-  if (
-    deGitOpt &&
-    deGitOpt !== deChained &&
-    (GIT_MUTATING_RE.test(deGitOpt) || FULL_PATH_GIT.test(deGitOpt))
-  ) {
-    return GIT_MUTATING_REASON;
+  if (deGitOpt && deGitOpt !== deChained) {
+    const optSub = GIT_MUTATING_RE.exec(deGitOpt)?.[1] ?? FULL_PATH_GIT.exec(deGitOpt)?.[1];
+    if (optSub) return gitReason(optSub, seg);
   }
   return undefined;
 }
@@ -473,26 +560,106 @@ function stripWrapperPrefix(seg: string): string {
  * the intercepted binary from bashInterceptor's `^\s*<bin>\s+` anchor, plus
  * `command`/`builtin`/`bash -c`/full-path evasion wrappers on INTERCEPTED.
  */
+/** Detect one of the four INTERCEPTED-binary wrappers in a segment. */
+function wrapperHitOn(seg: string): { kind: string; bin: string } | undefined {
+  const command = COMMAND_EXEC.exec(seg);
+  if (command?.[1]) return { kind: "command", bin: command[1] };
+  const builtin = BUILTIN_EXEC.exec(seg);
+  if (builtin?.[1]) return { kind: "builtin", bin: builtin[1] };
+  const shellC = SHELL_C.exec(seg);
+  if (shellC?.[1]) return { kind: "shell-c", bin: shellC[1] };
+  const fullPath = FULL_PATH.exec(seg);
+  if (fullPath?.[1]) return { kind: "full-path", bin: fullPath[1] };
+  return undefined;
+}
+
+/** Build a wrapper-form block reason (command/builtin/shell-c/full-path). */
+function wrapperReasonFor(kind: string, bin: string, seg: string): string {
+  return withEvidence(
+    EVASION_REASON,
+    bin,
+    seg,
+    `${WRAPPER_FIX[kind] ?? ""} ${TOOL_FIX[bin] ?? DEFAULT_TOOL_FIX}`.trim(),
+  );
+}
+
+/** When `seg` chains to an INTERCEPTED binary, return CHAIN_REASON; else undefined. */
+function chainEvasionReasonFor(seg: string): string | undefined {
+  const deChained = stripChainPrefix(seg);
+  // Wrapper-strip too: `cd /repo && env cat …` reduces to `cat …` only
+  // after both chain- AND wrapper-prefix removal.
+  const deWrapped = stripWrapperPrefix(deChained);
+  if (!deWrapped) return undefined;
+  const INTERCEPTED_TOKEN_RE = new RegExp(`^\\s*(${BIN_ALT})\\b`);
+  const bin = INTERCEPTED_TOKEN_RE.exec(deWrapped)?.[1];
+  if (!bin) return undefined;
+  return withEvidence(CHAIN_REASON, bin, seg, TOOL_FIX[bin] ?? DEFAULT_TOOL_FIX);
+}
+
+/** When `seg` resolves to a wrapper-form evasion (raw or after stripChainPrefix), build the reason. */
+function wrapperEvasionReasonFor(seg: string): string | undefined {
+  const hit = wrapperHitOn(seg);
+  if (hit) return wrapperReasonFor(hit.kind, hit.bin, seg);
+  const deChained = stripChainPrefix(seg);
+  if (!deChained || deChained === seg) return undefined;
+  const chainedHit = wrapperHitOn(deChained);
+  if (!chainedHit) return undefined;
+  return wrapperReasonFor(chainedHit.kind, chainedHit.bin, seg);
+}
+
 function nonGitEvasion(segments: string[]): string | undefined {
   const inChain = segments.length > 1;
-  const isEvasion = (seg: string): boolean =>
-    COMMAND_EXEC.test(seg) || BUILTIN_EXEC.test(seg) || SHELL_C.test(seg) || FULL_PATH.test(seg);
-  const INTERCEPTED_TOKEN_RE = new RegExp(`^\\s*(${BIN_ALT})\\b`);
   if (inChain) {
     for (const seg of segments) {
-      const deChained = stripChainPrefix(seg);
-      // Wrapper-strip too: `cd /repo && env cat …` reduces to `cat …` only
-      // after both chain- AND wrapper-prefix removal.
-      const deWrapped = stripWrapperPrefix(deChained);
-      if (deWrapped && INTERCEPTED_TOKEN_RE.test(deWrapped)) return EVASION_REASON;
+      const chainReason = chainEvasionReasonFor(seg);
+      if (chainReason) return chainReason;
     }
   }
   for (const seg of segments) {
-    if (isEvasion(seg)) return EVASION_REASON;
-    const deChained = stripChainPrefix(seg);
-    if (deChained && deChained !== seg && isEvasion(deChained)) return EVASION_REASON;
+    const wrapperReason = wrapperEvasionReasonFor(seg);
+    if (wrapperReason) return wrapperReason;
   }
   return undefined;
+}
+
+/**
+ * Unescape shell-quote escapes and strip the outer quote pair, if present.
+ */
+function extractInner(match: RegExpMatchArray): string {
+  const rawInner = (match[3] ?? match[4] ?? match[5] ?? "").replace(/\\(["'\\])/g, "$1");
+  return rawInner.replace(/^(['"])(.*)\1$/, "$2");
+}
+
+/**
+ * Check the un-quoted inner payload of a `<wrapper> -c "…"` invocation for
+ * either an INTERCEPTED binary or a git mutating subcommand — both are
+ * violations that the outer wrapper would have hidden from the line-anchored
+ * bashInterceptor. Returns the block reason, or undefined when benign.
+ */
+function checkInnerPayload(inner: string): string | undefined {
+  const INTERCEPTED_TOKEN_RE = new RegExp(`^\\s*(${BIN_ALT})\\b`);
+  for (const seg of splitCommandSegments(inner)) {
+    const bin = INTERCEPTED_TOKEN_RE.exec(seg)?.[1];
+    if (bin) {
+      return withEvidence(EVASION_REASON, bin, seg, TOOL_FIX[bin] ?? DEFAULT_TOOL_FIX);
+    }
+    const sub = GIT_MUTATING_RE.exec(seg)?.[1];
+    if (sub) return gitReason(sub, seg);
+  }
+  return undefined;
+}
+
+/** Is `match[1]` a recognized shell-passthrough wrapper (bash/rtk/xd/…)? */
+function isPassthroughWrapper(match: RegExpMatchArray): boolean {
+  const wrapper = match[1];
+  return !!wrapper && wrapper in SHELL_PASSTHROUGH;
+}
+
+/** Recurse into the inner payload of one shell-string-flag match. */
+function reasonForShellStringMatch(match: RegExpMatchArray): string | undefined {
+  const inner = extractInner(match);
+  if (!inner) return undefined;
+  return evasionReason(inner) ?? checkInnerPayload(inner);
 }
 
 /**
@@ -514,37 +681,11 @@ function nonGitEvasion(segments: string[]): string | undefined {
  * bashInterceptor (tail is chained behind a prefix, not line-anchored) and
  * past SHELL_C (wrapper is `lean-ctx`, not bash/sh/zsh/dash).
  */
-/** Unescape shell-quote escapes and strip the outer quote pair, if present. */
-function extractInner(match: RegExpMatchArray): string {
-  const rawInner = (match[3] ?? match[4] ?? match[5] ?? "").replace(/\\(["'\\])/g, "$1");
-  return rawInner.replace(/^(['"])(.*)\1$/, "$2");
-}
-
-/**
- * Check the un-quoted inner payload of a `<wrapper> -c "…"` invocation for
- * either an INTERCEPTED binary or a git mutating subcommand — both are
- * violations that the outer wrapper would have hidden from the line-anchored
- * bashInterceptor. Returns the block reason, or undefined when benign.
- */
-function checkInnerPayload(inner: string): string | undefined {
-  const INTERCEPTED_TOKEN_RE = new RegExp(`^\\s*(${BIN_ALT})\\b`);
-  for (const seg of splitCommandSegments(inner)) {
-    if (INTERCEPTED_TOKEN_RE.test(seg)) return EVASION_REASON;
-    if (GIT_MUTATING_RE.test(seg)) return GIT_MUTATING_REASON;
-  }
-  return undefined;
-}
-
 function shellStringFlagReason(cmd: string): string | undefined {
   for (const match of cmd.matchAll(new RegExp(SHELL_STRING_FLAG, "g"))) {
-    const wrapper = match[1];
-    if (!wrapper || !(wrapper in SHELL_PASSTHROUGH)) continue;
-    const inner = extractInner(match);
-    if (!inner) continue;
-    const recursiveReason = evasionReason(inner);
-    if (recursiveReason) return recursiveReason;
-    const payloadReason = checkInnerPayload(inner);
-    if (payloadReason) return payloadReason;
+    if (!isPassthroughWrapper(match)) continue;
+    const reason = reasonForShellStringMatch(match);
+    if (reason) return reason;
   }
   return undefined;
 }
@@ -610,6 +751,61 @@ function words(seg: string): string[] {
   return out;
 }
 
+/** Step `i` past a quoted region (single/double quotes) starting at `seg[i]`. */
+function skipQuotedRegion(seg: string, i: number): number {
+  const q = seg[i];
+  if (q !== "'" && q !== '"') return i;
+  let k = i + 1;
+  while (k < seg.length && seg[k] !== q) k++;
+  return k + 1;
+}
+
+/** Read one shell word starting at `seg[j]`; returns `[word, newIndex]`. */
+function readRedirectWord(seg: string, j: number): [string, number] {
+  let word = "";
+  let q: string | null = null;
+  let k = j;
+  while (k < seg.length) {
+    const c = seg[k] ?? "";
+    if (q) {
+      if (c === q) q = null;
+      else word += c;
+      k++;
+      continue;
+    }
+    if (c === "'" || c === '"') {
+      q = c;
+      k++;
+      continue;
+    }
+    if (/\s/.test(c) || ";|&<>".includes(c)) break;
+    word += c;
+    k++;
+  }
+  return [word, k];
+}
+
+/**
+ * From index `i` (already on `>`), parse the redirection op (`>>`/`>`/`&>`/
+ * `2>&-`/`>&1`) and the following target word (if any). Returns
+ * `[target, newIndex]` — `target` is empty when the redirect is an fd dup
+ * or has no word to read.
+ */
+function parseOneRedirect(seg: string, i: number): [string, number] {
+  let j = i + 1;
+  if (seg[j] === ">") j++;
+  if (seg[j] === "&") {
+    const after = seg[j + 1] ?? "";
+    if (/\d/.test(after) || after === "-") {
+      return ["", j + 2]; // fd dup — no filesystem target
+    }
+    j++; // `&>file` — both streams into a file
+  }
+  while (j < seg.length && /\s/.test(seg[j] ?? "")) j++;
+  const [word, k] = readRedirectWord(seg, j);
+  return [word, k];
+}
+
 /**
  * Unquoted redirection write targets in one command segment:
  * `>f` `>>f` `2>f` `&>f` `1>>f`. Quoted `>` chars never match; fd dups
@@ -621,10 +817,7 @@ function redirectTargets(seg: string): string[] {
   while (i < seg.length) {
     const ch = seg[i];
     if (ch === "'" || ch === '"') {
-      const q = ch;
-      i++;
-      while (i < seg.length && seg[i] !== q) i++;
-      i++;
+      i = skipQuotedRegion(seg, i);
       continue;
     }
     if (ch === "\\") {
@@ -635,39 +828,9 @@ function redirectTargets(seg: string): string[] {
       i++;
       continue;
     }
-    let j = i + 1;
-    if (seg[j] === ">") j++;
-    if (seg[j] === "&") {
-      const after = seg[j + 1] ?? "";
-      if (/\d/.test(after) || after === "-") {
-        i = j + 2; // fd dup (`>&1`, `2>&-`) — no filesystem target
-        continue;
-      }
-      j++; // `&>file` — both streams into a file
-    }
-    while (j < seg.length && /\s/.test(seg[j] ?? "")) j++;
-    // Target word: quote-aware; ends at unquoted whitespace/separator.
-    let word = "";
-    let wq: string | null = null;
-    while (j < seg.length) {
-      const c = seg[j] ?? "";
-      if (wq) {
-        if (c === wq) wq = null;
-        else word += c;
-        j++;
-        continue;
-      }
-      if (c === "'" || c === '"') {
-        wq = c;
-        j++;
-        continue;
-      }
-      if (/\s/.test(c) || ";|&<>".includes(c)) break;
-      word += c;
-      j++;
-    }
+    const [word, next] = parseOneRedirect(seg, i);
     if (word) targets.push(word);
-    i = Math.max(j, i + 1);
+    i = Math.max(next, i + 1);
   }
   return targets;
 }
@@ -677,19 +840,41 @@ function redirectTargets(seg: string): string[] {
  * targets and `tee` file arguments. Complements the `write`-tool gate —
  * without this, `echo x > ~/file` smuggles the same write past it.
  */
+/** Scan one segment for any redirection write target landing outside the root. */
+function redirectWriteReasonFor(seg: string): string | undefined {
+  for (const target of redirectTargets(seg)) {
+    if (isBlockedWriteTarget(target)) {
+      return withEvidence(WRITE_TARGET_REASON, target, seg, WRITE_TARGET_FIX);
+    }
+  }
+  return undefined;
+}
+
+/** Scan one segment for any `tee <file>` argument landing outside the root. */
+function teeWriteReasonFor(seg: string): string | undefined {
+  const tokens = words(seg);
+  const teeIdx = tokens.findIndex((t) => t === "tee" || t.endsWith("/tee"));
+  if (teeIdx < 0) return undefined;
+  for (const tok of tokens.slice(teeIdx + 1)) {
+    if (tok.startsWith("-")) continue;
+    if (isBlockedWriteTarget(tok)) {
+      return withEvidence(WRITE_TARGET_REASON, tok, seg, WRITE_TARGET_FIX);
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Block bash file writes landing outside the project root: redirection
+ * targets and `tee` file arguments. Complements the `write`-tool gate —
+ * without this, `echo x > ~/file` smuggles the same write past it.
+ */
 export function bashWriteReason(cmd: string): string | undefined {
   for (const seg of splitCommandSegments(cmd)) {
-    for (const target of redirectTargets(seg)) {
-      if (isBlockedWriteTarget(target)) return WRITE_TARGET_REASON;
-    }
-    const tokens = words(seg);
-    const teeIdx = tokens.findIndex((t) => t === "tee" || t.endsWith("/tee"));
-    if (teeIdx >= 0) {
-      for (const tok of tokens.slice(teeIdx + 1)) {
-        if (tok.startsWith("-")) continue;
-        if (isBlockedWriteTarget(tok)) return WRITE_TARGET_REASON;
-      }
-    }
+    const redirect = redirectWriteReasonFor(seg);
+    if (redirect) return redirect;
+    const tee = teeWriteReasonFor(seg);
+    if (tee) return tee;
   }
   return undefined;
 }
@@ -787,7 +972,9 @@ function interpreterInlineForSegment(seg: string): boolean {
 export function interpreterInlineReason(cmd: string): string | undefined {
   if (!cmd || cmd.startsWith("#")) return undefined;
   for (const seg of splitCommandSegments(cmd)) {
-    if (interpreterInlineForSegment(seg)) return INTERPRETER_INLINE_REASON;
+    if (interpreterInlineForSegment(seg)) {
+      return withEvidence(INTERPRETER_INLINE_REASON, "inline-code flag", seg, INTERPRETER_FIX);
+    }
   }
   return undefined;
 }

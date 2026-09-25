@@ -20,6 +20,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   bashWriteReason,
+  CHAIN_REASON,
   EVASION_REASON,
   evasionReason,
   GIT_MUTATING_REASON,
@@ -138,35 +139,35 @@ describe("stripGitOptionPrefix", () => {
 
 describe("evasionReason", () => {
   test("blocks `command` exec forms", () => {
-    expect(evasionReason("command ls -la")).toBe(EVASION_REASON);
-    expect(evasionReason("command grep foo")).toBe(EVASION_REASON);
-    expect(evasionReason("command cat x")).toBe(EVASION_REASON);
+    expect(evasionReason("command ls -la")).toContain(EVASION_REASON);
+    expect(evasionReason("command grep foo")).toContain(EVASION_REASON);
+    expect(evasionReason("command cat x")).toContain(EVASION_REASON);
   });
 
   test("blocks `builtin` forms", () => {
-    expect(evasionReason("builtin ls")).toBe(EVASION_REASON);
-    expect(evasionReason("builtin wc -l x")).toBe(EVASION_REASON);
+    expect(evasionReason("builtin ls")).toContain(EVASION_REASON);
+    expect(evasionReason("builtin wc -l x")).toContain(EVASION_REASON);
   });
 
   test("blocks `bash -c` wrappers over intercepted binaries", () => {
-    expect(evasionReason('bash -c "ls -la"')).toBe(EVASION_REASON);
-    expect(evasionReason("sh -c 'grep foo'")).toBe(EVASION_REASON);
-    expect(evasionReason('zsh -c "find . -name x"')).toBe(EVASION_REASON);
+    expect(evasionReason('bash -c "ls -la"')).toContain(EVASION_REASON);
+    expect(evasionReason("sh -c 'grep foo'")).toContain(EVASION_REASON);
+    expect(evasionReason('zsh -c "find . -name x"')).toContain(EVASION_REASON);
     expect(evasionReason("bash -c 'sudo rm -rf /tmp/x'")).toBeUndefined(); // rm not intercepted
   });
 
   test("blocks full-path invocations", () => {
-    expect(evasionReason("/usr/bin/ls -la")).toBe(EVASION_REASON);
-    expect(evasionReason("/bin/cat /etc/hosts")).toBe(EVASION_REASON);
-    expect(evasionReason("/usr/bin/find . -name x")).toBe(EVASION_REASON);
-    expect(evasionReason("/usr/local/bin/grep foo")).toBe(EVASION_REASON);
+    expect(evasionReason("/usr/bin/ls -la")).toContain(EVASION_REASON);
+    expect(evasionReason("/bin/cat /etc/hosts")).toContain(EVASION_REASON);
+    expect(evasionReason("/usr/bin/find . -name x")).toContain(EVASION_REASON);
+    expect(evasionReason("/usr/local/bin/grep foo")).toContain(EVASION_REASON);
   });
 
   test("allows discovery and legit forms", () => {
     expect(evasionReason("command -v git")).toBeUndefined();
     expect(evasionReason("which curl")).toBeUndefined();
     expect(evasionReason("git status")).toBeUndefined();
-    expect(evasionReason("python3 -c 'print(1)'")).toBe(INTERPRETER_INLINE_REASON);
+    expect(evasionReason("python3 -c 'print(1)'")).toContain(INTERPRETER_INLINE_REASON);
     expect(evasionReason("bun run test")).toBeUndefined();
     expect(evasionReason("curl -s https://example.com")).toBeUndefined();
     expect(evasionReason("")).toBeUndefined();
@@ -174,60 +175,71 @@ describe("evasionReason", () => {
   });
 
   test("blocks `git push` on all four evasion forms", () => {
-    expect(evasionReason("command git push origin main")).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason("builtin git push origin main")).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason('bash -c "git push origin main"')).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason("sh -c 'git push --force origin main'")).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason("/usr/bin/git push origin main")).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason("/bin/git push origin main")).toBe(GIT_MUTATING_REASON);
+    expect(evasionReason("command git push origin main")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason("builtin git push origin main")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason('bash -c "git push origin main"')).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason("sh -c 'git push --force origin main'")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason("/usr/bin/git push origin main")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason("/bin/git push origin main")).toContain(GIT_MUTATING_REASON);
   });
 
   test("blocks `git stash` pop/apply/drop but allows pathspec-scoped push", () => {
-    expect(evasionReason("command git stash")).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason("builtin git stash pop")).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason('bash -c "git stash apply"')).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason("/usr/bin/git stash drop")).toBe(GIT_MUTATING_REASON);
+    expect(evasionReason("command git stash")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason("builtin git stash pop")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason('bash -c "git stash apply"')).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason("/usr/bin/git stash drop")).toContain(GIT_MUTATING_REASON);
     // Pathspec-scoped `git stash push -- <files>` is allowed — won't sweep
     // other agents' in-flight work. Same safe shape as agent/config.yml.
     expect(evasionReason('bash -c "git stash push -- foo.txt"')).toBeUndefined();
     expect(evasionReason("command git stash push --include-untracked -- foo.txt")).toBeUndefined();
+    // Read-only stash inspection is allowed on every reach (config mirrors).
+    expect(evasionReason("cd /a && git stash list")).toBeUndefined();
+    expect(evasionReason('bash -c "git stash list"')).toBeUndefined();
+    expect(evasionReason("git -C /a stash show")).toBeUndefined();
+    expect(evasionReason("command git stash list")).toBeUndefined();
+    // pop/apply/drop still blocked on disguise reaches.
+    expect(evasionReason("cd /a && git stash pop")).toContain(GIT_MUTATING_REASON);
   });
 
   test("blocks chained inner commands on mutating subcommands (existing wrap)", () => {
-    expect(evasionReason('bash -c "cd /tmp && git push origin main"')).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason('sh -c "set -e; git reset --hard HEAD~1"')).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason('bash -c "git log && git stash apply"')).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason('bash -c "echo cleaning && git clean -fd"')).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason('bash -c "git branch -D feat/x"')).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason('bash -c "git commit --amend --no-edit"')).toBe(GIT_MUTATING_REASON);
+    expect(evasionReason('bash -c "cd /tmp && git push origin main"')).toContain(
+      GIT_MUTATING_REASON,
+    );
+    expect(evasionReason('sh -c "set -e; git reset --hard HEAD~1"')).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason('bash -c "git log && git stash apply"')).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason('bash -c "echo cleaning && git clean -fd"')).toContain(
+      GIT_MUTATING_REASON,
+    );
+    expect(evasionReason('bash -c "git branch -D feat/x"')).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason('bash -c "git commit --amend --no-edit"')).toContain(GIT_MUTATING_REASON);
   });
 
   // === NEW: unwrapped chained prefix bypass ===========================
   test("blocks unwrapped `cd <repo> && <mutating>` chained prefixes", () => {
-    expect(evasionReason("cd /tmp && git push origin main")).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason("cd /tmp; git push origin main")).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason("cd /tmp || git push origin main")).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason("cd /tmp | git push origin main")).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason("set -e; git reset --hard HEAD~1")).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason("cd /a; cd /b; git clean -fd")).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason("cd /a && cd /b && git branch -D feat/x")).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason("cd /a && git stash")).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason("cd /a && git stash apply")).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason("cd /a && git commit --amend --no-edit")).toBe(GIT_MUTATING_REASON);
+    expect(evasionReason("cd /tmp && git push origin main")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason("cd /tmp; git push origin main")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason("cd /tmp || git push origin main")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason("cd /tmp | git push origin main")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason("set -e; git reset --hard HEAD~1")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason("cd /a; cd /b; git clean -fd")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason("cd /a && cd /b && git branch -D feat/x")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason("cd /a && git stash")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason("cd /a && git stash apply")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason("cd /a && git commit --amend --no-edit")).toContain(GIT_MUTATING_REASON);
   });
   // === NEW: single-ampersand (background) bypass ===================
   // `cd /a & git push` runs `cd /a` in the background and runs `git push`
   // immediately — semantically equivalent to `cd /a; git push` for
   // harness-interception purposes (the second segment executes).
   test("blocks single-`&` (background) chained prefix on mutating subcommands", () => {
-    expect(evasionReason("cd /tmp & git push origin main")).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason("cd /tmp & git stash")).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason("cd /tmp&git push")).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason("cd /tmp & git reset --hard HEAD~1")).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason("cd /tmp & git clean -fd")).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason("cd /tmp & git branch -D feat/x")).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason("cd /tmp & git commit --amend")).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason("cd /tmp & cat /etc/passwd")).toBe(EVASION_REASON);
+    expect(evasionReason("cd /tmp & git push origin main")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason("cd /tmp & git stash")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason("cd /tmp&git push")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason("cd /tmp & git reset --hard HEAD~1")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason("cd /tmp & git clean -fd")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason("cd /tmp & git branch -D feat/x")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason("cd /tmp & git commit --amend")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason("cd /tmp & cat /etc/passwd")).toContain(CHAIN_REASON);
   });
   // === NEW: backslash-escape stays in same segment ================
   // Regression: backslash-escaped shell metacharacters must NOT be
@@ -239,36 +251,40 @@ describe("evasionReason", () => {
     expect(splitCommandSegments("echo \\&git push")).toEqual(["echo \\&git push"]);
   });
   test("blocks `cd <repo> && <interception-binary>` non-git evasions", () => {
-    expect(evasionReason("cd /tmp && cat /etc/passwd")).toBe(EVASION_REASON);
-    expect(evasionReason("cd /tmp && ls -la")).toBe(EVASION_REASON);
-    expect(evasionReason("cd /tmp && grep foo x")).toBe(EVASION_REASON);
-    expect(evasionReason("cd /tmp; find . -name x")).toBe(EVASION_REASON);
+    expect(evasionReason("cd /tmp && cat /etc/passwd")).toContain(CHAIN_REASON);
+    expect(evasionReason("cd /tmp && ls -la")).toContain(CHAIN_REASON);
+    expect(evasionReason("cd /tmp && grep foo x")).toContain(CHAIN_REASON);
+    expect(evasionReason("cd /tmp; find . -name x")).toContain(CHAIN_REASON);
   });
 
   // === NEW: git -C / -c global-option prefix bypass ===================
   test("blocks `git -C /repo` global-option prefix on mutating subcommands", () => {
-    expect(evasionReason("git -C /repo push origin main")).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason("git -C /tmp stash")).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason("git -C /tmp reset --hard HEAD~1")).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason("git -C /tmp clean -fd")).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason("git -C /tmp branch -D feat/x")).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason("git -C /tmp commit --amend")).toBe(GIT_MUTATING_REASON);
+    expect(evasionReason("git -C /repo push origin main")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason("git -C /tmp stash")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason("git -C /tmp reset --hard HEAD~1")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason("git -C /tmp clean -fd")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason("git -C /tmp branch -D feat/x")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason("git -C /tmp commit --amend")).toContain(GIT_MUTATING_REASON);
   });
 
   test("blocks `git -c key=val` global-option prefix on mutating subcommands", () => {
-    expect(evasionReason("git -c safe.directory='*' push origin main")).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason("git -c protocol.version=2 push")).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason("git -c http.sslVerify=false push")).toBe(GIT_MUTATING_REASON);
+    expect(evasionReason("git -c safe.directory='*' push origin main")).toContain(
+      GIT_MUTATING_REASON,
+    );
+    expect(evasionReason("git -c protocol.version=2 push")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason("git -c http.sslVerify=false push")).toContain(GIT_MUTATING_REASON);
   });
 
   test("blocks `--git-dir=` and `--work-tree=` global-option prefixes", () => {
-    expect(evasionReason("git --git-dir=/x/.git push origin main")).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason("git --work-tree=/x push")).toBe(GIT_MUTATING_REASON);
+    expect(evasionReason("git --git-dir=/x/.git push origin main")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason("git --work-tree=/x push")).toContain(GIT_MUTATING_REASON);
   });
 
   test("combined bypass: chained-prefix + git -C", () => {
-    expect(evasionReason("cd /tmp && git -C /repo push origin main")).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason("set -e; git -c safe.directory='*' stash apply")).toBe(
+    expect(evasionReason("cd /tmp && git -C /repo push origin main")).toContain(
+      GIT_MUTATING_REASON,
+    );
+    expect(evasionReason("set -e; git -c safe.directory='*' stash apply")).toContain(
       GIT_MUTATING_REASON,
     );
   });
@@ -309,7 +325,7 @@ describe("evasionReason", () => {
   test("gitMutatingReason is preferred over EVASION_REASON for git-shaped evasions", () => {
     // `command ls` should still return EVASION_REASON (the original 17-binary
     // INTERCEPTED behavior is unchanged). Sanity check the wiring order.
-    expect(evasionReason("command ls -la")).toBe(EVASION_REASON);
+    expect(evasionReason("command ls -la")).toContain(EVASION_REASON);
   });
 
   // === NEW: shell-string flag wrapper (`-c "<inner>"`) ================
@@ -325,30 +341,34 @@ describe("evasionReason", () => {
     // bashInterceptor's `^\s*tail` anchor; recursion flags it.
     const inner =
       "cd /home/flak/git-ai/loop-lore/tree/feat-middleware-request-lifecycle && timeout 240 bun run scripts/worktree/finalize feat-middleware-request-lifecycle 2>&1 | tail -60";
-    expect(evasionReason(`lean-ctx -c "${inner}"`)).toBe(EVASION_REASON);
+    // The inner payload is evaluated recursively; the piped `tail -60` is
+    // reported as a chain-segment reach (behind `|`) with a tool fix, but the
+    // outer wrapper is still blocked — bashInterceptor never sees the inner.
+    expect(evasionReason(`lean-ctx -c "${inner}"`)).toContain(CHAIN_REASON);
+    expect(evasionReason(`lean-ctx -c "${inner}"`)).toContain("matched: `tail`");
   });
 
   test('blocks bare-intercepted-binary in inner payload (rtk -c "tail -60 ...")', () => {
     // Bare-tail is NOT an evasion by itself (bashInterceptor's job, not the
     // guard's), but inside a shell-string wrapper it IS — the wrapper
     // replaces bash, so bashInterceptor never sees the tail at all.
-    expect(evasionReason('rtk -c "tail -60 foo.log"')).toBe(EVASION_REASON);
-    expect(evasionReason('rtk -c "ls /tmp"')).toBe(EVASION_REASON);
-    expect(evasionReason('rtk -c "cat /etc/passwd"')).toBe(EVASION_REASON);
+    expect(evasionReason('rtk -c "tail -60 foo.log"')).toContain(EVASION_REASON);
+    expect(evasionReason('rtk -c "ls /tmp"')).toContain(EVASION_REASON);
+    expect(evasionReason('rtk -c "cat /etc/passwd"')).toContain(EVASION_REASON);
   });
 
   test('blocks git-mutating in inner payload (xd -c "git push ...")', () => {
     // Bare `git push` is bashInterceptor's job. Inside a wrapper, the inner
     // string is what gets executed and bashInterceptor never sees it.
-    expect(evasionReason('xd -c "git push origin main"')).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason('lean-ctx -c "git push origin main"')).toBe(GIT_MUTATING_REASON);
-    expect(evasionReason('rtk -c "git stash"')).toBe(GIT_MUTATING_REASON);
+    expect(evasionReason('xd -c "git push origin main"')).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason('lean-ctx -c "git push origin main"')).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason('rtk -c "git stash"')).toContain(GIT_MUTATING_REASON);
   });
 
   test("blocks --command and -e flag variants", () => {
-    expect(evasionReason('bash --command "cat /etc/passwd"')).toBe(EVASION_REASON);
-    expect(evasionReason('bash --command="cat /etc/passwd"')).toBe(EVASION_REASON);
-    expect(evasionReason('bash -e "cat /etc/passwd"')).toBe(EVASION_REASON);
+    expect(evasionReason('bash --command "cat /etc/passwd"')).toContain(EVASION_REASON);
+    expect(evasionReason('bash --command="cat /etc/passwd"')).toContain(EVASION_REASON);
+    expect(evasionReason('bash -e "cat /etc/passwd"')).toContain(EVASION_REASON);
   });
 
   test("blocks chained-prefix + wrapper-prefix combinations", () => {
@@ -356,16 +376,16 @@ describe("evasionReason", () => {
     // from bashInterceptor's `^\s*<bin>` anchor. After stripChainPrefix +
     // stripWrapperPrefix, the deChained segment starts with an INTERCEPTED
     // binary and the guard fires.
-    expect(evasionReason("cd /repo && env cat /etc/passwd")).toBe(EVASION_REASON);
-    expect(evasionReason("cd /repo && sudo cat /etc/passwd")).toBe(EVASION_REASON);
-    expect(evasionReason("cd /repo && nohup cat /etc/passwd")).toBe(EVASION_REASON);
-    expect(evasionReason("cd /repo && env ls /etc")).toBe(EVASION_REASON);
-    expect(evasionReason("cd /repo && sudo -u root cat /etc/passwd")).toBe(EVASION_REASON);
-    expect(evasionReason("cd /repo && env VAR=val grep x")).toBe(EVASION_REASON);
+    expect(evasionReason("cd /repo && env cat /etc/passwd")).toContain(CHAIN_REASON);
+    expect(evasionReason("cd /repo && sudo cat /etc/passwd")).toContain(CHAIN_REASON);
+    expect(evasionReason("cd /repo && nohup cat /etc/passwd")).toContain(CHAIN_REASON);
+    expect(evasionReason("cd /repo && env ls /etc")).toContain(CHAIN_REASON);
+    expect(evasionReason("cd /repo && sudo -u root cat /etc/passwd")).toContain(CHAIN_REASON);
+    expect(evasionReason("cd /repo && env VAR=val grep x")).toContain(CHAIN_REASON);
     // Multi-segment chains.
-    expect(evasionReason("cd /a && cd /b && env cat /etc/passwd")).toBe(EVASION_REASON);
-    expect(evasionReason("cd /a; env grep x")).toBe(EVASION_REASON);
-    expect(evasionReason("cd /a || env head file")).toBe(EVASION_REASON);
+    expect(evasionReason("cd /a && cd /b && env cat /etc/passwd")).toContain(CHAIN_REASON);
+    expect(evasionReason("cd /a; env grep x")).toContain(CHAIN_REASON);
+    expect(evasionReason("cd /a || env head file")).toContain(CHAIN_REASON);
   });
 
   test("allows wrapper-prefix chains that don't reach an INTERCEPTED binary", () => {
@@ -388,9 +408,13 @@ describe("evasionReason", () => {
     // (`node -e "require('cat')"`). But the invocation itself is inline
     // interpreter code, gated by the eval policy since eval.py/eval.js are
     // disabled (INTERPRETER_INLINE_REASON supersedes the old allow).
-    expect(evasionReason('node -e "con' + 'sole.log(\\"cat\\")"')).toBe(INTERPRETER_INLINE_REASON);
-    expect(evasionReason(String.raw`python -c "print('cat')"`)).toBe(INTERPRETER_INLINE_REASON);
-    expect(evasionReason(String.raw`ruby -e "puts 'cat'"`)).toBe(INTERPRETER_INLINE_REASON);
+    expect(evasionReason('node -e "con' + 'sole.log(\\"cat\\")"')).toContain(
+      INTERPRETER_INLINE_REASON,
+    );
+    expect(evasionReason(String.raw`python -c "print('cat')"`)).toContain(
+      INTERPRETER_INLINE_REASON,
+    );
+    expect(evasionReason(String.raw`ruby -e "puts 'cat'"`)).toContain(INTERPRETER_INLINE_REASON);
   });
 
   test("does NOT confuse `git -c protocol.version=2 ...` with `-c` wrapper", () => {
@@ -399,7 +423,9 @@ describe("evasionReason", () => {
     // before the flag — `git -c protocol.version=2 push` has `git` (not in
     // SHELL_PASSTHROUGH) followed by `-c`, but the inner payload
     // `protocol.version=2` is not in quotes, so group 3/4/5 don't fire.
-    expect(evasionReason("git -c protocol.version=2 push origin main")).toBe(GIT_MUTATING_REASON);
+    expect(evasionReason("git -c protocol.version=2 push origin main")).toContain(
+      GIT_MUTATING_REASON,
+    );
   });
 });
 
@@ -407,21 +433,21 @@ describe("bashWriteReason", () => {
   const OUTSIDE = join(tmpdir(), "esc.txt");
 
   test("blocks redirection targets outside the project root", () => {
-    expect(bashWriteReason(`echo hi > ${OUTSIDE}`)).toBe(WRITE_TARGET_REASON);
-    expect(bashWriteReason(`echo hi >> ${OUTSIDE}`)).toBe(WRITE_TARGET_REASON);
-    expect(bashWriteReason(`echo hi 2> ${OUTSIDE}`)).toBe(WRITE_TARGET_REASON);
-    expect(bashWriteReason(`echo hi &> ${OUTSIDE}`)).toBe(WRITE_TARGET_REASON);
-    expect(bashWriteReason("echo hi > ~/esc.txt")).toBe(WRITE_TARGET_REASON);
-    expect(bashWriteReason(`cd /tmp && echo x > ${OUTSIDE}`)).toBe(WRITE_TARGET_REASON);
+    expect(bashWriteReason(`echo hi > ${OUTSIDE}`)).toContain(WRITE_TARGET_REASON);
+    expect(bashWriteReason(`echo hi >> ${OUTSIDE}`)).toContain(WRITE_TARGET_REASON);
+    expect(bashWriteReason(`echo hi 2> ${OUTSIDE}`)).toContain(WRITE_TARGET_REASON);
+    expect(bashWriteReason(`echo hi &> ${OUTSIDE}`)).toContain(WRITE_TARGET_REASON);
+    expect(bashWriteReason("echo hi > ~/esc.txt")).toContain(WRITE_TARGET_REASON);
+    expect(bashWriteReason(`cd /tmp && echo x > ${OUTSIDE}`)).toContain(WRITE_TARGET_REASON);
   });
 
   test("blocks tee file arguments outside the project root", () => {
-    expect(bashWriteReason(`sort f | tee ${OUTSIDE}`)).toBe(WRITE_TARGET_REASON);
-    expect(bashWriteReason(`sort f | tee -a ${OUTSIDE}`)).toBe(WRITE_TARGET_REASON);
-    expect(bashWriteReason("sudo tee /etc/hostname")).toBe(WRITE_TARGET_REASON);
+    expect(bashWriteReason(`sort f | tee ${OUTSIDE}`)).toContain(WRITE_TARGET_REASON);
+    expect(bashWriteReason(`sort f | tee -a ${OUTSIDE}`)).toContain(WRITE_TARGET_REASON);
+    expect(bashWriteReason("sudo tee /etc/hostname")).toContain(WRITE_TARGET_REASON);
     // wrapper payloads are caught by evasionReason's inner-payload recursion,
     // not by the per-segment bashWriteReason scan
-    expect(evasionReason(`lean-ctx -c "echo x > ${OUTSIDE}"`)).toBe(WRITE_TARGET_REASON);
+    expect(evasionReason(`lean-ctx -c "echo x > ${OUTSIDE}"`)).toContain(WRITE_TARGET_REASON);
   });
 
   test("allows in-root, /dev-sink, and fd-dup targets", () => {
@@ -438,51 +464,59 @@ describe("bashWriteReason", () => {
 
   test("ignores quoted redirection characters", () => {
     expect(bashWriteReason('echo "a > b" > in-root.txt')).toBeUndefined();
-    expect(bashWriteReason(`echo "a > b" > ${OUTSIDE}`)).toBe(WRITE_TARGET_REASON);
+    expect(bashWriteReason(`echo "a > b" > ${OUTSIDE}`)).toContain(WRITE_TARGET_REASON);
   });
 
   test("does not regress existing evasion verdicts", () => {
     expect(evasionReason("bun test > /dev/null")).toBeUndefined();
-    expect(evasionReason(`lean-ctx -c "echo x > ${OUTSIDE}"`)).toBe(WRITE_TARGET_REASON);
+    expect(evasionReason(`lean-ctx -c "echo x > ${OUTSIDE}"`)).toContain(WRITE_TARGET_REASON);
   });
 });
 
 describe("interpreterInlineReason", () => {
   test("blocks flag-based inline code across interpreters", () => {
-    expect(interpreterInlineReason(`python -c "print(1)"`)).toBe(INTERPRETER_INLINE_REASON);
-    expect(interpreterInlineReason(`python3 -c "print(1)"`)).toBe(INTERPRETER_INLINE_REASON);
-    expect(interpreterInlineReason(`env python -c "x"`)).toBe(INTERPRETER_INLINE_REASON);
-    expect(interpreterInlineReason(`sudo python3 -c "x"`)).toBe(INTERPRETER_INLINE_REASON);
-    expect(interpreterInlineReason(`timeout 10 python -c "x"`)).toBe(INTERPRETER_INLINE_REASON);
-    expect(interpreterInlineReason(`node -e "require('x')"`)).toBe(INTERPRETER_INLINE_REASON);
-    expect(interpreterInlineReason(`node --eval "x"`)).toBe(INTERPRETER_INLINE_REASON);
-    expect(interpreterInlineReason(`node -p "1+1"`)).toBe(INTERPRETER_INLINE_REASON);
-    expect(interpreterInlineReason(`bun -e "x"`)).toBe(INTERPRETER_INLINE_REASON);
-    expect(interpreterInlineReason(`bun --print "process.version"`)).toBe(
+    expect(interpreterInlineReason(`python -c "print(1)"`)).toContain(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason(`python3 -c "print(1)"`)).toContain(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason(`env python -c "x"`)).toContain(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason(`sudo python3 -c "x"`)).toContain(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason(`timeout 10 python -c "x"`)).toContain(
       INTERPRETER_INLINE_REASON,
     );
-    expect(interpreterInlineReason(`tsx -e "x"`)).toBe(INTERPRETER_INLINE_REASON);
-    expect(interpreterInlineReason(`deno eval "console.log(1)"`)).toBe(INTERPRETER_INLINE_REASON);
-    expect(interpreterInlineReason(`perl -e 'print 1;'`)).toBe(INTERPRETER_INLINE_REASON);
-    expect(interpreterInlineReason(`perl -pe 's/a/b/' f.txt`)).toBe(INTERPRETER_INLINE_REASON);
-    expect(interpreterInlineReason(`perl -ne 'print;' f.txt`)).toBe(INTERPRETER_INLINE_REASON);
-    expect(interpreterInlineReason(`ruby -e 'puts 1'`)).toBe(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason(`node -e "require('x')"`)).toContain(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason(`node --eval "x"`)).toContain(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason(`node -p "1+1"`)).toContain(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason(`bun -e "x"`)).toContain(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason(`bun --print "process.version"`)).toContain(
+      INTERPRETER_INLINE_REASON,
+    );
+    expect(interpreterInlineReason(`tsx -e "x"`)).toContain(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason(`deno eval "console.log(1)"`)).toContain(
+      INTERPRETER_INLINE_REASON,
+    );
+    expect(interpreterInlineReason(`perl -e 'print 1;'`)).toContain(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason(`perl -pe 's/a/b/' f.txt`)).toContain(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason(`perl -ne 'print;' f.txt`)).toContain(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason(`ruby -e 'puts 1'`)).toContain(INTERPRETER_INLINE_REASON);
     // python value flags (-W/-X) do not hide a following -c
-    expect(interpreterInlineReason(`python -X utf8 -c "x"`)).toBe(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason(`python -X utf8 -c "x"`)).toContain(INTERPRETER_INLINE_REASON);
   });
 
   test("blocks stdin and heredoc program shapes", () => {
-    expect(interpreterInlineReason("python - <<EOF")).toBe(INTERPRETER_INLINE_REASON);
-    expect(interpreterInlineReason("python - <<'EOF'")).toBe(INTERPRETER_INLINE_REASON);
-    expect(interpreterInlineReason("python <<EOF")).toBe(INTERPRETER_INLINE_REASON);
-    expect(interpreterInlineReason("node - <<'EOF'")).toBe(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason("python - <<EOF")).toContain(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason("python - <<'EOF'")).toContain(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason("python <<EOF")).toContain(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason("node - <<'EOF'")).toContain(INTERPRETER_INLINE_REASON);
     // piped bare interpreter = stdin program
-    expect(interpreterInlineReason("echo 'print(1)' | python")).toBe(INTERPRETER_INLINE_REASON);
-    expect(interpreterInlineReason("echo x | python3")).toBe(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason("echo 'print(1)' | python")).toContain(
+      INTERPRETER_INLINE_REASON,
+    );
+    expect(interpreterInlineReason("echo x | python3")).toContain(INTERPRETER_INLINE_REASON);
     // chained prefixes cannot hide it
-    expect(interpreterInlineReason(`cd /tmp && python -c "x"`)).toBe(INTERPRETER_INLINE_REASON);
+    expect(interpreterInlineReason(`cd /tmp && python -c "x"`)).toContain(
+      INTERPRETER_INLINE_REASON,
+    );
     // bash -c inner payload recursion
-    expect(evasionReason(`bash -c "python -c 'print(1)'"`)).toBe(INTERPRETER_INLINE_REASON);
+    expect(evasionReason(`bash -c "python -c 'print(1)'"`)).toContain(INTERPRETER_INLINE_REASON);
   });
 
   test("allows file-based runs and non-interpreter flag users", () => {
@@ -506,5 +540,53 @@ describe("interpreterInlineReason", () => {
     // a mention inside an echo argument is not an invocation
     expect(interpreterInlineReason(`echo "python -c x"`)).toBeUndefined();
     expect(evasionReason("python .tmp/x.py")).toBeUndefined();
+  });
+});
+
+// Evidence contract: every block reason must answer WHAT matched, WHERE, and
+// HOW to replace the command — otherwise the model cannot self-correct.
+describe("block reason evidence contract", () => {
+  test("chain-reach reasons name the binary, segment, and tool fix", () => {
+    const reason = evasionReason("cd /repo && tail -30 build.log");
+    expect(reason).toContain(CHAIN_REASON);
+    expect(reason).toContain("matched: `tail`");
+    expect(reason).toContain("tail -30 build.log");
+    expect(reason).toContain("fix: `read` tool");
+    expect(reason).toContain(":-N");
+  });
+
+  test("wrapper reasons name the wrapper form and dedicated tool", () => {
+    const reason = evasionReason("command grep foo bar.md");
+    expect(reason).toContain(EVASION_REASON);
+    expect(reason).toContain("matched: `grep`");
+    expect(reason).toContain("drop the `command` prefix");
+    expect(reason).toContain("`grep` tool");
+  });
+
+  test("git-mutating reasons name the subcommand and per-sub fix", () => {
+    const push = evasionReason("cd /repo && git push origin main");
+    expect(push).toContain("matched: `git push`");
+    expect(push).toContain("(ask)");
+    const stash = evasionReason("git -C /repo stash");
+    expect(stash).toContain("matched: `git stash`");
+    expect(stash).toContain("git stash push -- <pathspec-you-own>");
+  });
+
+  test("write-target reasons echo the offending path", () => {
+    const reason = bashWriteReason("echo x > /etc/hostname");
+    expect(reason).toContain("/etc/hostname");
+    expect(reason).toContain(".tmp/");
+  });
+
+  test("interpreter-inline reasons echo the segment and .tmp fix", () => {
+    const reason = interpreterInlineReason(`cd /tmp && python -c "x"`);
+    expect(reason).toContain("python -c");
+    expect(reason).toContain(".tmp/x.py");
+  });
+
+  test("evidence spans are bounded", () => {
+    const long = "x".repeat(300);
+    const reason = evasionReason(`cd /repo && cat ${long}.txt`);
+    expect(reason?.length ?? 0).toBeLessThan(700);
   });
 });

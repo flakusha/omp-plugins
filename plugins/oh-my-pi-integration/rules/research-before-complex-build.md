@@ -5,20 +5,16 @@ condition: ["^(?=[\\s\\S]*complex (functionality|feature|logic|module|system))(?
 scope: ["text", "thinking"]
 ---
 
-For complex functionality, run parallel research BEFORE building. Complex behavior is almost never novel — a proven implementation, mature library, or usable dependency almost always exists. Inventing it from scratch is slower, buggier, and unmaintained-by-you from day one. discover-before-create covers in-repo reuse; this rule covers out-of-repo research.
+For complex functionality, run parallel research BEFORE building: it is almost never novel — a proven implementation, library, or usable dependency usually exists; inventing is slower, buggier, unmaintained-by-you. (discover-before-create covers in-repo reuse.)
 
-RESEARCH IN PARALLEL (this is exactly what the harness's parallel research tools are for):
-- LIBRARY RESEARCH: librarian agents and library-docs MCP (context7, bun docs, deepwiki) for mature, maintained, widely-used libraries that already implement the behavior.
-- EXISTING IMPLEMENTATIONS: open-source precedents (source-level: how did a reliable project solve this?) via deepwiki / repo research — learn from the proven shape, don't guess the shape.
-- DEPENDENCIES: check what is already in the repo's dependency tree or vendorable — a dependency you already ship is cheaper and safer than a new one.
-- RUN THEM CONCURRENTLY: independent research questions go to parallel subagents/tools in one batch, not one-at-a-time (see the harness's delegation rules).
+RESEARCH IN PARALLEL — concurrent subagents/tools in one batch:
+- LIBRARIES: librarian + library-docs MCP (context7, deepwiki).
+- EXISTING IMPLEMENTATIONS: open-source precedents via deepwiki/repo research — learn the proven shape, don't guess.
+- DEPENDENCIES: what the repo already ships beats a new dep.
 
-PREFER PROVEN BUILDING BLOCKS:
-- Mature, maintained, standard/community-blessed > experimental > self-written. Prefer the library the ecosystem standardizes on (the repo's own ecosystem and conventions — see repo-tooling-scoped-usage).
-- A small, well-understood library beats a large one you barely control; but a large one that solves the hard 90% beats a small one you must extend into the hard 10%.
-- DECISION CRITERIA: maintenance (activity, issues), maturity (stability, API stability), size/weight, license, ecosystem fit, and whether it already exists in the repo. Record the comparison; pick deliberately, not by familiarity.
+PREFER PROVEN: maintained, ecosystem-standard > experimental > self-written (see repo-tooling-scoped-usage). Small well-understood beats large barely-controlled, but a dep solving the hard 90% beats one extended into the hard 10%. Decide by maintenance, maturity, size, license, ecosystem fit, already-in-repo; record the comparison.
 
 DON'T OVER-APPLY:
-- Research is for complex, non-trivial behavior. For simple functionality, reach for the stdlib or the obvious approach — do not gold-plate with a dependency hunt.
-- Adding a dependency is a real decision: prefer no new dependency when the stdlib or an existing dep suffices; prefer the safest existing option otherwise. Flag when a new dependency is the only path.
-- If no reliable implementation exists, state that finding explicitly (it is a legitimate research outcome) before building, rather than silently writing from scratch.
+- Research targets complex behavior; simple functionality uses the stdlib — no gold-plating.
+- Prefer no new dep when stdlib/an existing dep suffices; flag when a new dep is the only path.
+- No reliable implementation exists → say so before building; a legitimate outcome.

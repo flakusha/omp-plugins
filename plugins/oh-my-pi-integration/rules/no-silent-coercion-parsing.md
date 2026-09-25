@@ -5,19 +5,16 @@ condition: ["^(?=[\\s\\S]*parseInt|parseFloat|Number\\(|String\\()(?=[\\s\\S]*lo
 scope: ["text", "thinking"]
 ---
 
-Guard against silent coercion and parsing traps. Conversions and parses that succeed with a wrong value are worse than ones that throw — the error is invisible until far downstream. Validate before parsing; make conversions explicit; let errors surface.
-
-KNOWN TRAPS (validate-or-explicit before they bite):
-- parseInt WITHOUT RADIX: `parseInt("08")`, `parseInt("0x1F")` — base auto-detection changes results; always pass the radix: `parseInt(s, 10)`. `parseFloat` accepts trailing garbage (`"12abc"` → 12).
-- LOOSE `==` COERCION: `==` between different types coerces (`0 == ""`, `null == undefined`); prefer strict `===` everywhere unless a deliberate coercion is documented.
-- IMPLICIT NUMBER/STRING COERCION: `+x` for numbers, `'' + n`, `[1,2] + ''` — each is a hidden conversion; be explicit (`Number(x)`, template literals — see template-literals-over-concat).
-- DATE PARSING ROLLOVER: `new Date("2024-02-30")` silently rolls over instead of failing; parse with an explicit format/validation, never trust string→Date auto-detection.
-- DEFAULT `.sort()`: sorts lexicographically — `[10, 9].sort()` → `[10, 9]`. Numeric data needs an explicit comparator; always pass one unless the default is truly intended.
-- FLOAT PRECISION: `0.1 + 0.2 !== 0.3`; money and exact comparisons need Decimal/integer-amount representation or epsilon comparisons — never exact float equality.
-- NaN PROPAGATION: `NaN` flows silently through arithmetic and comparisons (`NaN !== NaN`); check with `Number.isNaN` and fail fast at the boundary.
-- `.reduce()` WITHOUT INITIAL VALUE: throws on an empty array; provide an initial value or handle the empty case explicitly.
-- toFixed/rounding: `toFixed` uses float representation (rounding surprises on halves); explicit rounding policy for money (see float precision above).
-
-THE PATTERN: parse with validation (explicit radix/format/locale), check success explicitly (`Number.isNaN`, format-validated dates, comparator correctness), and treat "silently wrong" as a bug — wrap ambiguous conversions so they error or assert instead of coercing. Tests verify the boundary cases (see named-tested-regexes: edge cases are the test's job).
-
-DON'T OVER-APPLY: do not add validation ceremony to trusted, internal, statically-typed paths (the type system already guards them — see strict-types-and-reuse); the traps bite at input boundaries: user input, config, network payloads, and cross-language data.
+A parse that succeeds wrong is worse than one that throws — errors surface far downstream. Validate first; be explicit; surface errors.
+TRAPS (validate-or-explicit first):
+- parseInt: always pass radix — `parseInt(s, 10)`; `parseFloat` accepts trailing garbage.
+- LOOSE `==`: coerces — `===` unless deliberate/documented.
+- IMPLICIT COERCION: `+x`, `'' + n` — explicit `Number(x)` (see template-literals-over-concat).
+- DATE ROLLOVER: `new Date("2024-02-30")` rolls over silently — explicit format/validation.
+- DEFAULT `.sort()`: lexicographic (`[10, 9]` stays) — pass a comparator.
+- FLOAT PRECISION: `0.1 + 0.2 !== 0.3` — Decimal/integer amounts or epsilon.
+- NaN: flows silently — `Number.isNaN`, fail fast.
+- `.reduce()` NO INITIAL VALUE: throws on empty — pass one.
+- toFixed: float rounding surprises — explicit policy for money.
+PATTERN: explicit radix/format/locale; explicit success checks (`Number.isNaN`, validated dates, comparators); "silently wrong" = bug — wrap ambiguous conversions to error/assert. Tests verify boundaries (see named-tested-regexes).
+DON'T OVER-APPLY: no ceremony on trusted statically-typed paths (see strict-types-and-reuse); traps bite at input boundaries — user input, config, network payloads, cross-language data.

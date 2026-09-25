@@ -55,17 +55,25 @@ function isOutsideRoot(path: string): boolean {
 }
 
 export const GLOB_REASON =
-  "Use `mcp__lean_ctx_ctx_glob` instead of `glob` — respects .gitignore and matches faster.";
+  "Use `mcp__lean_ctx_ctx_glob` instead of `glob` — respects .gitignore and matches faster.\n" +
+  'fix: call `mcp__lean_ctx_ctx_glob` with {"pattern": "<glob>", "paths": ["<dir>"]}; ' +
+  "if that tool is not mounted, `write` the same JSON to `xd://mcp__lean_ctx_ctx_glob`.";
 export const EDIT_REASON =
   "Use `mcp__lean_ctx_ctx_patch` instead of `edit` — anchored, hash-validated patches " +
   '(run `ctx_read` with mode="anchored" first). `ctx_patch` ops: set_line, replace_lines, ' +
-  "insert_after, delete, replace_unique, replace_symbol, replace_all, create.";
+  "insert_after, delete, replace_unique, replace_symbol, replace_all, create.\n" +
+  'fix: one `mcp__lean_ctx_ctx_read` {"path": "<file>", "mode": "anchored"}, then one ' +
+  '`mcp__lean_ctx_ctx_patch` {"path": "<file>", "op": "replace_unique", "old_text": …, "new_text": …}; ' +
+  "re-anchor on drift instead of retrying.";
 export const WRITE_REASON =
   "Use `mcp__lean_ctx_ctx_patch` (op: `create`) instead of `write` — anchored, hash-validated creation. " +
-  "Throwaway files belong in an in-root `.tmp/` scratch dir, where native `write` is allowed.";
+  "Throwaway files belong in an in-root `.tmp/` scratch dir, where native `write` is allowed.\n" +
+  'fix: `mcp__lean_ctx_ctx_patch` {"path": "<file>", "op": "create", "new_text": …}; ' +
+  "scratch: native `write` into `./.tmp/<name>`.";
 export const WRITE_OUTSIDE_REASON =
   "Native `write` is allowed only for in-root `.tmp/` scratch files. For files outside the project root " +
-  "use the native `bash` tool or the project installer.";
+  "use the native `bash` tool or the project installer.\n" +
+  "fix: scratch → in-root `./.tmp/<name>` via native `write`; out-of-root target → a repo script/installer step.";
 export const SSH_WRITE_REASON =
   "`write` does not reach `ssh://` targets — remote writes are outside the in-repo write policy. " +
   "Remote changes need explicit user authorization (ask) or the project installer.";

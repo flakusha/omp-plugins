@@ -43,6 +43,60 @@ export {
   renderFooter,
 } from "./receipt-doc";
 
+/** Skip both the TOML read/carry/parse path and the footer build when nothing applies. */
+function readAndCarryToml(tomlPath: string): string[] {
+  if (!existsSync(tomlPath)) return [];
+  let text: string;
+  try {
+    text = readFileSync(tomlPath, "utf8");
+  } catch {
+    return [];
+  }
+  let result: CarryResult;
+  try {
+    result = carry(text);
+  } catch {
+    return []; // malformed beyond tolerance: fail open, never write
+  }
+  // No TOML entries: no carry, no churn — preserve the original guard.
+  // giwt ledger is checked below regardless.
+  if (result.footer.length <= 1) return [];
+  try {
+    atomicWrite(tomlPath, result.text);
+  } catch {
+    /* read-only receipt: still carry the footer this turn */
+  }
+  return result.footer;
+}
+
+/** Build the joined footer string, truncating with a marker when over the line cap. */
+function joinFooterLines(lines: string[]): string {
+  if (lines.length <= RECEIPT_MAX_LINES) return lines.join("\n");
+  return `${lines.slice(0, RECEIPT_MAX_LINES).join("\n")}\n…(truncated)`;
+}
+
+/** Build the human-readable "sources" label (e.g. `.omp/receipt.toml + .ledger.jsonl`). */
+function buildSourcesLabel(
+  tomlPath: string,
+  cwd: string,
+  tomlFooterLen: number,
+  giwtFooterLen: number,
+): string {
+  const parts: string[] = [];
+  if (tomlFooterLen > 0) {
+    const label = tomlPath.startsWith(`${cwd}/`) ? tomlPath.slice(cwd.length + 1) : tomlPath;
+    parts.push(label);
+  }
+  if (giwtFooterLen > 0) parts.push(".ledger.jsonl");
+  return parts.join(" + ");
+}
+
+/** Read giwt's `.ledger.jsonl` if giwt is available; else empty. */
+function readGiwtFooter(treeDir: string, available: boolean): string[] {
+  if (!available) return [];
+  return formatGiwtLedgerFooter(readGiwtLedger(treeDir));
+}
+
 /**
  * Carry the project receipt: read the resolved receipt.toml (omp dir from
  * giwt config, default `<cwd>/.omp`), apply chores, write back atomically,
@@ -60,58 +114,22 @@ export async function carryReceipt(
   // ── TOML receipt (job ledger with state) ──────────────────────────
   // omp dir is configurable via giwt.toml/.giwt.toml `paths.omp_dir`.
   const giwtConfig = resolveGiwtConfig(cwd);
-  const tomlPath = giwtConfig.receiptPath;
-  const hasToml = existsSync(tomlPath);
-
-  let tomlFooter: string[] = [];
-
-  if (hasToml) {
-    let text: string;
-    try {
-      text = readFileSync(tomlPath, "utf8");
-    } catch {
-      return undefined;
-    }
-
-    let result: CarryResult;
-    try {
-      result = carry(text);
-    } catch {
-      return undefined; // malformed beyond tolerance: fail open, never write
-    }
-
-    // No TOML entries: no carry, no churn — preserve the original guard.
-    // giwt ledger is checked below regardless.
-    if (result.footer.length > 1) {
-      try {
-        atomicWrite(tomlPath, result.text);
-      } catch {
-        /* read-only receipt: still carry the footer this turn */
-      }
-      tomlFooter = result.footer;
-    }
-  }
+  const tomlFooter = readAndCarryToml(giwtConfig.receiptPath);
 
   // ── giwt ledger (append-only agent activity, read-only) ──────────
-  const giwtEntries = giwtConfig.available ? readGiwtLedger(giwtConfig.treeDir) : [];
-  const giwtFooter = formatGiwtLedgerFooter(giwtEntries);
+  const giwtFooter = readGiwtFooter(giwtConfig.treeDir, giwtConfig.available);
 
   // ── Combine: TOML jobs first, giwt activity second ────────────────
   const combinedFooter = [...tomlFooter, ...giwtFooter];
   if (combinedFooter.length === 0) return undefined; // nothing to carry
 
-  let footer = combinedFooter.join("\n");
-  if (combinedFooter.length > RECEIPT_MAX_LINES) {
-    footer = `${combinedFooter.slice(0, RECEIPT_MAX_LINES).join("\n")}\n…(truncated)`;
-  }
-
-  const receiptLabel = tomlPath.startsWith(`${cwd}/`) ? tomlPath.slice(cwd.length + 1) : tomlPath;
-  const sources = [
-    tomlFooter.length > 0 ? receiptLabel : null,
-    giwtFooter.length > 0 ? ".ledger.jsonl" : null,
-  ]
-    .filter(Boolean)
-    .join(" + ");
+  const footer = joinFooterLines(combinedFooter);
+  const sources = buildSourcesLabel(
+    giwtConfig.receiptPath,
+    cwd,
+    tomlFooter.length,
+    giwtFooter.length,
+  );
 
   return {
     message: {

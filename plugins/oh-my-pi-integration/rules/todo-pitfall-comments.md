@@ -5,11 +5,7 @@ condition: ["^(?=[\\s\\S]*TODO|FIXME|XXX|HACK)(?=[\\s\\S]*pitfall|trap|gotcha|fu
 scope: ["text", "thinking"]
 ---
 
-When you spot a potential pitfall or a future improvement while coding, leave a comment recording it — the VALUE is the recorded knowledge, not the marker.
+- Spot a pitfall/future improvement → comment it (VALUE = the knowledge, not the marker); name what could break, the trigger, the coming change next to the code — `// TODO(pitfall): v1.3 changes this wire format — re-validate when upstream lands` (see forward-compatible-datastructures).
+- No-TODO lint/hooks → no marker: `// Pitfall: …` / `// Future: …` / `// Known limitation: …`. The ban is on the marker, not the knowledge; silent dropping is worse. Prefer the marker when allowed (greppable, review-visible); markerless = lint-constrained only.
 
-THE RULE:
-- Name the pitfall/improvement next to the code it concerns: what could break, what the trigger is, what the future change looks like. Actionable, not vague: `// TODO(pitfall): v1.3 changes this wire format — re-validate here when upstream lands` (see forward-compatible-datastructures for the same TODO pattern at expansion points).
-- If the project's linting/hook rules PROHIBIT `TODO` keywords (some repos enforce no-TODO), write the same comment WITHOUT the marker: `// Pitfall: …` / `// Future: …` / `// Known limitation: …`. The ban is on the marker, not on recording the knowledge — silently dropping the note to satisfy a linter is worse than either option.
-- Prefer the marker when allowed: `TODO` is greppable and surfaces in review; the no-marker variant is for lint-constrained projects only.
-
-DON'T OVER-APPLY: no comment spam for trivia — record real pitfalls and real improvement opportunities, one line each, where the future reader will be looking. A comment that restates the code is noise; a comment that names the trigger and the fix is an investment.
+DON'T OVER-APPLY: no trivia spam — one line per real finding, where the future reader looks; code restatement is noise; trigger + fix is an investment.

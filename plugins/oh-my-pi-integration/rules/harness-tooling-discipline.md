@@ -5,25 +5,16 @@ condition: ["^(?=[\\s\\S]*command (ls|grep|cat|find|rg|sed)|\\bbuiltin\\b|bash -
 scope: ["text", "thinking"]
 ---
 
-When the agent uses the shell, python, bun, or external scripts and tooling, apply three disciplines: flag replacements, preserve repeatable work, and never evade the harness.
+When using the shell, python, bun, or external tooling, apply four disciplines: flag replacements, discover-then-route, never evade, compute via ./.tmp/ scripts.
 
-1) FLAG REPLACEMENTS OF HARNESS FUNCTIONALITY:
-- If external tooling would REPLACE original harness functionality (read, grep, glob, edit, lsp, specialized tools), FLAG IT: state that this replaces harness X and why Y is required instead. The harness tools exist for correctness — structure-aware, context-compressed, interception-protected (see repo-tooling-scoped-usage; the reroute pre-hook escalates in-root `glob`/`edit`/`write` to the lean-ctx MCP mechanically). Silently routing around them is the rerouting anti-pattern.
-- If the external tooling is STRICTLY REQUIRED (the harness cannot do the job — a custom transformation, a binary it lacks): recommend creating a RE-EXECUTABLE file under `./.tmp/` (in-repo gitignored scratch — see the in-repo scratchpad rule) instead of a one-off inline command. Re-executable = reproducible, editable, reviewable — the same code every time, not rewritten from memory each session.
-- If the external tooling can serve APP/CODE CHECKS AND RECONCILIATION (validators, diff/contract checks, reconciliation passes): make them HOOKS or SHARED FUNCTIONS in the repo — reusable assets, not one-off agent code. The motivation is explicit: avoid losing work and writing the same agent code every time.
+BLOCKED-COMMAND PROTOCOL: when a tool result returns a block reason (`matched: … fix: …`), read the `fix:` line and apply it verbatim — never retry the blocked shape with cosmetic variants.
 
-2) DISCOVER SYSTEM TOOLS, THEN ROUTE THROUGH HARNESS TOOLING:
-- Before using a system tool, DISCOVER it properly — check availability/version (`which`/`command -v`) instead of assuming it exists.
-- Then prefer the harness's dedicated tools (read, grep, glob, edit, lsp) over raw system binaries; drop to the binary only for what the dedicated tools don't cover. Raw invocation of what a dedicated tool handles loses structure-awareness, compression, and context economy.
+1) FLAG REPLACEMENTS: silently routing around harness functionality (read/grep/glob/edit/lsp/specialized tools) is the rerouting anti-pattern — flag it and state why the alternative is required (see repo-tooling-scoped-usage; the reroute pre-hook escalates in-root `glob`/`edit`/`write` to the lean-ctx MCP). Harness-mandatory external tooling → a RE-EXECUTABLE `./.tmp/` file (reproducible, editable, reviewable — not one-off inline commands). Check/reconciliation logic → repo HOOKS or SHARED FUNCTIONS.
 
-3) NEVER EVADE INTERCEPTION:
-- The LLM may try to escape harness tooling via forms not usually captured by interception/rewrite: `command ls`, `command grep`, `builtin`, `env VAR=cmd`, full-path invocations (`/usr/bin/ls`, `/bin/cat`), `bash -c "ls"`, and similar.
-- THE RULE: do not use those forms to evade interception. It is a harness-policy violation, AND it loses what the tooling provides — structure-awareness, compression, routing, context economy — while defeating the guards (e.g. the live-session interceptors) that keep sessions correct.
-- If the harness blocks a legitimately needed operation, that is a signal to find the SANCTIONED path — the specialized tool, the MCP, or a re-executable `./.tmp/` script (part 1) — not to sneak past the guard.
+2) DISCOVER, THEN ROUTE: check availability with `which`/`command -v` instead of assuming; then prefer dedicated tools — raw binaries lose structure-awareness, compression, and context economy.
 
-4) EVAL IS DISABLED — COMPUTE VIA .tmp/ SCRIPTS; WRITES ARE GATED:
-- The `eval` tool is disabled profile-wide (config.yml `eval.py`/`eval.js` = false; the lean-ctx-native-reroute pre-hook blocks residual calls with the same guidance). Computation goes through a re-executable `./.tmp/` script (part 1) executed via bash: `python .tmp/x.py`, `bun .tmp/x.ts`.
-- Do NOT route the same code through interpreter-inline forms — `python -c`, `node -e`/`-p`, `perl -e`/`-pe`, `deno eval`, heredoc-to-interpreter stdin, or a piped bare interpreter (`echo x | python`). The harness-evasion-guard blocks these shapes exactly like `bash -c` evasion.
-- Native `write` is allowed ONLY for in-root `.tmp/` scratch, plus `xd://` device dispatch and `local://` plan artifacts. In-repo project files go through `ctx_patch` (lean-ctx, op `create`); out-of-root and `ssh://` write targets are blocked.
+3) NEVER EVADE INTERCEPTION: no `command`/`builtin`/`env VAR=cmd`/full-path/`bash -c "…"` forms to dodge interception — harness-evasion-guard blocks them, and they defeat the guards that keep sessions correct. A block on a legitimately needed operation means find the SANCTIONED path (specialized tool, MCP, or a `./.tmp/` script), not a workaround.
 
-DON'T OVER-APPLY: not every shell use is a replacement — short fact pipelines and one-binary commands are sanctioned (see the tool policy). The rule targets: (a) silent replacement of harness functionality, (b) one-off unrepeatable scripts where repeatable work is expected, and (c) interception evasion.
+4) EVAL DISABLED, WRITES GATED: the `eval` tool is off profile-wide; interpreter-inline forms (`python -c`, `node -e`/`-p`, `perl -e`/`-pe`, `deno eval`, heredoc-to-interpreter, piped bare interpreter) are blocked the same way. Computation = re-executable `./.tmp/` script run via bash (`python .tmp/x.py`, `bun .tmp/x.ts`). Native `write` is only for in-root `.tmp/` scratch, `xd://` device dispatch, and `local://` plan artifacts; in-repo project files go through `ctx_patch` (op `create`); out-of-root and `ssh://` targets are blocked.
+
+DON'T OVER-APPLY: short fact pipelines and one-binary commands are sanctioned (see the tool policy). Targets: (a) silent harness replacement, (b) one-off unrepeatable scripts, (c) interception evasion.

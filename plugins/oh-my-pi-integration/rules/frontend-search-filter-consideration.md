@@ -5,16 +5,14 @@ condition: ["^(?=[\\s\\S]*frontend|client|ui|selector|dropdown|menu|list|checkbo
 scope: ["text", "thinking"]
 ---
 
-CONSIDER search/filtering on the frontend wherever a selection or get-data control can grow — an unbounded selectable list is the wrong UI once it is large.
+CONSIDER search/filtering wherever a selection control can grow — unbounded lists are wrong at scale.
 
-THE RULE:
-- WHEN REQUIRED: if a dropdown/menu/list can contain MANY options, plan for search or filtering instead of forcing a user to scroll an unbounded list (see frontend-pagination-display for the display-side; see data-size-extensibility for size). The trigger is "the option set can grow".
-- CHOOSE THE RIGHT CONTROL for the selection's shape: a searchable text input, a filtered dropdown, a multi-select with search, nested submenus for hierarchy, a DSL/query language for complex selection, or checklists for many independent choices. Match the interaction to single-pick vs multi-pick vs many vs hierarchical.
-- DESIGN IT IN, NOT RETROFIT: consider it while designing the interface, not as an after-construction add (see research-before-complex-build). 
-- "WHERE MAY BE REQUIRED": confirm the threshold — a small fixed set needs nothing; anything that can grow needs search/filter.
+- TRIGGER: option set can grow ⇒ search/filter, not scrolling; small fixed sets need nothing (see frontend-pagination-display, data-size-extensibility).
+- CONTROL, by shape: searchable input, filtered dropdown, multi-select+search, submenus (hierarchy), DSL (complex), checklists (many) — match pick count/hierarchy.
+- DESIGN IN, not retrofit (see research-before-complex-build).
 
-WHY: an unbounded selectable list is a UX failure at scale — search/filter turns "scroll an unbounded list" into a bounded, findable interaction, and deciding it up front avoids a retrofit.
+WHY: bounded, findable interaction; deciding up front avoids retrofit.
 
-TIES: frontend-pagination-display, frontend-backend-validation, frontend-request-cooldown, data-size-extensibility, derive-types-from-valid-structures (share option values/types with the backend).
+TIES: frontend-pagination-display, frontend-backend-validation, frontend-request-cooldown, data-size-extensibility, derive-types-from-valid-structures (share option values with backend).
 
-DON'T OVER-APPLY: a genuinely small, fixed option set needs no search/filter — the rule is "consider where it may be required", not "add search everywhere". Apply when the set can actually grow into an unbounded scroll.
+DON'T OVER-APPLY: consider, don't add everywhere; apply when the set can grow unbounded.

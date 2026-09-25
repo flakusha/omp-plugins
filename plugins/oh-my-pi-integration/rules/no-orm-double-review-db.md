@@ -5,17 +5,14 @@ condition: ["^(?=[\\s\\S]*no orm|without (an? )?orm|raw (sql|query|db)|plain (sq
 scope: ["text", "thinking"]
 ---
 
-When the project uses NO ORM or similar abstraction for DB access — raw drivers (sqlite3/pg/mysql clients, JDBC/ODBC), hand-written SQL/commands — DOUBLE-REVIEW the database access commands. The abstraction-less path is where parameterization, error handling, and transactions are hand-rolled and most easily drift.
+NO ORM/abstraction (raw drivers, hand-written SQL) → DOUBLE-REVIEW every DB access command; no framework enforces the checklist, so apply it by hand:
+- PARAMETERIZATION: every query with user-derived values parameterized/prepared (see sql-injection-free — stricter without an ORM).
+- ERROR HANDLING: commit/rollback and connection close on EVERY branch; never swallow (see deliberate-error-handling).
+- TRANSACTION BOUNDARIES: cover the atomic unit; every path, including early return, resolves the transaction.
+- POOLING/TIMEOUTS/cursor cleanup: hand-managed — confirm (see db-access-performance).
 
-THE RULE — apply the full checklist by hand; the absence of an ORM means NO framework enforces it:
-- PARAMETERIZATION/PREPARED: re-verify every query with user-derived values is parameterized/prepared — an ORM enforced this automatically; raw paths make it a per-command responsibility (see sql-injection-free: the rule is stricter, not looser, without an ORM).
-- ERROR HANDLING: explicit handling on every failure path — commit/rollback on every branch, connection close even on error, no swallowed exceptions (see deliberate-error-handling: handle-or-propagate, never swallow).
-- TRANSACTION BOUNDARIES: confirm transaction start/commit/rollback cover the intended atomic unit and that every path (including error and early-return) resolves the transaction.
-- TIME OUT RIGHT: connection pooling, timeouts, and cursor/resource cleanup are hand-managed — confirm them (see db-access-performance).
-- So each access command gets the scrutiny a framework would have applied automatically. That is the "double review": compensate for the missing safety net.
-
-WHY: an ORM/abstraction enforces parameterization, escaping, and often transactions by default; without it those are individual responsibilities easy to skip on a path you "already reviewed once".
+WHY: an ORM enforces parameterization, escaping, and often transactions by default; without it they are per-path responsibilities easy to skip on an "already reviewed once" path.
 
 TIES: sql-injection-free, deliberate-error-handling, db-access-performance, authorization-confirmed, wrap-unsafe-language-apis.
 
-DON'T OVER-APPLY: the rule is not "use an ORM" — raw DB access is legitimate. It is "when there is none, apply the review the ORM would have enforced". Do not add an ORM just to satisfy this rule; add the review.
+DON'T OVER-APPLY: not "use an ORM" — raw DB access is legitimate; apply the review the ORM would have enforced instead.

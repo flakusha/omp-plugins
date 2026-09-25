@@ -5,21 +5,16 @@ condition: ["^(?=[\\s\\S]*\\beval\\(|\\bexec\\(|new Function)(?=[\\s\\S]*pickle|
 scope: ["text", "thinking"]
 ---
 
-Common unsafe standard-library functionality must be wrapped and properly error-handled, never called raw. Every language ships functions that are convenient and dangerous; the pattern is the same everywhere: identify the unsafe surface, wrap it at the boundary with validation + error handling + safe defaults.
+Unsafe stdlib calls are wrapped + error-handled, never raw: identify the unsafe surface; wrap at the boundary with validation, error handling, safe defaults.
 
-PER-LANGUAGE PITFALLS (known classes; each has a wrapped or safe alternative):
-- PYTHON: `eval`/`exec`/`compile` (code injection); `pickle`/`cPickle` and ML loaders (`torch.load`, Keras `Model.load_model`) — arbitrary code execution, CVE-2025-9905 showed `load_model` RCE even with `safe_mode=True`; `yaml.load` (use `yaml.safe_load`); `subprocess`/`os.system` with `shell=True` (shell injection — pass arg lists / `shlex` instead); `assert` for validation (stripped under `-O`, not a safety check).
-- JS/TS: `eval`/`new Function` (code injection); `child_process.exec`/`execSync` (shell injection — use `spawn` with arg arrays); `innerHTML` (XSS); raw `JSON.parse` (see prefer-repo-json-buffer-wrappers).
-- GO: the default `http.Client{}` / `http.Get` — NO timeouts by default (a hanging dependency leaks goroutines forever); ignored errors (`_, _ =`); nil-map writes (panic); unbounded `io.ReadAll`; string concat in loops.
-- RUST: `unwrap()`/`expect()` on error paths (panic in production — propagate with `?` and context instead); unchecked indexing `v[i]` (panic — use `.get()`); `unsafe` blocks; `String::from_utf8_lossy` (silent replacement — validate with `from_utf8`); debug-only vs release integer overflow.
-- C/C++: `gets`/`strcpy`/`sprintf` (buffer overflow — use bounded variants); format strings with user input (format-string vulnerability); unchecked allocation/arithmetic.
-- COMMON: unbounded reads of any stream; regexes with catastrophic backtracking (see named-tested-regexes); time parsing without explicit layout/zone; path joins that trust input.
+PITFALLS:
+- PYTHON: eval/exec/compile; pickle/torch.load/load_model execute code (CVE-2025-9905 RCE despite safe_mode=True); yaml.load → safe_load; shell=True → arg lists/shlex; assert stripped under -O.
+- JS/TS: eval/new Function; child_process.exec(Sync) → spawn + arg arrays; innerHTML (XSS); raw JSON.parse (see prefer-repo-json-buffer-wrappers).
+- GO: default http.Client/http.Get lack timeouts; ignored errors (`_, _ =`); nil-map writes; unbounded io.ReadAll.
+- RUST: unwrap()/expect() → ? + context; unchecked v[i] → .get(); unsafe blocks; from_utf8_lossy silently replaces → from_utf8.
+- C/C++: gets/strcpy/sprintf → bounded variants; user input in format strings; unchecked alloc/arith.
+- COMMON: unbounded reads; catastrophic regexes (see named-tested-regexes); time parsing without explicit layout/zone; trusting path joins.
 
-THE PATTERN:
-1. DETECT the unsafe call in code you touch.
-2. USE THE REPO'S SAFE WRAPPER if one exists (see prefer-repo-json-buffer-wrappers).
-3. ELSE WRAP AT THE BOUNDARY: validation before the call, explicit error handling on every failure path, safe defaults (timeouts, size limits, encoding, no-shell), and a name that says what it guarantees.
-4. NEVER BROADEN THE UNSAFE SURFACE: a raw call stays raw only when it is the repo's established pattern and the input is trusted — and even then, flag it.
-5. TESTS KEEP RAW CALLS: in test code, raw usage is fine — failure there is the early flag (same carve-out as prefer-repo-json-buffer-wrappers).
+PATTERN: 1) DETECT unsafe calls in touched code. 2) USE the repo's safe wrapper if one exists (see prefer-repo-json-buffer-wrappers). 3) ELSE wrap at the boundary: validation before, error handling on failure paths, safe defaults (timeouts, size limits, encoding, no-shell), name states the guarantee. 4) NEVER broaden the unsafe surface: raw stays raw only as repo-established pattern + trusted input — flagged even then. 5) TESTS KEEP RAW CALLS — failure there is the early flag.
 
-DON'T OVER-APPLY: wrap what you touch; do not invent a wrapper layer wholesale for code you never modify. For legacy raw usage, state the gap and propose the wrapper rather than silently rewriting (see repo-tooling-scoped-usage).
+DON'T OVER-APPLY: wrap what you touch; no wholesale wrappers elsewhere; legacy raw: state the gap, propose the wrapper, no silent rewrite (see repo-tooling-scoped-usage).

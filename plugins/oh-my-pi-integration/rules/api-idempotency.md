@@ -5,16 +5,15 @@ condition: ["^(?=[\\s\\S]*idempoten|repeat|duplicate (request|call|submission)|c
 scope: ["text", "thinking"]
 ---
 
-For an API that may be called multiple times (user double-click, client retry, network replay) and modifies DB state, idempotency is REQUIRED — not optional. The duplicate path must be explicit, not emergent.
+Duplicate paths (double-click, client retry, network replay) on state-modifying APIs are REQUIRED to be explicit, not emergent:
 
-THE RULE — make each explicit:
-- FAST CACHED RESPONSE: keyed by an idempotency key (see unique-identifiers-confirmed: generate + accept an idempotency key), a repeated request returns the cached result of the first successful execution instead of re-modifying state. Cache the response keyed by that key.
-- PROPER DB ACCESS PATTERN: the mutation must be safe under duplicates — insert-if-absent (`ON CONFLICT DO NOTHING`, `INSERT … WHERE NOT EXISTS`, unique constraint + upsert) so a retry cannot create a second row. Confirm the write pattern is idempotent before relying on it.
-- SAFE OVERWRITE OR FAST-FAIL: on conflict, EITHER perform a safe overwrite (an idempotent upsert where overwrite is correct) OR fast-fail with explicit success/failure handling (see db-access-performance: fast-fail path; see deliberate-error-handling: handle-or-propagate, never swallow). Name which the duplicate path does — silent double-apply and silent ignore are both bugs.
-- RESPONSE-SHAPE HANDLING: an empty result, partial write, or broken/malformed response is NOT the same as a default communication/query error. Distinguish and handle them distinctly — retryable vs permanent (see db-access-performance: transient vs permanent); a partial/broken result is closer to a corruption signal than to a retryable network blip (see encryption-compression-round-trip: round-trip integrity).
+- FAST CACHED RESPONSE: repeated request returns the first execution's cached result, keyed by idempotency key (see unique-identifiers-confirmed) — no re-modification of state.
+- INSERT-IF-ABSENT: `ON CONFLICT DO NOTHING` / `INSERT … WHERE NOT EXISTS` / unique constraint + upsert — a retry cannot create a second row. Confirm the write pattern is idempotent before relying on it.
+- SAFE OVERWRITE OR FAST-FAIL: on conflict, EITHER an idempotent upsert (where overwrite is correct) OR fast-fail with explicit success/failure handling (see db-access-performance: fast-fail; deliberate-error-handling: handle-or-propagate, never swallow). Name what the duplicate path does — silent double-apply and silent ignore are both bugs.
+- RESPONSE SHAPES: empty/partial/broken-malformed responses are distinct from communication/query errors — classify retryable vs permanent (see db-access-performance: transient vs permanent); partial/broken ≈ corruption signal, not retryable blip (see encryption-compression-round-trip: round-trip integrity).
 
-WHY: a non-idempotent mutation under a retry or double-call is data corruption by duplicate application. Making the duplicate path explicit — cached response, insert-if-absent, safe-overwrite/fast-fail, and response-shape classification — removes the whole class instead of patching one duplicate.
+WHY: a non-idempotent mutation under retry is corruption by duplicate application; an explicit duplicate path (cache / insert-if-absent / overwrite-or-fast-fail / response classification) removes the whole class.
 
 TIES: unique-identifiers-confirmed (idempotency keys), db-access-performance (retry/fast-fail), deliberate-error-handling, async-collector-selection (retry under idempotency), api-input-validation, frontend-backend-validation.
 
-DON'T OVER-APPLY: idempotency is required where a retry/double-call is plausible AND the mutation is non-trivial; a single-shot transactional write behind a real DB constraint may need only the constraint. But if the API is exposed to retries, treat idempotency as required, not a nicety.
+DON'T OVER-APPLY: a single-shot transactional write behind a real DB constraint may need only the constraint; but if retries are plausible, idempotency is required, not a nicety.

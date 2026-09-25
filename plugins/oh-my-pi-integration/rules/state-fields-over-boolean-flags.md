@@ -5,32 +5,28 @@ condition: ["^(?=[\\s\\S]*boolean|bool flag|flags?)(?=[\\s\\S]*is[A-Z]|has[A-Z])
 scope: ["text", "thinking"]
 ---
 
-For data structures with boolean fields, consider a state-machine field (number, string, enum) instead of boolean flags when the booleans encode mutually-exclusive states or combinations. This is a "consider", not a blanket ban — the decision follows the field's nature.
+For data structures with boolean fields, consider a state-machine field (number/string/enum) when the booleans encode mutually-exclusive states or combinations. A consider, not a ban.
 
-THE SIGNAL — booleans that are really states:
-- Multiple flags that encode phases of ONE evolving property: `isDraft` / `isActive` / `isArchived`, or `isPending` / `isPaid` / `isRefunded`. If the flags are mutually exclusive (at most one true) or represent ordered/combinable states, they are a state machine wearing boolean clothing.
-- The tell: keeping them consistent requires an invariant ("exactly one true", "can't be both Active and Archived") that nothing enforces. That invariant is the state machine you should just declare.
+THE SIGNAL: multiple flags encoding phases of ONE evolving property — mutually exclusive or ordered/combinable = a state machine in boolean clothing. The tell: consistency needs an invariant nothing enforces — declare it.
 
-WHY A SINGLE STATE FIELD WINS:
-- A new state = ONE new enum member (`status: 'active' | 'paused' | 'archived'`), not a new boolean PLUS keeping every combination consistent.
-- Transitions and combinations become explicit and legal-only: an illegal combination (`isActive && isArchived`) stops compiling, enforced by the type system (see strict-types-and-reuse) instead of being a silent runtime invariant nobody maintains.
-- Migration and deprecation are cheaper: a versioned `status` field evolves additively, where a boolean explosion would need a new field per state and a sync pass over every consumer (see api-schema-versioning).
+WHY ONE STATE FIELD WINS:
+- A new state = one enum member, not a boolean plus combination sync.
+- Illegal combinations stop compiling — type-enforced (see strict-types-and-reuse), not a silent runtime invariant.
+- A versioned `status` evolves additively; a boolean explosion needs a field per state plus consumer sync (see api-schema-versioning).
 
-WHEN BOOLEANS ARE HONEST — LEAVE THEM:
-- Truly two-state, independent fields stay booleans: `enabled`, `visible`, `hasPermission`, `isPresent`. Forcing an enum onto a genuine binary is ceremony with no payoff.
-- The rule only bites when booleans are mutually exclusive or combination-heavy — evaluate each cluster on its own.
+WHEN BOOLEANS ARE HONEST: two-state independent fields stay booleans. The rule bites only on mutually-exclusive or combination-heavy clusters.
 
 DELIBERATE THE REPRESENTATION — number vs string:
-- STRINGS (literal unions, string enums): self-documenting state intent — `status: 'active' | 'paused'` reads correctly in logs, serialized output, and debugging without a decoder. Cost: heavier — larger storage, slower comparisons and indexing, and typo risk (eliminated at compile time by literal-union types, so prefer those over raw strings).
-- NUMBERS / ENUMS / MAPS (numeric): memory-efficient and fast — compact storage, cheap equality, fast indexing, smaller wire format. Cost: opaque — every value needs a named mapping (enum object, const map, DB enum/lookup) to be readable, and bare numbers without a mapping are just magic values (see wiring-sync-and-consolidation).
-- DECIDE BY: where the value lives and how it is consumed.
-  - Database: numeric enums index faster and store smaller; string enums keep the DB self-describing. Use the DB's native enum/CHECK support either way; follow the project's existing convention.
-  - Hot paths, large datasets, or wire-size-sensitive payloads → numeric, with the mapping named and shared.
-  - Developer-facing state machines, logs, debugging, small cardinality → strings (typed unions) are the right default for clarity; optimize only when measured, not pre-emptively.
-  - ONE CANONICAL REPRESENTATION: pick one and map at boundaries if needed. Do not keep both a numeric and a string truth in the domain layer — a dual source of truth drifts (see wiring-sync-and-consolidation).
-- The choice is deliberate either way: state the representation and the reason in the change; do not pick one by inertia.
+- STRINGS: self-documenting — reads in logs/debugging. Cost: heavier storage, slower comparisons/indexing; prefer literal-union types (compile-time typo safety).
+- NUMBERS/ENUMS/MAPS: compact, cheap equality. Cost: opaque — needs a named mapping; bare numbers are magic values (see wiring-sync-and-consolidation).
+- DECIDE BY where it lives and how it's consumed:
+  - Database: numeric indexes/stores smaller; strings keep the DB self-describing; use native enum/CHECK and project convention.
+  - Hot paths, large datasets, wire-size-sensitive payloads → numeric, mapping named and shared.
+  - Developer-facing machines, logs, small cardinality → strings; optimize only when measured.
+  - ONE CANONICAL REPRESENTATION: pick one, map at boundaries — no dual numeric+string truth (it drifts; see wiring-sync-and-consolidation).
+- State the representation and reason; don't pick by inertia.
 
 DON'T OVER-APPLY:
-- One boolean with no state neighbors is fine; converting it adds noise.
-- If the structure is persisted, boolean→state-field is a breaking shape change — do it as a versioned migration, not silently (see api-schema-versioning).
-- Respect layer scope: "only X" tasks do not refactor state representation on the far side (see wiring-sync-and-consolidation).
+- One boolean with no state neighbors stays; converting adds noise.
+- Persisted boolean→state-field is a breaking shape change — versioned migration, not silent (see api-schema-versioning).
+- "Only X" tasks don't refactor far-side state representation (see wiring-sync-and-consolidation).

@@ -5,16 +5,12 @@ condition: ["^(?=[\\s\\S]*encrypt|decrypt|cipher|crypto|at rest|in transit|TLS)(
 scope: ["text", "thinking"]
 ---
 
-For applications that require encryption and/or compression, CONFIRM the data is properly encrypted and compressed AND is decryptable/decompressable on round trip. Both directions matter; the classic failure is one-way.
+For applications that require it, CONFIRM encryption/compression works both ways: serialize → (encrypt|compress) → store → retrieve → (decrypt|decompress) → deserialize reproduces the original bytes.
 
-THE RULE — check each:
-- APPLY WHERE REQUIRED: encrypt at rest (secrets, PII, credentials, tokens) and in transit (TLS) as the application's contract requires; confirm key management (where the key lives, how it is looked up) and that encryption actually covers the field/file — not a no-op.
-- ROUND-TRIP VERIFICATION: confirm the read path is the symmetric inverse of the write path — serialize → (encrypt|compress) → store → retrieve → (decrypt|decompress) → deserialize reproduces the original bytes byte-for-byte. The failure mode is a write path that encodes but a read path that cannot reverse it: wrong key, wrong codec, missing/non-persisted salt or IV, truncated payload.
-- FRAMING MATCHES: the compressor's framing must match the decompressor (same codec/level/stream); confirm no accidental double-compression or double-encryption.
-- Verify the actual runtime round trip, not the intent (see verify-api-actuality): a unit or integration test that writes and reads back the value is the proof.
-
-WHY: encryption and compression that only work one way silently corrupt or brick data on the read path — and the corrupt version (not a clean error) is the worst outcome. Confirming the round trip makes the symmetry explicit and testable.
-
-TIES: verify-api-actuality, strict-review-standards, parallel-safe-tests (round-trip test as the observable check), data-sanitization.
-
-DON'T OVER-APPLY: not every field needs encryption — only data the application's requirements tag as sensitive. And the check is round-trip correctness, not maximal crypto: don't cryptographically-wrap everything or add checksums where no real requirement exists.
+- APPLY WHERE REQUIRED: at rest (secrets, PII, tokens) + in transit (TLS) per contract; confirm key management and real coverage.
+- ROUND TRIP: read path = symmetric inverse of write path. Failures: wrong key/codec, missing/non-persisted salt or IV, truncated payload.
+- FRAMING MATCHES: same codec/level/stream both ways; no double-compression/encryption.
+- Verify the runtime round trip, not intent (see verify-api-actuality): a write-then-read-back test is the proof.
+- WHY: one-way crypto/compression silently corrupts or bricks data — the corrupt version (not a clean error) is the worst outcome.
+- TIES: verify-api-actuality, strict-review-standards, parallel-safe-tests, data-sanitization.
+- DON'T OVER-APPLY: only sensitive-tagged data; round-trip correctness, not maximal crypto.
