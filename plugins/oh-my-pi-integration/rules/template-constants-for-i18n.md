@@ -5,7 +5,7 @@ condition: ["^(?=[\\s\\S]*handlebar|mustache|template (engine|syntax)|\\{\\{|\\{
 scope: ["text", "thinking"]
 ---
 
-Constants or template interpolation supported → NEW named constants from the start: user-visible strings become keys, not literals — the default when multi-language or dynamic content is possible.
+Constants or template interpolation supported → NEW named constants from the start: user-visible strings become keys, not literals — the default when multi-language/dynamic content is possible.
 
 WHY: i18n later = filling existing keys (retrofit = full sweep, missed strings); dynamic later = same slots, source swaps; the key is the contract — one catalog, one source of truth (see wiring-sync-and-consolidation).
 

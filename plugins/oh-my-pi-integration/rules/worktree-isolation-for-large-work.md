@@ -5,13 +5,13 @@ condition: ["^(?=[\\s\\S]*(a lot|large|major|significant|big))(?=[\\s\\S]*(plann
 scope: ["thinking", "text"]
 ---
 
-Large planned work or isolation needs → dedicated git worktree when supported; easy changes may land on the current branch unless protected.
+Large planned or isolated work → dedicated git worktree when supported; easy changes may land on the current branch unless protected.
 
 LARGE/ISOLATED → dedicated worktree:
-- Changes stay scoped to their own tree: no cross-agent sweeping (`git stash` is harness-blocked on shared branches; in-worktree, scoped pathspecs are safe); parallel agents don't interfere.
-- CREATE IN-REPO: tooling can't read outside the project root (`../repo-feature` unreachable) — use gitignored `.worktrees/<name>` (add `.worktrees/` to `.gitignore`); follow any repo convention.
-- Descriptive name; one per unit of work; remove when merged or abandoned.
+- Changes stay scoped to their own tree — other agents can't sweep them; parallel agents don't interfere.
+- CREATE IN-REPO: tooling can't read outside the repo root (../repo-feature would be unreachable); use gitignored `.worktrees/<name>` (add `.worktrees/` to `.gitignore`); follow repo conventions.
+- Name descriptively; one per unit; remove when merged or abandoned.
 
-EASY → current branch, with a check: small, single-purpose, low-risk edits (few files, no cross-cutting risk) may land directly — UNLESS the branch is protected (protection rules, required reviews, enforced CI, server-side policy): then a worktree/feature branch, never a direct push.
+EASY → current branch, checked: small, single-purpose, low-risk edits (few files, no cross-cutting blast) land directly — UNLESS the branch is protected (branch protection, required reviews, enforced CI, server policy): then worktree/feature branch, never a direct push.
 
-DON'T OVER-APPLY: no worktree for a one-line fix; don't block easy changes — scale isolation to scope, prefer isolation in doubt; unsupported → say so, stay on the current branch.
+DON'T OVER-APPLY: no worktree for a one-line fix; don't block easy changes — scale isolation to scope, prefer it in doubt; unsupported → say so, continue on the current branch.

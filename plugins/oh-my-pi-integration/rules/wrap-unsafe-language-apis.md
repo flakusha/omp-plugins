@@ -5,16 +5,16 @@ condition: ["^(?=[\\s\\S]*\\beval\\(|\\bexec\\(|new Function)(?=[\\s\\S]*pickle|
 scope: ["text", "thinking"]
 ---
 
-Unsafe stdlib calls are wrapped + error-handled, never raw: identify the unsafe surface; wrap at the boundary with validation, error handling, safe defaults.
+Unsafe stdlib calls are wrapped+error-handled, never raw.
 
 PITFALLS:
-- PYTHON: eval/exec/compile; pickle/torch.load/load_model execute code (CVE-2025-9905 RCE despite safe_mode=True); yaml.load → safe_load; shell=True → arg lists/shlex; assert stripped under -O.
-- JS/TS: eval/new Function; child_process.exec(Sync) → spawn + arg arrays; innerHTML (XSS); raw JSON.parse (see prefer-repo-json-buffer-wrappers).
-- GO: default http.Client/http.Get lack timeouts; ignored errors (`_, _ =`); nil-map writes; unbounded io.ReadAll.
-- RUST: unwrap()/expect() → ? + context; unchecked v[i] → .get(); unsafe blocks; from_utf8_lossy silently replaces → from_utf8.
-- C/C++: gets/strcpy/sprintf → bounded variants; user input in format strings; unchecked alloc/arith.
-- COMMON: unbounded reads; catastrophic regexes (see named-tested-regexes); time parsing without explicit layout/zone; trusting path joins.
+- PYTHON: eval/exec/compile; pickle/torch.load/load_model run code (CVE-2025-9905 RCE despite safe_mode); yaml.load → safe_load; shell=True → arg lists/shlex; assert stripped under -O
+- JS/TS: eval/new Function; child_process.exec(Sync) → spawn+arg arrays; innerHTML (XSS); raw JSON.parse (see prefer-repo-json-buffer-wrappers)
+- GO: default http.Client/http.Get: no timeouts; ignored errors; nil-map writes; unbounded io.ReadAll
+- RUST: unwrap()/expect() → ?+context; unchecked v[i] → .get(); from_utf8_lossy silently replaces → from_utf8
+- C/C++: gets/strcpy/sprintf → bounded variants; user input in format strings; unchecked alloc/arith
+- COMMON: unbounded reads; catastrophic regexes (see named-tested-regexes); time parsing without layout/zone; trusting path joins
 
-PATTERN: 1) DETECT unsafe calls in touched code. 2) USE the repo's safe wrapper if one exists (see prefer-repo-json-buffer-wrappers). 3) ELSE wrap at the boundary: validation before, error handling on failure paths, safe defaults (timeouts, size limits, encoding, no-shell), name states the guarantee. 4) NEVER broaden the unsafe surface: raw stays raw only as repo-established pattern + trusted input — flagged even then. 5) TESTS KEEP RAW CALLS — failure there is the early flag.
+PATTERN: 1) DETECT unsafe calls in touched code. 2) USE the repo's safe wrapper (see prefer-repo-json-buffer-wrappers). 3) ELSE wrap at the boundary — validation before, error handling on failure, safe defaults (timeouts, size limits, no-shell), name = guarantee. 4) NEVER broaden the unsafe surface — raw stays only as repo pattern + trusted input, flagged. 5) TESTS KEEP RAW CALLS (failure = early flag).
 
-DON'T OVER-APPLY: wrap what you touch; no wholesale wrappers elsewhere; legacy raw: state the gap, propose the wrapper, no silent rewrite (see repo-tooling-scoped-usage).
+DON'T OVER-APPLY: wrap what you touch; no wholesale wrappers elsewhere; legacy raw: state gap, propose wrapper, no silent rewrite (see repo-tooling-scoped-usage)

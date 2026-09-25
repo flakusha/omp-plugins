@@ -201,6 +201,26 @@ describe("evasionReason", () => {
     expect(evasionReason("cd /a && git stash pop")).toContain(GIT_MUTATING_REASON);
   });
 
+  test("allows `git branch -d` (safe merged-only delete) on all reaches", () => {
+    expect(evasionReason("cd /a && git branch -d feat/x")).toBeUndefined();
+    expect(evasionReason('bash -c "git branch -d feat/x"')).toBeUndefined();
+    expect(evasionReason("command git branch -d feat/x")).toBeUndefined();
+    expect(evasionReason("git -C /a branch -d feat/x")).toBeUndefined();
+    expect(evasionReason("cd /a && git branch -d a b c")).toBeUndefined();
+  });
+
+  test("blocks force branch deletes on disguise reaches", () => {
+    expect(evasionReason("cd /a && git branch -D feat/x")).toContain("branch -D");
+    expect(evasionReason("git -C /a branch -D feat/x")).toContain("branch -D");
+    expect(evasionReason('bash -c "git branch -D feat/x"')).toContain("branch -D");
+    expect(evasionReason("cd /a && git branch -df feat/x")).toContain("branch -df");
+    expect(evasionReason("cd /a && git branch -fd feat/x")).toContain("branch -fd");
+    expect(evasionReason("cd /a && git branch -d -f feat/x")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason("cd /a && git branch -d --force feat/x")).toContain(GIT_MUTATING_REASON);
+    // force-delete fix line points at the safe shape.
+    expect(evasionReason("cd /a && git branch -D feat/x")).toContain("branch -d <branch>");
+  });
+
   test("blocks chained inner commands on mutating subcommands (existing wrap)", () => {
     expect(evasionReason('bash -c "cd /tmp && git push origin main"')).toContain(
       GIT_MUTATING_REASON,

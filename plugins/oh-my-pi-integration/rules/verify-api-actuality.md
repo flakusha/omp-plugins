@@ -5,16 +5,16 @@ condition: ["^(?=[\\s\\S]*\\.then\\(|\\.catch\\(|async/await|await vs)(?=[\\s\\S
 scope: ["text", "thinking"]
 ---
 
-Verify the current recommended form before using an API pattern — libraries outpace memory; recall ships outdated patterns.
+Verify the current recommended form before using an API — libraries outpace memory; recall ships stale patterns.
 
-CHECK, DON'T ASSUME (required before non-trivial API choices):
-- DOCS TOOLS / MCP: bun docs, context7, library docs — even for well-known libraries.
-- CHANGELOGS/RELEASE NOTES: confirm the function is current, not deprecated.
+CHECK, DON'T ASSUME (before non-trivial API choice):
+- DOCS/MCP: bun docs, context7, library docs — even well-known ones.
+- CHANGELOGS: confirm it's current, not deprecated.
 - LINTERS: deprecation-aware lint/typecheck flags stale usage; never silence without a decision.
-- REPO USAGE: if the codebase migrated away, follow it (see repo-tooling-scoped-usage: live patterns beat memory).
+- REPO USAGE: if the repo migrated away, follow it (see repo-tooling-scoped-usage: live patterns beat memory).
 
-KNOWN SHIFTS (verify in context; not exhaustive): `await` is the JS default (readable, try/catch); `.then()` only where await is awkward; parallelism via `Promise.all`/`Promise.allSettled`; `Bun.peek`-style settled reads = advanced perf exception. `new Buffer()` → safe allocation; `fs.exists` → access/stat; `substr` → `slice`; `datetime.utcnow()` → `datetime.now(UTC)`; `io/ioutil` → `io`/`os`; React legacy lifecycle → hooks.
+KNOWN SHIFTS (verify in context; not exhaustive): await is the JS default (readable, try/catch); .then() only where await is awkward; parallelism via Promise.all/allSettled; Bun.peek-style reads = perf exception. new Buffer() → safe allocation; fs.exists → access/stat; substr → slice; datetime.utcnow() → datetime.now(UTC); io/ioutil → io/os; React legacy lifecycle → hooks.
 
-THE PATTERN: state the choice AND its verification source (docs/changelog), never "that's how it's done"; unverifiable → flagged uncertain, not asserted.
+THE PATTERN: state the choice AND its verification (docs/changelog) — never "that's how it's done"; unverifiable = uncertain, not asserted.
 
-DON'T OVER-APPLY: no ceremony for trivially stable built-ins or repo-established code; verify consequential choices (library API, deprecated-looking call, explicit modern alternative) or when unsure.
+DON'T OVER-APPLY: no ceremony for stable built-ins or repo-established code; verify consequential choices (library API, deprecated-looking call, modern alternative) or unsure.

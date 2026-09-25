@@ -5,15 +5,15 @@ condition: ["^(?=[\\s\\S]*(frontend|backend|client|server|API|endpoint|route|DB|
 scope: ["text", "thinking"]
 ---
 
-Cross-layer work: keep both wiring sides in sync; consolidate unless explicitly scoped to one layer.
+Cross-layer work keeps both wiring sides in sync; consolidate unless explicitly scoped to one layer.
 
-VALIDATE THE WIRINGS (always on boundary work):
-- Every call site matches its endpoint (method/path/params/shapes); every changed endpoint updates all call sites — one-sided change is incomplete.
-- Check the existing pattern first (shared API client, generated contracts, typed route handlers, ORM schema ↔ data access); follow it, no parallel convention.
+VALIDATE WIRINGS (on boundary work):
+- Every call site matches its endpoint (method/path/params/shape); every changed endpoint updates its callsites — one-sided sync is incomplete.
+- Check the existing pattern first (shared API client, generated contracts, typed handlers, ORM schema ↔ data access); follow it, no parallel convention.
 
-SCOPE: one layer named → respect it, don't expand; far-side mismatches get flagged, not changed. Unscoped → consolidate below.
+SCOPE: a named layer → respect it, don't expand (flag far-side mismatches, change nothing); unscoped → consolidate
 
-CONSOLIDATE (invariant: ONE source of truth from live structure, never hand-maintained duplicates):
-- MAGIC VALUES: repeated literals (status codes, config strings, IDs, thresholds, flags) → named constants; one source, imported as needed.
-- TYPE UNIONS: scattered `'a' | 'b' | 'c'` inline unions → one shared type imported everywhere; unions are contracts; duplicates drift.
-- LIVE TYPES: API responses → contract types (OpenAPI/codegen, shared types package, contracts-first); DB schema → ORM-generated (Prisma/Drizzle); live classes → `typeof`/`satisfies`/inference; follow the project's pattern; never a hand-written parallel type.
+CONSOLIDATE (ONE source of truth from live structure, never hand-maintained):
+- MAGIC VALUES: repeated literals (status codes, config strings, IDs, thresholds, flags) → named constants, one source, imported as needed
+- TYPE UNIONS: scattered `'a' | 'b' | 'c'` unions → one shared type imported everywhere; a union is a contract, duplicates drift.
+- LIVE TYPES: API responses → contract types (OpenAPI/codegen, shared package, contracts-first); DB schema → ORM types (Prisma/Drizzle); live classes → `typeof`/`satisfies`/inference; follow the project's pattern, never hand-written parallels.

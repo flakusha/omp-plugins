@@ -88,16 +88,15 @@ const SHELL_C = new RegExp(
 // Full paths: /usr/bin/ls, /bin/cat, /usr/local/bin/grep, /usr/sbin/…
 const FULL_PATH = new RegExp(`/(?:usr/)?(?:bin|sbin)/(${BIN_ALT})\\b`);
 
-// Git mutating subcommand alternation (without the leading `\bgit\s+(`)
-// so FULL_PATH_GIT can compose it after `/usr/bin/git `.
-// Read-only stash inspection (`list`/`show`) stays allowed on ALL reaches;
-// `stash pop`/`apply`/`drop` mutate shared worktree state and stay blocked.
+const GIT_BRANCH_BLOCK =
+  "branch\\s+(?:-[a-zA-Z]*D[a-zA-Z]*\\b|-[a-z]*d[a-z]*f[a-z]*\\b|-[a-z]*f[a-z]*d[a-z]*\\b|-[a-z]*d[a-z]*\\s+(?:-[a-z]*f\\b|--force\\b))";
 const GIT_MUTATING_SUB =
   "push\\b" +
   "|stash\\b(?!\\s+(?:push\\b(?:\\s+--\\s+\\S|\\s+--include-untracked\\b)|list\\b|show\\b))" +
   "|reset\\s+--hard\\b" +
   "|clean\\s+-f?d\\b" +
-  "|branch\\s+-[dD]\\b" +
+  "|" +
+  GIT_BRANCH_BLOCK +
   "|commit\\s+--amend\\b";
 
 // `git status`/`git log`/`git diff` are read-only and stay allowed; mutating
@@ -330,6 +329,8 @@ export const GIT_MUTATING_REASON =
   "stays allowed; mutating operations need the user.";
 
 /** Per-subcommand fix for git mutating blocks. */
+const GIT_BRANCH_FIX =
+  "force branch deletion is irreversible — `git branch -d <branch>` (merged-only) is allowed; force-deleting needs the user (ask).";
 const GIT_FIX: Record<string, string> = {
   push: "commit locally and present the hash; `git push` needs explicit user authorization (ask). `git push --dry-run` and `git push -h` are allowed (information only).",
   stash:
@@ -339,7 +340,7 @@ const GIT_FIX: Record<string, string> = {
   "clean -fd":
     "irreversible history mutation — inspect with `git status`/`git log`/`git diff` and ask the user before destroying state.",
   "branch -D":
-    "irreversible history mutation — inspect with `git status`/`git log`/`git diff` and ask the user before destroying state.",
+    "force branch deletion is irreversible — `git branch -d <branch>` (merged-only) is allowed; force-deleting needs the user (ask).",
   "commit --amend":
     "irreversible history mutation — inspect with `git status`/`git log`/`git diff` and ask the user before destroying state.",
 };
@@ -404,12 +405,8 @@ function withEvidence(base: string, matched: string, seg: string, fix: string): 
 
 /** Full git-mutating block message for one matched subcommand. */
 function gitReason(sub: string, seg: string): string {
-  return withEvidence(
-    GIT_MUTATING_REASON,
-    `git ${sub}`,
-    seg,
-    GIT_FIX[sub] ?? "ask the user before mutating shared state.",
-  );
+  const label = sub.startsWith("-") ? `branch ${sub}` : `git ${sub}`;
+  return withEvidence(GIT_MUTATING_REASON, label, seg, GIT_FIX[sub] ?? GIT_BRANCH_FIX);
 }
 
 /**
@@ -420,41 +417,48 @@ function gitReason(sub: string, seg: string): string {
  */
 const GIT_MUTATING_RE = new RegExp(GIT_MUTATING);
 
-function gitMutatingForSegment(seg: string, inChain: boolean): string | undefined {
-  if (!seg || seg.startsWith("#")) return undefined;
-  const subOf = (re: RegExp, text: string): string | undefined => re.exec(text)?.[1];
-  const orig =
-    subOf(COMMAND_GIT, seg) ??
-    subOf(BUILTIN_GIT, seg) ??
-    subOf(SHELL_C_GIT, seg) ??
-    subOf(FULL_PATH_GIT, seg);
-  if (orig) return gitReason(orig, seg);
-  const deChained = stripChainPrefix(seg);
-  // `cd /repo && git push …` — second segment saw no chain prefix on itself,
-  // but the WHOLE command had a separator so the segment is reached via an
-  // evasion (chain prefix hides `git` from bashInterceptor's `^` anchor).
-  if (inChain && deChained) {
-    const chainSub = GIT_MUTATING_RE.exec(deChained)?.[1];
-    if (chainSub) return gitReason(chainSub, seg);
+/** Extract `git <sub>` from any of the four invocation forms in `text`. */
+const GIT_INVOCATION_REGEXES = [COMMAND_GIT, BUILTIN_GIT, SHELL_C_GIT, FULL_PATH_GIT];
+
+function extractGitSub(text: string): string | undefined {
+  for (const re of GIT_INVOCATION_REGEXES) {
+    const sub = re.exec(text)?.[1];
+    if (sub) return sub;
   }
-  // Repeated `cd /a; cd /b; git push` — the chain prefix DID change the text.
-  if (deChained && deChained !== seg) {
-    const wrappedSub =
-      subOf(COMMAND_GIT, deChained) ??
-      subOf(BUILTIN_GIT, deChained) ??
-      subOf(SHELL_C_GIT, deChained) ??
-      subOf(FULL_PATH_GIT, deChained) ??
-      (inChain ? GIT_MUTATING_RE.exec(deChained)?.[1] : undefined);
-    if (wrappedSub) return gitReason(wrappedSub, seg);
-  }
+  return undefined;
+}
+
+/** Run one normalized variant of `seg` through the git-mutating check; first hit wins. */
+function gitReasonForNormalized(text: string, seg: string, inChain: boolean): string | undefined {
+  const direct = extractGitSub(text);
+  if (direct) return gitReason(direct, seg);
+  const bareSub = GIT_MUTATING_RE.exec(text)?.[1];
+  if (bareSub && inChain) return gitReason(bareSub, seg);
+  return undefined;
+}
+
+/** After chain-prefix stripping, look for git subcommands in both forms. */
+function gitReasonForDeChained(
+  deChained: string,
+  seg: string,
+  inChain: boolean,
+): string | undefined {
+  const reason = gitReasonForNormalized(deChained, seg, inChain);
+  if (reason) return reason;
   // `git -C /repo push …` — global-option prefix breaks `\bgit\s+push` adjacency;
   // only flag when the prefix was actually stripped.
   const deGitOpt = stripGitOptionPrefix(deChained);
-  if (deGitOpt && deGitOpt !== deChained) {
-    const optSub = GIT_MUTATING_RE.exec(deGitOpt)?.[1] ?? FULL_PATH_GIT.exec(deGitOpt)?.[1];
-    if (optSub) return gitReason(optSub, seg);
-  }
-  return undefined;
+  if (!deGitOpt || deGitOpt === deChained) return undefined;
+  const optSub = GIT_MUTATING_RE.exec(deGitOpt)?.[1] ?? FULL_PATH_GIT.exec(deGitOpt)?.[1];
+  return optSub ? gitReason(optSub, seg) : undefined;
+}
+function gitMutatingForSegment(seg: string, inChain: boolean): string | undefined {
+  if (!seg || seg.startsWith("#")) return undefined;
+  const orig = gitReasonForNormalized(seg, seg, inChain);
+  if (orig) return orig;
+  // Chain-prefix hides `git` from bashInterceptor's `^` anchor (`cd /repo && git push`).
+  // Also `git -C /repo push` is caught via the deGitOpt path inside the helper.
+  return gitReasonForDeChained(stripChainPrefix(seg), seg, inChain);
 }
 
 export function gitMutatingReason(cmd: string): string | undefined {
@@ -918,7 +922,6 @@ function inlineFlagsFor(head: string): (token: string) => boolean {
     (jsHost && (token === "-p" || token === "--print")) ||
     /^-[a-zA-Z]*[ce]$/.test(token);
 }
-
 /**
  * One segment is an interpreter reading inline code: flag-based (`-c`/`-e`/
  * `--eval` before the program operand), heredoc-to-stdin (`interp … <<`),

@@ -5,16 +5,16 @@ condition: ["^(?=[\\s\\S]*strict( typing| types| mode)?)(?=[\\s\\S]*type safety|
 scope: ["text", "thinking"]
 ---
 
-Prefer strict typing and reuse of the project's types/interfaces/class-derived estimations — typed contracts fail at lint/build/test, not runtime.
+Prefer strict typing + reuse of the project's types/interfaces/class-derived estimations — typed contracts fail at lint/build/test, not runtime.
 
-WHY: a type error names file/symbol/mismatch at the callsite; a shared-type change breaks every affected callsite — wiring-sync-and-consolidation's two-sided invariant, mechanical.
+WHY: type errors name file/symbol/mismatch at the callsite; a shared-type change breaks every affected callsite — wiring-sync-and-consolidation's two-sided invariant, mechanical.
 
 HOW:
-- STRICT SETTINGS: TypeScript `strict` (or equiv.), lint rules, test contracts; never weaken/bypass for convenience.
-- NO ESCAPE HATCHES: `any`/`as any`/`@ts-ignore`/`@ts-expect-error`, avoidable non-null assertions, untyped payloads — documented boundary only, with a comment.
+- STRICT SETTINGS: TypeScript `strict` (or equiv.), lint rules, test contracts; never weaken/bypass.
+- NO ESCAPE HATCHES: `any`/`as any`/`@ts-ignore`/`@ts-expect-error`, avoidable non-null assertions, untyped payloads — documented boundary only, with comment.
 - ONE DEFINITION: shared types live once, imported everywhere; no duplicates/mirrors (see wiring-sync-and-consolidation).
-- DERIVE, DON'T MIRROR: estimate from the live source of truth (class/interface/schema/data structure), never a parallel hand-written shape.
+- DERIVE, DON'T MIRROR: estimate from live structure (class/interface/schema/data structure), never hand-written.
 
 DON'T OVER-APPLY:
-- "Prefer" is not "rewrite all": no wholesale conversion of loose code (churns diffs, behavior risk); enforce on NEW/TOUCHED code, legacy gaps stated + proposed.
-- Deliberately non-strict project: match it, flag the risk, don't fight mid-task.
+- "Prefer" ≠ "rewrite all": no wholesale conversion of loose code (churns diffs, behavior risk); enforce on NEW/TOUCHED code, legacy gaps stated + proposed.
+- Non-strict by choice: match it, flag the risk, don't fight mid-task.
