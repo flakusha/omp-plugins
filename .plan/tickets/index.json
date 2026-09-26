@@ -1,0 +1,82 @@
+{
+  "FEAT-INTEGRATE-GIWT-CLI-INTO-OMP-PLUGIN-EXTENSION": {
+    "hash": "50f4cac",
+    "git_issue": "50f4cac",
+    "extid": "FEAT-INTEGRATE-GIWT-CLI-INTO-OMP-PLUGIN-EXTENSION",
+    "type": "FEAT",
+    "title": "integrate giwt cli into omp plugin extension",
+    "label": "feat",
+    "priority": "Medium",
+    "epic": "",
+    "tags": [],
+    "source": ".plan/tickets/FEAT-integrate-giwt-cli-into-omp-plugin-extension.md",
+    "status": "⬜ Not Started"
+  },
+  "FEAT-SURFACE-GIWT-RUN-RECORDS-IN-FIND-WORK-DISCOVERY": {
+    "hash": "pending",
+    "extid": "FEAT-SURFACE-GIWT-RUN-RECORDS-IN-FIND-WORK-DISCOVERY",
+    "type": "FEAT",
+    "title": "surface giwt run records in find-work discovery",
+    "label": "feat",
+    "priority": "Medium",
+    "epic": "",
+    "tags": [],
+    "source": ".plan/tickets/FEAT-surface-giwt-run-records-in-find-work-discovery.md",
+    "status": "done"
+  },
+  "INFRA-ADD-REPO-LOCAL-GIWT-TOML-FOR-OMP-PLUGINS": {
+    "hash": "a0b6e5b",
+    "git_issue": "a0b6e5b",
+    "extid": "INFRA-ADD-REPO-LOCAL-GIWT-TOML-FOR-OMP-PLUGINS",
+    "type": "INFRA",
+    "title": "add repo-local giwt.toml for omp-plugins",
+    "label": "infra",
+    "priority": "Medium",
+    "epic": "",
+    "tags": [],
+    "source": ".plan/tickets/INFRA-add-repo-local-giwt-toml-for-omp-plugins.md",
+    "status": "⬜ Not Started"
+  },
+  "INFRA-FIND-WORK-READ-PLAN-FRONTMATTER-LABELS": {
+    "hash": "8b3d955",
+    "extid": "INFRA-FIND-WORK-READ-PLAN-FRONTMATTER-LABELS",
+    "type": "INFRA",
+    "title": "/find-work reads YAML frontmatter `labels` from .plan/* tickets and epics",
+    "label": "infra",
+    "priority": "Medium",
+    "epic": "",
+    "tags": [
+      "` alias (first non-empty wins",
+      "frontmatter preferred) — and"
+    ],
+    "source": ".plan/tickets/INFRA-find-work-read-plan-frontmatter-labels.md",
+    "status": "done",
+    "git_issue": "8b3d955"
+  },
+  "TASK-OMP-SCRATCHPAD-AUDIT-AND-SESSION-ARTIFACTS": {
+    "hash": "e39bd29",
+    "extid": "TASK-OMP-SCRATCHPAD-AUDIT-AND-SESSION-ARTIFACTS",
+    "type": "TASK",
+    "title": "# omp-plugins: scratchpad audit + receipt session-artifacts line",
+    "label": "task",
+    "priority": "Medium",
+    "epic": "",
+    "tags": [],
+    "source": ".plan/tickets/TASK-omp-scratchpad-audit-and-session-artifacts.md",
+    "status": "⬜ Not Started",
+    "git_issue": "e39bd29"
+  },
+  "TASK-OMP-TICKET-FINALIZE-FIND-WORK-HARDENING": {
+    "hash": "dd159ba",
+    "extid": "TASK-OMP-TICKET-FINALIZE-FIND-WORK-HARDENING",
+    "type": "TASK",
+    "title": "# omp-plugins: /ticket status validate, /finalize name-read, find-work hardening",
+    "label": "task",
+    "priority": "Medium",
+    "epic": "",
+    "tags": [],
+    "source": ".plan/tickets/TASK-omp-ticket-finalize-find-work-hardening.md",
+    "status": "⬜ Not Started",
+    "git_issue": "dd159ba"
+  }
+}
