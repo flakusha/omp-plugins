@@ -92,6 +92,14 @@ export const STATUS_LINE_RE =
 export const STATUS_DONE_RE =
   /^\s*(?:[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]+\s*|\[[^\]]*\]\s*|~~?\s*)*(done|fixed|complete[ds]?|closed|shipped|applied|finished|resolved|won'?t\s+(?:fix|do)|not-a-bug|duplicate(?:-of)?[\w.-]*)\b/iu;
 export const KEY_VALUE_RE = /^\s*([A-Za-z][\w-]*)\s*=\s*(.+)$/;
+/**
+ * `verified-at: <ISO-8601>` line — explicit freshness marker on evidence
+ * artifacts (`.plan/*.md` files, giwt run `meta.json`). Accepts markdown
+ * (`verified-at: <ISO>`) and JSON (`"verified-at": "<ISO>",`) key forms;
+ * captures the ISO value. An unparseable value is the caller's concern:
+ * consumers fall back to file mtime.
+ */
+export const VERIFIED_AT_RE = /^\s*"?verified-at"?\s*[:=]\s*"?([^\s"',}]+)"?\s*,?\s*[}\]]?\s*$/i;
 /** `**Epic:** <binding>` header — the .plan format's ticket→epic link. */
 export const PLAN_EPIC_HEADER_RE = /^\s*(?:[-*>\s]*)?\*\*Epic:\*\*\s*(.+?)\s*$/i;
 /** `-s` / `--search` — fuzzy search request (tags, candidates, connections). */
@@ -103,6 +111,13 @@ export const FAST_FLAG_RE = /^--?fast$/;
 
 export const DEFAULT_PRIORITY = "P3";
 export const MAX_TICKETS = 40;
+/**
+ * Evidence-artifact staleness threshold (days): `.plan/*.md` analysis files
+ * and giwt run records older than this stop surfacing as work — their
+ * findings have typically been fixed or bit-rotted past relevance. Tunable;
+ * effective age prefers a `verified-at:` line over file mtime.
+ */
+export const ARTIFACT_STALE_DAYS = 30;
 /** Max `-s` search hits appended after the main roster (fuzzy flood cap). */
 export const SEARCH_MAX_TICKETS = 10;
 export const MAX_TITLE = 80;

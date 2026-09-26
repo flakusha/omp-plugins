@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
@@ -62,6 +62,7 @@ import {
   todoCommentText,
   todoTickets,
 } from "../commands/find-work";
+import { ARTIFACT_STALE_DAYS } from "../commands/find-work/keywords";
 import { readPlanLabels } from "../util/plan-frontmatter";
 
 type CommandHandler = (args: string, ctx: ExtensionCommandContext) => Promise<void>;
@@ -687,6 +688,54 @@ describe("planTickets", () => {
     expect(byId["L-5"]).toMatchObject({ kind: "bug" });
     expect(byId["L-6"]).toBeUndefined(); // labels never bypass done-detection
   });
+
+  test("stale artifacts are suppressed; verified-at overrides mtime", () => {
+    // dd159ba AC5: .plan analysis artifacts older than ARTIFACT_STALE_DAYS
+    // stop surfacing as work. `verified-at: <ISO>` within the first 20
+    // lines overrides file mtime; an invalid marker falls back to mtime.
+    const dir = tempDir("fw-plan-stale-");
+    const ticketsDir = join(dir, ".plan", "tickets");
+    mkdirSync(ticketsDir, { recursive: true });
+    const day = 86_400_000;
+    const oldSec = (Date.now() - (ARTIFACT_STALE_DAYS + 10) * day) / 1000;
+    const oldIso = new Date(Date.now() - (ARTIFACT_STALE_DAYS + 5) * day).toISOString();
+    const setAge = (path: string, sec: number) => utimesSync(path, sec, sec);
+
+    // Old mtime, no marker → suppressed.
+    writeFileSync(join(ticketsDir, "S-1.md"), "# Old mtime\nStatus: open\n");
+    setAge(join(ticketsDir, "S-1.md"), oldSec);
+    // Fresh mtime → surfaced.
+    writeFileSync(join(ticketsDir, "S-2.md"), "# Fresh mtime\nStatus: open\n");
+    // Old mtime + recent verified-at → surfaced (marker wins).
+    writeFileSync(
+      join(ticketsDir, "S-3.md"),
+      `# Recently verified\nStatus: open\nverified-at: ${new Date().toISOString()}\n`,
+    );
+    setAge(join(ticketsDir, "S-3.md"), oldSec);
+    // Fresh mtime + old verified-at → suppressed (marker wins).
+    writeFileSync(
+      join(ticketsDir, "S-4.md"),
+      `# Verified long ago\nStatus: open\nverified-at: ${oldIso}\n`,
+    );
+    // Invalid ISO marker → mtime fallback keeps the fresh file surfaced.
+    writeFileSync(
+      join(ticketsDir, "S-5.md"),
+      "# Bad marker\nStatus: open\nverified-at: not-a-date\n",
+    );
+    // Marker beyond the first 20 lines does not count → old mtime suppresses.
+    writeFileSync(
+      join(ticketsDir, "S-6.md"),
+      "# Deep marker\nStatus: open\n" +
+        "filler\n".repeat(20) +
+        "verified-at: " +
+        new Date().toISOString() +
+        "\n",
+    );
+    setAge(join(ticketsDir, "S-6.md"), oldSec);
+
+    const ids = planTickets(dir).map((t) => t.id);
+    expect(ids.sort()).toEqual(["S-2", "S-3", "S-5"]);
+  });
 });
 
 describe("readPlanLabels", () => {
@@ -775,10 +824,11 @@ describe("CLI output parsers", () => {
     expect(bugs.map((t) => t.id)).toEqual(["GI-06cc3fb", "GI-9999fff"]);
   });
 
-  test("parseGitIssueList skips [closed] issues but keeps [open]", () => {
-    // Regression: `git-issue ls --state all` returns every issue regardless of state; the
-    // consumer must filter closed ones or they surface as work items even after
-    // the git-issue has been transitioned to closed via `giwt state <id> closed`.
+  test("parseGitIssueList parses [closed] lines — state filtering lives in the invocation", () => {
+    // dd159ba AC4: `git-issue ls --state=open` filters state at the source,
+    // so the parser only strips the bracket token before classification.
+    // A closed line reaching the parser means the caller asked for it
+    // (e.g. an explicit `--state all` sweep).
     const stdout = [
       "6ed8545 [closed] EPIC-030: LLM Request Throughput & Message Scheduling",
       "136d857 [closed] EPIC-031: World & Locations",
@@ -787,7 +837,12 @@ describe("CLI output parsers", () => {
       "",
     ].join("\n");
     const tickets = parseGitIssueList(stdout);
-    expect(tickets.map((t) => t.id)).toEqual(["GI-8c07e16", "GI-96970f5"]);
+    expect(tickets.map((t) => `${t.id} ${t.title}`)).toEqual([
+      "GI-6ed8545 EPIC-030: LLM Request Throughput & Message Scheduling",
+      "GI-136d857 EPIC-031: World & Locations",
+      "GI-8c07e16 EPIC-2026-23: Assistant Commands",
+      "GI-96970f5 EPIC-2026-24: Filtering & Pagination",
+    ]);
   });
 });
 
@@ -854,6 +909,39 @@ describe("fetchTickets", () => {
       "--json",
       "number,title,labels,url",
     ]);
+  });
+
+  test("git-issue ls is invoked with explicit --state=open", async () => {
+    // dd159ba AC4: state filtering happens at the source invocation, not in
+    // the parser — the args are pinned even though open is the tool default.
+    const pi = new FakePi();
+    pi.scripted.push({
+      stdout: "06cc3fb [open] BUG-server-host-dead: dead\n6ed8545 [closed] EPIC-030: old epic\n",
+    });
+    const { tickets } = await fetchTickets(pi, tempDir("fw-gitissue-state-"), {
+      receipt: false,
+      plan: false,
+      gh: false,
+      gitIssue: true,
+      jira: false,
+      glab: false,
+      trackerCli: false,
+      giwtLedger: false,
+      giwtRuns: false,
+      todo: false,
+      merges: false,
+      lint: false,
+      typecheck: false,
+      tests: false,
+      knip: false,
+      jscpd: false,
+    });
+    expect(pi.execCalls.find((c) => c.command === "git-issue")?.args).toEqual([
+      "ls",
+      "--state=open",
+    ]);
+    // The parser keeps whatever it is fed — closed included.
+    expect(tickets.map((t) => t.id)).toEqual(["GI-06cc3fb", "GI-6ed8545"]);
   });
 
   test("exec failures produce warnings, other sources still contribute", async () => {
@@ -1448,6 +1536,42 @@ describe("giwtRunTickets", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  test("stale run dirs are suppressed; verified-at in meta.json overrides mtime", () => {
+    // dd159ba AC5: run records older than ARTIFACT_STALE_DAYS stop
+    // surfacing as work — the crash they describe has gone stale.
+    const dir = tempDir("fw-giwt-runs-stale-");
+    mkdirSync(join(dir, ".tmp", "giwt"), { recursive: true });
+    writeFileSync(join(dir, "giwt.toml"), "[paths]\n");
+    const runsDir = join(dir, ".tmp", "giwt", "runs");
+    const day = 86_400_000;
+    const oldSec = (Date.now() - (ARTIFACT_STALE_DAYS + 10) * day) / 1000;
+    const abnormal = (cmd: string, extra: Record<string, unknown> = {}) =>
+      JSON.stringify(
+        { v: 1, cmd, args: [], branch: "", repoRoot: dir, pid: 1, start: "t", ...extra },
+        null,
+        2,
+      );
+    const mkRun = (name: string, meta: string, ageSec?: number) => {
+      const runDir = join(runsDir, name);
+      mkdirSync(runDir, { recursive: true });
+      writeFileSync(join(runDir, "meta.json"), meta);
+      if (ageSec !== undefined) utimesSync(runDir, ageSec, ageSec);
+    };
+
+    mkRun("20260910-1000-111-oldcrash", abnormal("oldcrash"), oldSec);
+    mkRun("20260910-1100-222-newcrash", abnormal("newcrash"));
+    mkRun(
+      "20260910-1200-333-verified",
+      abnormal("verified", { "verified-at": new Date().toISOString() }),
+      oldSec,
+    );
+
+    const titles = giwtRunTickets(dir).map((t) => t.title);
+    expect(titles.some((t) => t.includes("oldcrash"))).toBe(false);
+    expect(titles.some((t) => t.includes("newcrash"))).toBe(true);
+    expect(titles.some((t) => t.includes("verified"))).toBe(true);
   });
 });
 
@@ -2508,7 +2632,7 @@ describe("fetchTickets parallelism + tool-cluster budget", () => {
       gitIssue: true,
     });
     expect(pi.execCalls[0]?.command).toBe("git-issue");
-    expect(pi.execCalls[0]?.args).toEqual(["ls"]);
+    expect(pi.execCalls[0]?.args).toEqual(["ls", "--state=open"]);
     expect(tickets.map((t) => t.id)).toEqual(["GI-0674395"]);
     expect(warnings).toEqual([]);
   });

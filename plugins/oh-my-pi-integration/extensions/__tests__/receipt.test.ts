@@ -1,5 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+// Default import: the tracker patches the fs module surface, which is only
+// visible through property access (named-import bindings are snapshotted
+// at module instantiation, before any patch could land).
+import nodeFs, {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -7,9 +17,17 @@ import {
   carryReceipt,
   parseReceipt,
   RECEIPT_KEEP,
+  RECEIPT_MAX_LINES,
   renderFooter,
   setEntryState,
 } from "../receipt/receipt";
+import {
+  drainTmpWrites,
+  installTmpWriteTracker,
+  resetTmpWriteTracker,
+  TMP_WRITE_TRACKER_MAX,
+  tmpWriteTrackerInstalled,
+} from "../util/tmp-write-tracker";
 
 const tempDirs: string[] = [];
 function tempDir(prefix: string): string {
@@ -19,6 +37,7 @@ function tempDir(prefix: string): string {
 }
 
 afterEach(() => {
+  resetTmpWriteTracker(); // tracker patches process-global fs/Bun surfaces
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
@@ -306,5 +325,253 @@ describe("setEntryState", () => {
   test("matches ids case-insensitively, returns undefined for unknown ids", () => {
     expect(setEntryState(EXAMPLE, "f-02", "finished")).toContain('state = "finished"');
     expect(setEntryState(EXAMPLE, "F-99", "finished")).toBeUndefined();
+  });
+});
+
+describe("parseReceipt — session artifacts", () => {
+  test("parses a top-level session_artifacts array and tracks its line", () => {
+    const doc = parseReceipt(
+      'session_artifacts = [".tmp/a", ".tmp/b"]\n\n[[job]]\nX-1 = "thing"\n',
+    );
+    expect(doc.sessionArtifacts).toEqual([".tmp/a", ".tmp/b"]);
+    expect(doc.artifactsLine).toBe(0);
+  });
+
+  test("treats session_artifacts in the carriage region as carriage-level metadata", () => {
+    const doc = parseReceipt(
+      '[carriage]\nn = 2\nsession_artifacts = [".tmp/x"]\n\n[[job]]\nX-1 = "thing"\n',
+    );
+    expect(doc.sessionArtifacts).toEqual([".tmp/x"]);
+    expect(doc.artifactsLine).toBe(2);
+  });
+
+  test("tolerates malformed arrays", () => {
+    expect(parseReceipt("session_artifacts = [oops\n").sessionArtifacts).toEqual([]);
+    expect(parseReceipt('session_artifacts = ".tmp/a"\n').sessionArtifacts).toEqual([]);
+    expect(parseReceipt("session_artifacts = []\n").sessionArtifacts).toEqual([]);
+  });
+
+  test("session_artifacts inside a [[job]] block stays entry payload", () => {
+    const doc = parseReceipt('[[job]]\nsession_artifacts = [".tmp/a"]\n');
+    expect(doc.sessionArtifacts).toEqual([]);
+    expect(doc.artifactsLine).toBe(-1);
+    expect(doc.entries[0]?.firstKey).toBe("session_artifacts");
+  });
+});
+
+describe("carry — session artifacts", () => {
+  test("rewrites an existing session_artifacts line in place", () => {
+    const before = 'session_artifacts = [".tmp/old", ".tmp/stale"]\n\n[[job]]\nX-1 = "thing"\n';
+    const r = carry(before, RECEIPT_KEEP, [".tmp/a", ".tmp/b"]);
+    expect(r.text.split("\n")[3]).toBe('session_artifacts = [".tmp/a", ".tmp/b"]');
+    expect(r.text).not.toContain(".tmp/old");
+    expect(r.text).toContain('X-1 = "thing"');
+  });
+
+  test("inserts the line under [carriage] when absent", () => {
+    const r = carry('[[job]]\nX-1 = "thing"\n', RECEIPT_KEEP, [".tmp/a"]);
+    expect(r.text).toContain('[carriage]\nn = 1\nsession_artifacts = [".tmp/a"]');
+    expect(r.footer.some((l) => l.startsWith("artifacts: 1"))).toBe(true);
+  });
+
+  test("round-trips: the inserted line is re-parsed and replaced, never duplicated", () => {
+    const once = carry('[[job]]\nX-1 = "thing"\n', RECEIPT_KEEP, [".tmp/a", ".tmp/b"]);
+    const twice = carry(once.text); // no new artifacts: line stays, footer keeps it
+    expect(twice.text).toContain('session_artifacts = [".tmp/a", ".tmp/b"]');
+    expect(twice.footer.some((l) => l.startsWith("artifacts: 2"))).toBe(true);
+    const thrice = carry(twice.text, RECEIPT_KEEP, [".tmp/c"]);
+    expect(thrice.text.match(/session_artifacts/g)).toHaveLength(1);
+    expect(thrice.text).toContain('session_artifacts = [".tmp/c"]');
+  });
+
+  test("empty artifacts leave a document without the key byte-identical (bump aside)", () => {
+    const text = '[[job]]\nX-1 = "thing"\n';
+    expect(carry(text, RECEIPT_KEEP, []).text).toBe(carry(text).text);
+    expect(carry(text, RECEIPT_KEEP, []).text).not.toContain("session_artifacts");
+  });
+
+  test("empty artifacts leave an existing line untouched", () => {
+    const r = carry(
+      'session_artifacts = [".tmp/keep"]\n\n[[job]]\nX-1 = "thing"\n',
+      RECEIPT_KEEP,
+      [],
+    );
+    expect(r.text).toContain('session_artifacts = [".tmp/keep"]');
+  });
+
+  test("insertion lands on the real line even when chores prune blocks above", () => {
+    const text =
+      '[carriage]\nn = 5\n\n[[job]]\nD-1 = "done long ago"\nstate = "finished"\ndone_at = 3\n';
+    const r = carry(text, RECEIPT_KEEP, [".tmp/a"]);
+    expect(r.text).not.toContain("D-1");
+    expect(r.text).not.toContain("done long ago");
+    expect(r.text).toContain("n = 6");
+    expect(r.text).toContain('session_artifacts = [".tmp/a"]');
+  });
+});
+
+describe("renderFooter — session artifacts", () => {
+  test("appends one artifacts summary line after the entry lines", () => {
+    const doc = parseReceipt(
+      'session_artifacts = [".tmp/a", ".tmp/b", ".tmp/c"]\n\n[[job]]\nX-1 = "thing"\n',
+    );
+    const footer = renderFooter(doc);
+    expect(footer).toHaveLength(3);
+    expect(footer[2]).toBe("artifacts: 3 (.tmp/a, .tmp/b, .tmp/c)");
+  });
+
+  test("truncates the path list to fit, keeping the count exact", () => {
+    const paths = Array.from({ length: 40 }, (_, i) => `.tmp/very-long-artifact-name-${i}`);
+    const doc = parseReceipt(`session_artifacts = [${paths.map((p) => `"${p}"`).join(", ")}]\n`);
+    const line = renderFooter(doc).find((l) => l.startsWith("artifacts:"));
+    expect(line?.startsWith("artifacts: 40 (")).toBe(true);
+    expect(line?.endsWith(", …)")).toBe(true);
+    expect((line ?? "").length).toBeLessThanOrEqual(120);
+  });
+
+  test("drops the artifacts line first when the footer would exceed RECEIPT_MAX_LINES", () => {
+    const jobs = Array.from(
+      { length: RECEIPT_MAX_LINES - 1 },
+      (_, i) => `[[job]]\nJ-${i} = "job ${i}"\n`,
+    ).join("");
+    const doc = parseReceipt(`session_artifacts = [".tmp/a"]\n${jobs}`);
+    const footer = renderFooter(doc);
+    expect(footer).toHaveLength(RECEIPT_MAX_LINES);
+    expect(footer.some((l) => l.startsWith("artifacts:"))).toBe(false);
+    expect(footer.filter((l) => l.startsWith("job"))).toHaveLength(RECEIPT_MAX_LINES - 1);
+  });
+
+  test("keeps the artifacts line when it exactly fills the cap", () => {
+    const jobs = Array.from(
+      { length: RECEIPT_MAX_LINES - 2 },
+      (_, i) => `[[job]]\nJ-${i} = "job ${i}"\n`,
+    ).join("");
+    const doc = parseReceipt(`session_artifacts = [".tmp/a"]\n${jobs}`);
+    const footer = renderFooter(doc);
+    expect(footer).toHaveLength(RECEIPT_MAX_LINES);
+    expect(footer[footer.length - 1]).toBe("artifacts: 1 (.tmp/a)");
+  });
+});
+
+describe("carryReceipt — session artifacts wiring", () => {
+  test("passes tmp writes into the TOML carry and footer", async () => {
+    const cwd = tempDir("receipt-artifacts-");
+    mkdirSync(join(cwd, ".omp"));
+    writeFileSync(join(cwd, ".omp", "receipt.toml"), '[[job]]\nJ-1 = "scratch files"\n');
+    const result = await carryReceipt(cwd, {}, [".tmp/a", ".tmp/b"]);
+    const written = readFileSync(join(cwd, ".omp", "receipt.toml"), "utf8");
+    expect(written).toContain('session_artifacts = [".tmp/a", ".tmp/b"]');
+    expect(result?.message.content).toContain("artifacts: 2 (.tmp/a, .tmp/b)");
+  });
+
+  test("disabled receipt ignores tmp writes entirely", async () => {
+    const cwd = tempDir("receipt-artifacts-off-");
+    mkdirSync(join(cwd, ".omp"));
+    writeFileSync(join(cwd, ".omp", "receipt.toml"), '[[job]]\nJ-1 = "scratch files"\n');
+    expect(await carryReceipt(cwd, { PI_RECEIPT_DISABLE: "1" }, [".tmp/a"])).toBeUndefined();
+    expect(readFileSync(join(cwd, ".omp", "receipt.toml"), "utf8")).not.toContain(
+      "session_artifacts",
+    );
+  });
+});
+
+describe("tmp write tracker", () => {
+  // Resource contract: each test owns a unique mkdtemp root; the tracker
+  // itself patches process-global fs/Bun surfaces, so every test resets it
+  // via the file-wide afterEach (parallel files must not rely on patch state).
+  test("records .tmp writes across patched fs APIs in write order, deduped", () => {
+    const root = tempDir("tracker-root-");
+    installTmpWriteTracker(root);
+    expect(tmpWriteTrackerInstalled()).toBe(true);
+    mkdirSync(join(root, ".tmp"), { recursive: true });
+    nodeFs.writeFileSync(join(root, ".tmp", "a"), "A");
+    nodeFs.appendFileSync(join(root, ".tmp", "b"), "B");
+    nodeFs.writeFile(join(root, ".tmp", "c"), "C", () => {});
+    nodeFs.writeFileSync(join(root, ".tmp", "a"), "A2"); // dedup: same destination
+    nodeFs.writeFileSync(join(root, "outside.txt"), "no"); // outside .tmp/
+    nodeFs.writeFileSync("/tmp/tracker-elsewhere.txt", "no"); // outside the root
+    expect(drainTmpWrites()).toEqual([".tmp/a", ".tmp/b", ".tmp/c"]);
+    expect(drainTmpWrites()).toEqual([]);
+  });
+
+  test("records renameSync destinations, not sources", () => {
+    const root = tempDir("tracker-rename-");
+    installTmpWriteTracker(root);
+    mkdirSync(join(root, ".tmp"), { recursive: true });
+    nodeFs.writeFileSync(join(root, ".tmp", "d.part"), "D");
+    drainTmpWrites();
+    nodeFs.renameSync(join(root, ".tmp", "d.part"), join(root, ".tmp", "d"));
+    expect(drainTmpWrites()).toEqual([".tmp/d"]);
+  });
+
+  test("records Bun.write destinations", async () => {
+    const root = tempDir("tracker-bun-");
+    installTmpWriteTracker(root);
+    mkdirSync(join(root, ".tmp"), { recursive: true });
+    await Bun.write(join(root, ".tmp", "e"), "E");
+    expect(drainTmpWrites()).toEqual([".tmp/e"]);
+  });
+
+  test("double install is a no-op and reset restores passthrough", () => {
+    const root = tempDir("tracker-idem-");
+    installTmpWriteTracker(root);
+    const wrapped = nodeFs.writeFileSync;
+    installTmpWriteTracker(root); // idempotent: same wrapper, no re-wrap
+    expect(nodeFs.writeFileSync).toBe(wrapped);
+    mkdirSync(join(root, ".tmp"), { recursive: true });
+    nodeFs.writeFileSync(join(root, ".tmp", "f"), "F");
+    expect(drainTmpWrites()).toEqual([".tmp/f"]);
+    resetTmpWriteTracker();
+    expect(tmpWriteTrackerInstalled()).toBe(false);
+    nodeFs.writeFileSync(join(root, ".tmp", "g"), "G");
+    expect(drainTmpWrites()).toEqual([]);
+  });
+
+  test("PI_RECEIPT_DISABLE=1 at install time skips patching", () => {
+    const prev = process.env.PI_RECEIPT_DISABLE;
+    process.env.PI_RECEIPT_DISABLE = "1";
+    try {
+      const root = tempDir("tracker-off-");
+      installTmpWriteTracker(root);
+      expect(tmpWriteTrackerInstalled()).toBe(false);
+      mkdirSync(join(root, ".tmp"), { recursive: true });
+      nodeFs.writeFileSync(join(root, ".tmp", "h"), "H");
+      expect(drainTmpWrites()).toEqual([]);
+    } finally {
+      if (prev === undefined) delete process.env.PI_RECEIPT_DISABLE;
+      else process.env.PI_RECEIPT_DISABLE = prev;
+    }
+  });
+
+  test("caps recorded paths at the tracker maximum", () => {
+    const root = tempDir("tracker-cap-");
+    installTmpWriteTracker(root);
+    mkdirSync(join(root, ".tmp"), { recursive: true });
+    for (let i = 0; i < TMP_WRITE_TRACKER_MAX + 5; i++) {
+      nodeFs.writeFileSync(join(root, ".tmp", `f${i}`), "x");
+    }
+    const drained = drainTmpWrites();
+    expect(drained).toHaveLength(TMP_WRITE_TRACKER_MAX);
+    expect(drained[0]).toBe(".tmp/f0"); // first-seen order kept
+  });
+
+  test("end to end: tracked writes land in receipt.toml and drain once", async () => {
+    const root = tempDir("tracker-e2e-");
+    installTmpWriteTracker(root);
+    mkdirSync(join(root, ".tmp"), { recursive: true });
+    mkdirSync(join(root, ".omp"));
+    writeFileSync(join(root, ".omp", "receipt.toml"), '[[job]]\nJ-1 = "scratch files"\n');
+    nodeFs.writeFileSync(join(root, ".tmp", "a"), "A");
+    nodeFs.appendFileSync(join(root, ".tmp", "b"), "B");
+    await new Promise<void>((res, rej) =>
+      nodeFs.writeFile(join(root, ".tmp", "c"), "C", (err) => (err ? rej(err) : res())),
+    );
+    const drained = drainTmpWrites();
+    expect(drained).toEqual([".tmp/a", ".tmp/b", ".tmp/c"]);
+    const result = await carryReceipt(root, {}, drained);
+    const written = readFileSync(join(root, ".omp", "receipt.toml"), "utf8");
+    expect(written).toContain('session_artifacts = [".tmp/a", ".tmp/b", ".tmp/c"]');
+    expect(result?.message.content).toContain("artifacts: 3 (.tmp/a, .tmp/b, .tmp/c)");
+    expect(drainTmpWrites()).toEqual([]); // the receipt write lives outside .tmp/
   });
 });

@@ -6,9 +6,9 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@oh-my-pi/pi-coding-
 import {
   buildWtPrompt,
   buildWtStatus,
+  buildWtTomlTemplate,
   detectWtEnv,
   registerWt,
-  WT_TOML_TEMPLATE,
   type WtEnv,
 } from "../commands/wt";
 
@@ -57,6 +57,7 @@ function envWith(over: Partial<WtEnv>): WtEnv {
     wtOnPath: false,
     wtToml: false,
     worktreeCli: true,
+    giwt: false,
     planDir: true,
     gitIssue: true,
     ...over,
@@ -69,12 +70,18 @@ describe("detectWtEnv", () => {
     expect(env.wtOnPath).toBe(false);
     expect(env.wtToml).toBe(false);
     expect(env.worktreeCli).toBe(false);
+    expect(env.giwt).toBe(false);
     expect(env.planDir).toBe(false);
   });
 
   test("fake wt on PATH is detected", () => {
     const env = detectWtEnv(tempDir("wt-empty-"), binDirWith("wt"));
     expect(env.wtOnPath).toBe(true);
+  });
+
+  test("fake giwt on PATH is detected", () => {
+    const env = detectWtEnv(tempDir("wt-empty-"), binDirWith("giwt"));
+    expect(env.giwt).toBe(true);
   });
 
   test("wt.toml and tracker CLI are detected", () => {
@@ -95,6 +102,7 @@ describe("buildWtStatus", () => {
     expect(text).toContain("not on PATH");
     expect(text).toContain("/wt init");
     expect(text).toContain("usage:");
+    expect(text).toContain("giwt on PATH");
   });
 
   test("confirms wt and hooks when present", () => {
@@ -110,12 +118,25 @@ describe("buildWtPrompt", () => {
     expect(text).toContain(".config/wt.toml");
     expect(text).toContain('worktree-path = "tree/{{ branch | sanitize }}"');
     expect(text).toContain("wt step copy-ignored");
+    expect(text).toContain('ticket = "bun run scripts/worktree/ ticket {{ args }}"');
+  });
+
+  test("init template uses giwt aliases when giwt is on PATH", () => {
+    const text = buildWtPrompt(envWith({ giwt: true }), "init", "");
+    expect(text).toContain('ticket = "giwt ticket {{ args }}"');
+    expect(text).toContain("giwt on PATH yes");
   });
 
   test("tracker ops route to the repo CLI even when wt is present", () => {
     const text = buildWtPrompt(envWith({ wtOnPath: true }), "ticket", "TASK title");
     expect(text).toContain("bun run scripts/worktree/ ticket TASK title");
     expect(text).not.toContain("`wt ticket`");
+  });
+
+  test("tracker ops route through giwt when it is on PATH", () => {
+    const text = buildWtPrompt(envWith({ giwt: true }), "ticket", "TASK title");
+    expect(text).toContain("giwt ticket TASK title");
+    expect(text).not.toContain("scripts/worktree");
   });
 
   test("Object.prototype names route to lifecycle, not tracker", () => {
@@ -136,11 +157,23 @@ describe("buildWtPrompt", () => {
   });
 });
 
-describe("WT_TOML_TEMPLATE", () => {
-  test("bridges lifecycle and tracker", () => {
-    expect(WT_TOML_TEMPLATE).toContain("wt step copy-ignored");
-    expect(WT_TOML_TEMPLATE).toContain("bun run check");
-    expect(WT_TOML_TEMPLATE).toContain("scripts/worktree/ ticket");
+describe("buildWtTomlTemplate", () => {
+  test("aliases bridge to giwt when it is on PATH", () => {
+    const toml = buildWtTomlTemplate(envWith({ giwt: true }));
+    expect(toml).toContain("wt step copy-ignored");
+    expect(toml).toContain("bun run check");
+    expect(toml).toContain('ticket = "giwt ticket {{ args }}"');
+    expect(toml).toContain('sync = "giwt sync {{ args }}"');
+    expect(toml).toContain('finalize = "giwt finalize {{ args }}"');
+    expect(toml).not.toContain("scripts/worktree");
+  });
+
+  test("aliases fall back to scripts/worktree without giwt", () => {
+    const toml = buildWtTomlTemplate(envWith({ giwt: false }));
+    expect(toml).toContain('ticket = "bun run scripts/worktree/ ticket {{ args }}"');
+    expect(toml).toContain('sync = "bun run scripts/worktree/ sync {{ args }}"');
+    expect(toml).toContain('finalize = "bun run scripts/worktree/ finalize {{ args }}"');
+    expect(toml).not.toContain("giwt");
   });
 });
 

@@ -10,6 +10,10 @@
  * and always routes ticket flows to the repo tracker. No new binary dep:
  * `wt` absent means the prompt falls back to the existing CLI/git paths.
  *
+ * 2026-09-26: tracker verbs and the /wt init template aliases prefer
+ * `giwt` when it is on PATH — giwt supersedes scripts/worktree; the
+ * bun-run scripts/worktree forms remain the fallback when giwt is absent.
+ *
  * Handler discipline (same as the other commands): bare/status answers go
  * to `ctx.ui.notify` (no turn spent); everything else builds a prompt for
  * `pi.sendUserMessage` so the work runs inside a turn with guards active.
@@ -19,6 +23,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@oh-my-pi/pi-coding-agent";
+import { giwtOnPath } from "../util/giwt-config";
 import { onPath } from "./bookkeep";
 import { argumentItems } from "./completions";
 
@@ -31,6 +36,8 @@ export interface WtEnv {
   wtToml: boolean;
   /** `scripts/worktree/` tracker CLI present. */
   worktreeCli: boolean;
+  /** `giwt` on PATH — supersedes scripts/worktree for tracker verbs. */
+  giwt: boolean;
   /** `.plan/` planning dir present. */
   planDir: boolean;
   /** `git-issue` on PATH. */
@@ -42,8 +49,12 @@ export interface WtEnv {
  * conventions as worktrunk config: worktrees under `tree/`, ignored-cache
  * sharing on create, check gate before merge, and aliases bridging the
  * tracker worktrunk deliberately has no equivalent for (ticket/sync).
+ * Tracker aliases run `giwt` when it is on PATH; otherwise they fall back
+ * to the legacy `bun run scripts/worktree/` CLI.
  */
-export const WT_TOML_TEMPLATE = `# worktrunk project config — lifecycle via wt, tracking via the repo CLI.
+export function buildWtTomlTemplate(env: WtEnv): string {
+  const tracker = env.giwt ? "giwt" : "bun run scripts/worktree/";
+  return `# worktrunk project config — lifecycle via wt, tracking via ${env.giwt ? "giwt" : "the repo CLI"}.
 # Managed by /wt init; worktrunk approves project commands on first run.
 worktree-path = "tree/{{ branch | sanitize }}"
 
@@ -54,12 +65,13 @@ caches = "wt step copy-ignored"
 check = "bun run check"
 
 [aliases]
-ticket = "bun run scripts/worktree/ ticket {{ args }}"
-sync = "bun run scripts/worktree/ sync {{ args }}"
-finalize = "bun run scripts/worktree/ finalize {{ args }}"
+ticket = "${tracker} ticket {{ args }}"
+sync = "${tracker} sync {{ args }}"
+finalize = "${tracker} finalize {{ args }}"
 `;
+}
 
-/** Tracker subcommands owned by the repo CLI — never delegated to wt. */
+/** Tracker subcommands owned by the repo tracker (giwt or scripts/worktree) — never delegated to wt. */
 const TRACKER: Record<string, true> = {
   ticket: true,
   sync: true,
@@ -85,6 +97,7 @@ export function detectWtEnv(cwd: string | undefined, pathEnv?: string): WtEnv {
     worktreeCli:
       existsSync(join(root, "scripts", "worktree", "index.ts")) ||
       existsSync(join(root, "scripts", "worktree", "index.mjs")),
+    giwt: giwtOnPath(pathEnv),
     planDir: existsSync(join(root, ".plan")),
     gitIssue: onPath("git-issue", pathEnv),
   };
@@ -95,7 +108,7 @@ function envLine(env: WtEnv): string {
   return (
     `repo root ${env.root}; wt on PATH ${yesNo(env.wtOnPath)}; ` +
     `.config/wt.toml ${yesNo(env.wtToml)}; worktree CLI ${yesNo(env.worktreeCli)}; ` +
-    `.plan ${yesNo(env.planDir)}; git-issue ${yesNo(env.gitIssue)}`
+    `giwt on PATH ${yesNo(env.giwt)}; .plan ${yesNo(env.planDir)}; git-issue ${yesNo(env.gitIssue)}`
   );
 }
 
@@ -107,6 +120,7 @@ export function buildWtStatus(env: WtEnv): string {
     `tracker: ${env.worktreeCli ? "scripts/worktree present" : "absent"}${
       env.planDir ? " + .plan" : ""
     }${env.gitIssue ? " + git-issue" : ""}`,
+    `giwt on PATH: ${env.giwt ? "yes — tracker verbs and init aliases route through giwt" : "no — tracker verbs use scripts/worktree when present"}`,
     "usage: /wt <switch|list|merge|remove|...|ticket|sync|init|status>",
   ];
   return lines.join("\n");
@@ -122,7 +136,7 @@ export function buildWtPrompt(env: WtEnv, sub: string, rest: string): string {
     return [
       `Set up worktrunk project hooks in ${env.root}: write .config/wt.toml with this content, adjusting only the pre-merge check command to the repo's own verify gate when it is not \`bun run check\`:`,
       "```toml",
-      WT_TOML_TEMPLATE.trimEnd(),
+      buildWtTomlTemplate(env).trimEnd(),
       "```",
       `Detected environment: ${envLine(env)}. Run \`wt config shell install\` first when wt is newly installed so switch changes directories.`,
     ].join("\n");
@@ -134,13 +148,17 @@ export function buildWtPrompt(env: WtEnv, sub: string, rest: string): string {
 
 /** Prompt body for tracker verbs — owned by the repo CLI, never worktrunk. */
 function buildWtTrackerPrompt(env: WtEnv, sub: string, arg: string): string {
-  const cli = env.worktreeCli ? `bun run scripts/worktree/ ${sub}${arg ? ` ${arg}` : ""}` : null;
+  const cli = env.giwt
+    ? `giwt ${sub}${arg ? ` ${arg}` : ""}`
+    : env.worktreeCli
+      ? `bun run scripts/worktree/ ${sub}${arg ? ` ${arg}` : ""}`
+      : null;
   return [
-    `Tracker operation '${sub}' belongs to the repo CLI, not worktrunk (worktrunk has no ticket/issue concept).`,
+    `Tracker operation '${sub}' belongs to ${env.giwt ? "giwt" : "the repo CLI"}, not worktrunk (worktrunk has no ticket/issue concept).`,
     `Detected environment: ${envLine(env)}.`,
     cli
       ? `Run from ${env.root}: ${cli}. Cross-reference the git issue with its .plan/tickets/ file (see /bookkeep), and /find-work to discover items.`
-      : `No scripts/worktree CLI in ${env.root}: use git-issue directly${arg ? ` (${arg})` : ""} and keep any .plan/tickets/ file in sync by hand.`,
+      : `No giwt or scripts/worktree CLI in ${env.root}: use git-issue directly${arg ? ` (${arg})` : ""} and keep any .plan/tickets/ file in sync by hand.`,
   ].join("\n");
 }
 

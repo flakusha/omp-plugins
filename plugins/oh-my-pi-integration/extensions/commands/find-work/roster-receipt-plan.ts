@@ -11,12 +11,14 @@ import { resolveGiwtConfig, resolvePlanDir } from "../../util/giwt-config";
 import { readPlanLabels } from "../../util/plan-frontmatter";
 import { classifyKind, classifyPriority, domainOf, kindFromReceiptId } from "./classify";
 import {
+  ARTIFACT_STALE_DAYS,
   DEFAULT_PRIORITY,
   HEADING_RE,
   KEY_VALUE_RE,
   PLAN_EPIC_HEADER_RE,
   STATUS_DONE_RE,
   STATUS_LINE_RE,
+  VERIFIED_AT_RE,
 } from "./keywords";
 import type { TicketKind, WorkTicket } from "./types";
 
@@ -62,7 +64,18 @@ const PLAN_DIRS: Array<{ dir: "tickets" | "epics" | "backlog"; kind: TicketKind 
   { dir: "backlog", kind: "task" },
 ];
 
-/** Parse one `.plan/*.md` file into a ticket, or null when done/unreadable. */
+/**
+ * Effective timestamp (ms) of a `.plan` artifact: a `verified-at: <ISO>`
+ * line within the first 20 lines when parseable, else file mtime.
+ * Failure-tolerant: an invalid ISO marker falls back to mtime.
+ */
+function planEffectiveMs(lines: string[], mtimeMs: number): number {
+  const verifiedLine = lines.slice(0, 20).find((line) => VERIFIED_AT_RE.test(line));
+  const verifiedMs = Date.parse(VERIFIED_AT_RE.exec(verifiedLine ?? "")?.[1] ?? "");
+  return Number.isNaN(verifiedMs) ? mtimeMs : verifiedMs;
+}
+
+/** Parse one `.plan/*.md` file into a ticket, or null when done/stale/unreadable. */
 function planFileTicket(
   abs: string,
   file: string,
@@ -71,8 +84,11 @@ function planFileTicket(
 ): WorkTicket | null {
   const path = join(abs, file);
   let text: string;
+  let mtimeMs: number;
   try {
-    if (!statSync(path).isFile()) return null;
+    const st = statSync(path);
+    if (!st.isFile()) return null;
+    mtimeMs = st.mtimeMs;
     text = readFileSync(path, "utf8").slice(0, 4096);
   } catch {
     return null;
@@ -94,6 +110,13 @@ function planFileTicket(
     .filter((line) => STATUS_LINE_RE.test(line))
     .map((line) => STATUS_LINE_RE.exec(line)?.[1] ?? "");
   if (statusValues.some((v) => STATUS_DONE_RE.test(v))) return null; // labels never bypass done-detection
+  // Stale analysis artifacts stop surfacing as work (dd159ba AC5): older
+  // than ARTIFACT_STALE_DAYS they describe a repo state that likely no
+  // longer exists. `verified-at:` overrides mtime where present; the
+  // sha-vs-HEAD check lands with giwt's verified-at convention.
+  if (Date.now() - planEffectiveMs(lines, mtimeMs) > ARTIFACT_STALE_DAYS * 86_400_000) {
+    return null;
+  }
   const fromMeta = classifyKind(labels, title);
   return {
     id,

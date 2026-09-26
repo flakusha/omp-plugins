@@ -44,7 +44,7 @@ export {
 } from "./receipt-doc";
 
 /** Skip both the TOML read/carry/parse path and the footer build when nothing applies. */
-function readAndCarryToml(tomlPath: string): string[] {
+function readAndCarryToml(tomlPath: string, tmpWrites?: string[]): string[] {
   if (!existsSync(tomlPath)) return [];
   let text: string;
   try {
@@ -54,7 +54,7 @@ function readAndCarryToml(tomlPath: string): string[] {
   }
   let result: CarryResult;
   try {
-    result = carry(text);
+    result = carry(text, RECEIPT_KEEP, tmpWrites);
   } catch {
     return []; // malformed beyond tolerance: fail open, never write
   }
@@ -102,18 +102,21 @@ function readGiwtFooter(treeDir: string, available: boolean): string[] {
  * giwt config, default `<cwd>/.omp`), apply chores, write back atomically,
  * and return the footer message injection for `before_agent_start`. Also
  * reads giwt's `.ledger.jsonl` and appends recent agent activity as a
- * secondary section in the footer. Fail-open: any problem → undefined,
- * file untouched (or footer-only when only the write failed).
+ * secondary section in the footer. `tmpWrites` (drained from the in-process
+ * `.tmp` write tracker) rewrite the `session_artifacts` line. Fail-open:
+ * any problem → undefined, file untouched (or footer-only when only the
+ * write failed).
  */
 export async function carryReceipt(
   cwd: string | undefined,
   env: Record<string, string | undefined> = process.env as Record<string, string | undefined>,
+  tmpWrites?: string[],
 ): Promise<{ message: CustomMessagePayload } | undefined> {
   if (!cwd || env.PI_RECEIPT_DISABLE === "1") return undefined;
 
   const giwtConfig = resolveGiwtConfig(cwd);
   // ── TOML receipt (job ledger with state) ──────────────────────────
-  const tomlFooter = readAndCarryToml(giwtConfig.receiptPath);
+  const tomlFooter = readAndCarryToml(giwtConfig.receiptPath, tmpWrites);
 
   // ── giwt ledger (append-only agent activity, read-only) ──────────
   const giwtFooter = readGiwtFooter(giwtConfig.treeDir, giwtConfig.available);

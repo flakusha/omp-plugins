@@ -8,13 +8,16 @@ import {
   buildFindPrompt,
   buildIssuePrompt,
   buildListPrompt,
+  buildScratchAuditPrompt,
   buildSyncPrompt,
 } from "./prompts";
+import { formatScratchSummary, orphanTmpCount, scratchSummary } from "./scratch";
 
 export type BookkeepAction = { prompt: string } | { message: string; level: "info" | "error" };
 
 function auditAction(env: BookkeepEnv, rest: string[]): BookkeepAction {
-  if (!rest[0]) return { message: "usage: /bookkeep audit <epic|ticket>", level: "error" };
+  // Bare audit → scratchpad cross-ref report; probing is delegated to the turn.
+  if (!rest[0]) return { prompt: buildScratchAuditPrompt(env) };
   return { prompt: buildAuditPrompt(env, rest[0]) };
 }
 
@@ -37,6 +40,14 @@ function configAction(env: BookkeepEnv): BookkeepAction {
   return { message: `${bookkeepUsage(env)}\n\n${dumpGiwtConfig(env.root)}`, level: "info" };
 }
 
+/** Read-only pure-fs `.tmp` hygiene summary (no turn spent, no exec). */
+function scratchAction(env: BookkeepEnv): BookkeepAction {
+  return {
+    message: formatScratchSummary(scratchSummary(env.root), orphanTmpCount(env.root)),
+    level: "info",
+  };
+}
+
 const BOOKKEEP_ACTIONS: Record<string, (env: BookkeepEnv, rest: string[]) => BookkeepAction> = {
   audit: auditAction,
   sync: syncAction,
@@ -44,6 +55,7 @@ const BOOKKEEP_ACTIONS: Record<string, (env: BookkeepEnv, rest: string[]) => Boo
   issue: issueAction,
   list: (env: BookkeepEnv) => ({ prompt: buildListPrompt(env) }),
   config: (env: BookkeepEnv) => configAction(env),
+  scratch: (env: BookkeepEnv) => scratchAction(env),
 };
 
 export function resolveBookkeepAction(env: BookkeepEnv, argv: string[]): BookkeepAction {

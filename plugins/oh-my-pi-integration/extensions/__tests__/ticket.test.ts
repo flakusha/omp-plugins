@@ -7,11 +7,13 @@ import {
   buildTicketExec,
   buildTicketFallbackPrompt,
   detectTicketEnv,
+  findStatusAdvisory,
   kebabTicketTitle,
   type ParsedTicket,
   parseTicketArgs,
   parseTicketExec,
   registerTicket,
+  STATUS_VOCAB,
   TICKET_PRIORITIES,
   TICKET_TYPES,
   ticketCompletions,
@@ -447,6 +449,43 @@ describe("ticketCompletions", () => {
   });
 });
 
+describe("findStatusAdvisory", () => {
+  test("no status line (or empty/undefined body) returns null", () => {
+    expect(findStatusAdvisory(undefined)).toBeNull();
+    expect(findStatusAdvisory("")).toBeNull();
+    expect(findStatusAdvisory("plain prose body\nsecond line")).toBeNull();
+  });
+
+  test("off-vocab status value returns an advisory naming it and the vocabulary", () => {
+    const advisory = findStatusAdvisory("Summary line\n\n**Status:** Not Started\n");
+    expect(advisory).toContain("[status-vocab advisory]");
+    expect(advisory).toContain("'Not Started'");
+    expect(advisory).toContain(STATUS_VOCAB.join(" | "));
+    expect(advisory).toContain("Proceeding (vocab not yet ratified)");
+  });
+
+  test("in-vocab status values return null, case-insensitively", () => {
+    expect(findStatusAdvisory("**Status:** in_progress")).toBeNull();
+    expect(findStatusAdvisory("**Status:** OPEN")).toBeNull();
+    expect(findStatusAdvisory("- **status** = Done")).toBeNull();
+  });
+
+  test("emoji and literal-undefined status values advise", () => {
+    expect(findStatusAdvisory("**Status:** ⬜ Permanently Ongoing")).toContain(
+      "'⬜ Permanently Ongoing'",
+    );
+    expect(findStatusAdvisory("**Status:** undefined")).toContain("'undefined'");
+  });
+
+  test("loose-mode body without a status line is unaffected", () => {
+    expect(findStatusAdvisory("loose body words joined by single spaces")).toBeNull();
+  });
+
+  test("first matching status line decides; later lines are ignored", () => {
+    expect(findStatusAdvisory("**Status:** open\n**Status:** bogus")).toBeNull();
+  });
+});
+
 describe("ticket handler", () => {
   test("registers with a description and working completions", () => {
     const { pi, completions } = ticketCmd();
@@ -559,5 +598,24 @@ describe("ticket handler", () => {
     await handler("BUG crash", makeCtx(root, notified));
     expect(notified[0]?.[1]).toBe("error");
     expect(notified[0]?.[0]).toContain("giwt ticket failed");
+  });
+
+  test("off-vocab body status warns and still execs giwt (fail-open)", async () => {
+    const { pi, handler } = ticketCmd();
+    const root = tempDir("tkt-hvocab-");
+    scaffoldGiwt(root);
+    pi.scripted.push({
+      stdout: "Created\nFile: .plan/tickets/TASK-x.md\n",
+      stderr: "",
+      exitCode: 0,
+    });
+    const notified: Array<[string, string | undefined]> = [];
+    await handler("TASK Fix **Status:** Not Started", makeCtx(root, notified));
+    const advisory = notified.find(([msg]) => msg.includes("[status-vocab advisory]"));
+    expect(advisory?.[1]).toBe("warning");
+    expect(advisory?.[0]).toContain("'Not Started'");
+    expect(pi.execCalls).toHaveLength(1);
+    expect(pi.execCalls[0]?.command).toBe("giwt");
+    expect(notified[notified.length - 1]?.[1]).toBe("info");
   });
 });

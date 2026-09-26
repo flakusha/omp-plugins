@@ -3,7 +3,7 @@
 
 # INFRA: add repo-local giwt.toml for omp-plugins
 
-**Status:** ⬜ Not Started
+**Status:** ✅ Done (giwt.toml at repo root: [branches] root=master, [commands] check=bun run verify + test=bun run test, diff_base=false — finalize gates resolve to the repo's own scripts)
 **Priority:** Medium
 **Effort:** Medium
 
@@ -13,6 +13,6 @@ omp-plugins has no 'check' or 'test:unit' npm scripts (it has verify/test), so g
 
 ## Acceptance Criteria
 
-- [ ] Implementation complete
-- [ ] Tests passing
-- [ ] Documentation updated
+- [x] Implementation complete (commit 2a3976c added giwt.toml + pre-commit gate; test = "bun run test" added so commands.test no longer defaults to the missing test:unit script)
+- [x] Tests passing (giwt-config.test.ts + check-shipment install round-trip green)
+- [x] Documentation updated (README lifecycle section)

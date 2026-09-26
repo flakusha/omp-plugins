@@ -29,7 +29,10 @@ plugin can be installed directly with `omp plugin install`.
   `state` fields) into the agent loop as an invisible footer, and applies
   chores: bumps the `[carriage] n` counter, stamps finished jobs with
   `done_at`, prunes finished jobs after 3 receipts, and drops empty entries —
-  line-oriented, so comments and unknown keys survive. Fail-open throughout;
+  line-oriented, so comments and unknown keys survive. Each carry also
+  records a `session_artifacts = [...]` key listing paths written under
+  `.tmp/` during the session (in-process write tracker), surfaced in the
+  footer as a one-line `artifacts: N`. Fail-open throughout;
   opt out with `PI_RECEIPT_DISABLE=1`.
 - **`/find-work` command** — discovers open work items across the receipt
   ledger, `.plan/` docs (labels read from YAML frontmatter `labels:`,
@@ -43,7 +46,10 @@ plugin can be installed directly with `omp plugin install`.
   candidates by the topic when a directive matches tickets and hands the
   selected batch (and any trailing directive, e.g. `/find-work ask propose
   the next batch of fixes`) to an agent turn. jira/glab are resolved inside
-  that turn. Independent sources fetch concurrently; live tool findings
+  that turn. `git-issue` sources request open tickets explicitly
+  (`ls --state=open`); `.plan/` and giwt-run artifacts older than 30 days
+  (`ARTIFACT_STALE_DAYS`, or a newer `verified-at:` marker) stop surfacing.
+  Independent sources fetch concurrently; live tool findings
   (lint/typecheck/tests/knip/jscpd, via `giwt doctor check` when available)
   share a bounded wall budget (`TOOL_CLUSTER_BUDGET_MS`, 120s) — on repos
   where they cannot finish in budget the roster still presents, with a
@@ -201,9 +207,16 @@ bun run hooks:install  # activate .githooks/pre-commit (core.hooksPath)
 
 The pre-commit hook runs the typecheck + lint + test gate when TS/config/shell
 files are staged (the gate is fast enough that the full run IS the fast path).
-[giwt](../giwt) manages the repo lifecycle: `giwt.toml` sets the finalize gate
-(`bun run verify`, no `--diff-base` append) and the fork-base branch; worktrees
-created via giwt inherit `.githooks/` automatically.
+[giwt](../giwt) manages the repo lifecycle: `giwt.toml` sets the finalize gates
+(check `bun run verify`, test `bun run test`, no `--diff-base` append) and the
+fork-base branch; worktrees created via giwt inherit `.githooks/` automatically.
+`/wt` and `/finalize` detect `giwt` on PATH and prefer it over the legacy
+scripts/worktree CLI; the giwt finalize prompt names failing gates from the
+run record's `meta.json` (`outcome.failedGates`) instead of re-running blind.
+`/bookkeep` gained a bare `audit` scratchpad cross-reference report and a
+`scratch` subcommand (pure-fs `.tmp` hygiene summary: bytes, orphans, oldest
+artifact, top globs). `/ticket` advises (`[status-vocab advisory]`, fail-open)
+when a body `**Status:**` value falls outside the provisional vocabulary.
 
 | Script | What it runs |
 |---|---|

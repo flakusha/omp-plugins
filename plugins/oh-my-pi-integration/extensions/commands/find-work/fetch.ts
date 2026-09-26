@@ -60,11 +60,18 @@ function ghIssuesSlot(pi: ExecLike): Promise<Slot> {
   })();
 }
 
-/** `git-issue ls` slot (subprocess → tickets or empty warning). */
+/**
+ * `git-issue ls --state=open` slot (subprocess → tickets or empty warning).
+ * State filtering happens at the invocation: `--state=open` pins the tool's
+ * open-by-default behavior explicitly (dd159ba AC4) so closed issues never
+ * reach the parser.
+ */
 function gitIssueSlot(pi: ExecLike): Promise<Slot> {
   return (async (): Promise<Slot> => {
     try {
-      const res = await pi.exec("git-issue", ["ls"], { timeout: SOURCE_EXEC_TIMEOUT_MS });
+      const res = await pi.exec("git-issue", ["ls", "--state=open"], {
+        timeout: SOURCE_EXEC_TIMEOUT_MS,
+      });
       const parsed = parseGitIssueList(res.stdout ?? "");
       if (parsed.length > 0) return { tickets: parsed };
       return { tickets: [], warning: "git-issue ls returned no parseable items" };

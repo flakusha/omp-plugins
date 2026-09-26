@@ -2,9 +2,11 @@
  * `/bookkeep` — planning-hygiene dispatcher.
  *
  * Subcommands: `audit <epic|ticket>` (reconcile tracker claims against code),
- * `sync [--fix]` (verify the planning index), `find <query>` (locate items),
- * `issue <request>` (tracker operations via the detected backend),
- * `list` (enumerate discovered planning items),
+ * bare `audit` (scratchpad cross-ref: `.tmp` artifacts ↔ `.plan`/`docs`/
+ * `src` references, both directions), `scratch` (pure-fs `.tmp` hygiene
+ * summary via `notify`), `sync [--fix]` (verify the planning index),
+ * `find <query>` (locate items), `issue <request>` (tracker operations via
+ * the detected backend), `list` (enumerate discovered planning items),
  * `config` (dump resolved giwt/omp config: file, paths, branches, commands).
  *
  * The handler detects the tracking environment with fs checks only (no turn
@@ -29,6 +31,8 @@ export {
   buildFindPrompt,
   buildIssuePrompt,
   buildListPrompt,
+  buildScratchAuditPrompt,
   buildSyncPrompt,
 } from "./bookkeep/prompts";
 export { registerBookkeep } from "./bookkeep/register";
+export { formatScratchSummary, orphanTmpCount, scratchSummary } from "./bookkeep/scratch";

@@ -21,10 +21,11 @@
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@oh-my-pi/pi-coding-agent";
 import { argumentItems } from "./completions";
+import { STATUS_LINE_RE } from "./find-work/keywords";
 import { detectTicketEnv } from "./ticket/env";
 import { buildTicketExec, parseTicketExec, type TicketExecResult } from "./ticket/exec";
 import type { ParsedTicket } from "./ticket/parse";
-import { parseTicketArgs } from "./ticket/parse";
+import { parseTicketArgs, STATUS_VOCAB } from "./ticket/parse";
 import { buildTicketFallbackPrompt, ticketCompletions, ticketUsage } from "./ticket/prompt";
 
 export type { TicketEnv } from "./ticket/env";
@@ -32,7 +33,7 @@ export { detectTicketEnv } from "./ticket/env";
 export type { TicketExecResult } from "./ticket/exec";
 export { buildTicketExec, kebabTicketTitle, parseTicketExec } from "./ticket/exec";
 export type { ParsedTicket, TicketType } from "./ticket/parse";
-export { parseTicketArgs, TICKET_PRIORITIES, TICKET_TYPES } from "./ticket/parse";
+export { parseTicketArgs, STATUS_VOCAB, TICKET_PRIORITIES, TICKET_TYPES } from "./ticket/parse";
 export { buildTicketFallbackPrompt, ticketCompletions, ticketUsage } from "./ticket/prompt";
 
 /** Extract the best error string from a thrown `pi.exec` failure (stderr > stdout). */
@@ -42,12 +43,33 @@ function giwtExecErrorMessage(err: unknown): string {
   return typeof out.stdout === "string" ? out.stdout : "";
 }
 
-/** Run `giwt ticket` with `parsed`, reporting failures on `ctx.ui`. Returns null on any failure. */
+/**
+ * Pre-write advisory for the first `**Status:**` line in `body`: null when
+ * absent or its (trimmed, case-insensitive) value sits inside the provisional
+ * STATUS_VOCAB, else the `[status-vocab advisory]` warning text. Pure —
+ * callers notify and proceed (fail-open: the giwt write is never blocked).
+ */
+export function findStatusAdvisory(body: string | undefined): string | null {
+  if (!body) return null;
+  for (const line of body.split(/\r?\n/)) {
+    const match = STATUS_LINE_RE.exec(line);
+    if (!match) continue;
+    const value = (match[1] ?? "").trim();
+    if ((STATUS_VOCAB as readonly string[]).includes(value.toLowerCase())) return null;
+    return `[status-vocab advisory] **Status:** line '${value}' is outside the provisional vocabulary ${STATUS_VOCAB.join(" | ")} — giwt writes the canonical '⬜ Not Started' unless the body overrides it; consider aligning. Proceeding (vocab not yet ratified).`;
+  }
+  return null;
+}
+
+/** Run `giwt ticket` with `parsed`, emitting the pre-write status-vocab advisory (fail-open) and reporting failures on `ctx.ui`. Returns null on any failure. */
 async function runGiwtTicket(
   pi: ExtensionAPI,
   parsed: ParsedTicket,
   ctx: ExtensionCommandContext,
 ): Promise<{ stdout: string; stderr: string; exitCode?: number } | null> {
+  const statusAdvisory = findStatusAdvisory(parsed.body);
+  if (statusAdvisory) ctx.ui.notify(statusAdvisory, "warning");
+
   let res: { stdout: string; stderr: string; exitCode?: number };
   try {
     res = await pi.exec("giwt", buildTicketExec(parsed), { timeout: 30_000 });

@@ -3,7 +3,7 @@
 
 # FEAT: integrate giwt cli into omp plugin extension
 
-**Status:** ⬜ Not Started
+**Status:** ✅ Done (detectWtEnv/hasWorktreeCli detect giwt on PATH; tracker prompt + /wt init aliases emit `giwt <sub>`; REPO_ROOT workaround dropped from the giwt finalize prompt — loadConfig resolves the main root via git rev-parse --git-common-dir from any cwd)
 **Priority:** Medium
 **Effort:** Medium
 
@@ -13,6 +13,6 @@ Replace the hardwired 'bun run scripts/worktree/' tracker prompts with the stand
 
 ## Acceptance Criteria
 
-- [ ] Implementation complete
-- [ ] Tests passing
-- [ ] Documentation updated
+- [x] Implementation complete (extensions/commands/{wt,finalize}.ts: giwt-on-PATH detection, `giwt <sub>` tracker prompt + /wt init template aliases, REPO_ROOT instruction removed for the giwt path)
+- [x] Tests passing (wt.test.ts 12+ cases, finalize.test.ts hermetic via pathEnv; full suite 1279/1279)
+- [x] Documentation updated (README lifecycle section)

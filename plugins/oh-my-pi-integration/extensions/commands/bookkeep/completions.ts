@@ -3,7 +3,15 @@
 import { discoverPlanningIds } from "./discover";
 import type { BookkeepEnv } from "./env";
 
-const BOOKKEEP_SUBCOMMANDS = ["audit", "sync", "find", "issue", "list", "config"] as const;
+const BOOKKEEP_SUBCOMMANDS = [
+  "audit",
+  "sync",
+  "find",
+  "issue",
+  "list",
+  "config",
+  "scratch",
+] as const;
 /** Verbs the `issue` subcommand commonly takes; pure suffix hints. */
 const ISSUE_VERBS = ["list", "view", "search", "create", "close", "comment", "assign"];
 
@@ -41,6 +49,8 @@ export function bookkeepCompletions(env: BookkeepEnv, argPrefix: string): string
     case "list":
       return [];
     case "config":
+      return [];
+    case "scratch":
       return [];
     default:
       return BOOKKEEP_SUBCOMMANDS.filter((s) => s.startsWith(lastPrefix));

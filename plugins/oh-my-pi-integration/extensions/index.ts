@@ -18,8 +18,10 @@
  *
  * 3. Receipt carriage: when `<project>/.omp/receipt.toml` exists, each turn
  *    carries the job ledger as an invisible footer message and applies the
- *    pruning chores (finished jobs dropped after 3 receipts). Fail-open;
- *    opt out with `PI_RECEIPT_DISABLE=1`.
+ *    pruning chores (finished jobs dropped after 3 receipts). Session `.tmp`
+ *    writes are tracked in-process and surfaced as a `session_artifacts`
+ *    list plus one footer line. Fail-open; opt out with
+ *    `PI_RECEIPT_DISABLE=1`.
  *
  * Feature wiring lives in ./plugin/* (guards, post-edit lint, memory buffer,
  * turn-start retrieval); this entry registers them plus the receipt carriage,
@@ -33,6 +35,7 @@ import { registerMemoryBuffer } from "./plugin/memory-buffer";
 import { registerPostEditLint } from "./plugin/post-edit-lint";
 import { registerTurnStartRetrieval } from "./plugin/retrieval";
 import { carryReceipt } from "./receipt/receipt";
+import { drainTmpWrites, installTmpWriteTracker } from "./util/tmp-write-tracker";
 import { createWorktreeBaseApplier } from "./util/worktree-base";
 
 const DISABLE = () => typeof process !== "undefined" && process.env?.PI_INTEGRATION_DISABLE === "1";
@@ -51,9 +54,19 @@ export default function integrationPlugin(pi: ExtensionAPI): void {
   // Injects the project's job ledger as an invisible footer message and runs
   // the pruning chores (see receipt/receipt.ts). Fail-open by construction;
   // opt out with PI_RECEIPT_DISABLE=1.
+
+  // Session artifact tracking: patch fs/Bun write surfaces once per process
+  // so `.tmp` scratch files land in the receipt as `session_artifacts`. The
+  // session root is process.cwd() at install — OMP loads extensions with the
+  // session cwd already applied, so tracked writes resolve against the same
+  // root the receipt carries (assumed stable for the process; /move sessions
+  // track against the original root). Skipped entirely when the receipt is
+  // opted out; draining when uninstalled is a cheap empty list.
+  if (process.env?.PI_RECEIPT_DISABLE !== "1") installTmpWriteTracker(process.cwd());
+
   pi.on("before_agent_start", async (_event, ctx: ExtensionContext) => {
     try {
-      return await carryReceipt(ctx.cwd);
+      return await carryReceipt(ctx.cwd, process.env, drainTmpWrites());
     } catch {
       return undefined; // receipt must never break the loop
     }

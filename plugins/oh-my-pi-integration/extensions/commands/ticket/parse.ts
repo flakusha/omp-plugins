@@ -15,6 +15,13 @@ export const TICKET_TYPES: readonly TicketType[] = [
   "INFRA",
 ] as const;
 export const TICKET_PRIORITIES: readonly string[] = ["low", "medium", "high", "critical"] as const;
+/**
+ * Provisional `**Status:**` value vocabulary for the pre-write advisory
+ * check. Closed enum pending giwt ratification
+ * (TASK-giwt-plan-validate-status-vocab); values are provisional and used
+ * only to warn (fail-open) — never to block a write.
+ */
+export const STATUS_VOCAB = ["open", "in_progress", "blocked", "done", "dropped"] as const;
 
 export interface ParsedTicket {
   type: TicketType | null;

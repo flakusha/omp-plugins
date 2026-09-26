@@ -13,7 +13,7 @@ function indexCommand(env: BookkeepEnv): string | null {
 
 export function bookkeepUsage(env: BookkeepEnv): string {
   return [
-    "bookkeep <audit <epic|ticket>|sync [--fix]|find <query>|issue <request>|list|config>",
+    "bookkeep <audit <epic|ticket>|audit (bare: .tmp cross-ref)|scratch|sync [--fix]|find <query>|issue <request>|list|config>",
     `tracking: .plan ${yesNo(env.planDir)}; index: ${env.planScripts.join(",") || "none"}; worktree-tracker ${yesNo(env.worktreeTracker)}; gh ${yesNo(env.gh)}; jira ${yesNo(env.jira)}; giwt ${yesNo(env.giwtAvailable)}`,
   ].join("\n");
 }
@@ -54,6 +54,19 @@ export function buildAuditPrompt(env: BookkeepEnv, target: string): string {
     "3. Cross-reference sweep in the same turn: grep the planning area for every renamed/moved symbol or file and update downstream trackers that reference it.",
     `4. ${verifyStep}`,
     "Summarize in 3 buckets: closable (issue IDs), false-claim (ticket IDs + actual code state), not-started (tickets needing new work).",
+  ].join("\n");
+}
+
+/** Turn prompt: bidirectional `.tmp` scratchpad cross-ref audit (bare `audit`). */
+export function buildScratchAuditPrompt(env: BookkeepEnv): string {
+  return [
+    `Audit the .tmp scratchpad linkage in ${env.root} — both directions, all in the same turn, no deferrals.`,
+    `Facts: root ${env.root}; .plan/ ${yesNo(env.planDir)}${env.planDir ? "" : " — direction 1 will find no references; report that and still run direction 2"}.`,
+    "1. Plans → scratch: extract every relative `.tmp/…` path referenced from any `.plan/**/*.md`; verify each artifact exists (ls -l) and warn on every missing one.",
+    "2. Scratch → plans: for every file under `.tmp/`, run `grep -rlF <basename>` over `.plan/`, `docs/`, `src/`; zero matches means unreferenced — warn per artifact.",
+    "3. Emit a summary table of findings: artifact | direction | evidence (missing, or referencing file:line) | size + age.",
+    "4. Suggest a disposition per artifact — reference it (link it from the plan doc that should own it), archive it (move under `.tmp/archive/`), or delete it.",
+    "Read-only audit: report and suggest only — mutate nothing without explicit user confirm.",
   ].join("\n");
 }
 

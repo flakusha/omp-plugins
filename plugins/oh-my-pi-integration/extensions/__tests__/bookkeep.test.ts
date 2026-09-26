@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@oh-my-pi/pi-coding-agent";
@@ -10,12 +10,15 @@ import {
   buildFindPrompt,
   buildIssuePrompt,
   buildListPrompt,
+  buildScratchAuditPrompt,
   buildSyncPrompt,
   detectBookkeepEnv,
   discoverPlanningIds,
   registerBookkeep,
 } from "../commands/bookkeep";
+import { resolveBookkeepAction } from "../commands/bookkeep/actions";
 import { tryGiwtBookkeep } from "../commands/bookkeep/giwt";
+import { formatScratchSummary, orphanTmpCount, scratchSummary } from "../commands/bookkeep/scratch";
 
 type CommandHandler = (args: string, ctx: ExtensionCommandContext) => Promise<void>;
 
@@ -101,6 +104,38 @@ function scaffoldBins(withJira: boolean): void {
   process.env.PATH = `${bin}:${savedPath}`;
 }
 
+/**
+ * Unique-per-test scratchpad fixture: 8 files / 272 bytes across 6 glob
+ * groups (alpha 160 B, beta 50 B, gamma 30 B, root '*' 12 B, delta 10 B,
+ * eps 10 B — the delta/eps tie is broken by name and eps falls off the
+ * top-5). `.tmp/root-a.txt` gets a pinned 2020 mtime (oldest). Basenames
+ * `solo.md` (.plan) and `deep.txt` (src) are referenced; the other 6 are
+ * orphans.
+ */
+function scaffoldScratchTree(root: string): void {
+  mkdirSync(join(root, ".tmp/alpha"), { recursive: true });
+  mkdirSync(join(root, ".tmp/beta/inner"), { recursive: true });
+  mkdirSync(join(root, ".tmp/gamma"), { recursive: true });
+  mkdirSync(join(root, ".tmp/delta"), { recursive: true });
+  mkdirSync(join(root, ".tmp/eps"), { recursive: true });
+  mkdirSync(join(root, ".plan/tickets"), { recursive: true });
+  mkdirSync(join(root, "docs"), { recursive: true });
+  mkdirSync(join(root, "src"), { recursive: true });
+  writeFileSync(join(root, ".tmp/root-a.txt"), "aaaa");
+  writeFileSync(join(root, ".tmp/root-b.txt"), "bbbbbbbb");
+  writeFileSync(join(root, ".tmp/alpha/big1.dat"), "x".repeat(100));
+  writeFileSync(join(root, ".tmp/alpha/big2.dat"), "x".repeat(60));
+  writeFileSync(join(root, ".tmp/beta/inner/deep.txt"), "x".repeat(50));
+  writeFileSync(join(root, ".tmp/gamma/solo.md"), "x".repeat(30));
+  writeFileSync(join(root, ".tmp/delta/delta-note.txt"), "x".repeat(10));
+  writeFileSync(join(root, ".tmp/eps/eps-note.txt"), "x".repeat(10));
+  writeFileSync(join(root, ".plan/tickets/FEAT-1.md"), "see .tmp/gamma/solo.md for detail\n");
+  writeFileSync(join(root, "docs/guide.md"), "# guide\n");
+  writeFileSync(join(root, "src/index.ts"), `export const dep = ".tmp/beta/inner/deep.txt";\n`);
+  const old = new Date("2020-01-02T03:04:05.000Z");
+  utimesSync(join(root, ".tmp/root-a.txt"), old, old);
+}
+
 describe("detectBookkeepEnv", () => {
   test("empty dir detects nothing", () => {
     const env = detectBookkeepEnv(tempDir("bk-empty-"));
@@ -148,6 +183,17 @@ describe("prompt builders", () => {
     expect(prompt).toContain("tracker backend");
   });
 
+  test("scratch audit prompt probes both directions and cites env facts", () => {
+    const root = tempDir("bk-scrp-");
+    scaffoldPlanRepo(root);
+    const prompt = buildScratchAuditPrompt(detectBookkeepEnv(root));
+    expect(prompt).toContain("grep -rlF");
+    expect(prompt).toContain("ls -l");
+    expect(prompt).toContain(root);
+    expect(prompt).toContain(".plan/ yes");
+    expect(prompt).toContain("disposition");
+  });
+
   test("sync prompt is read-only without --fix", () => {
     const root = tempDir("bk-sync-");
     scaffoldPlanRepo(root);
@@ -189,7 +235,9 @@ describe("prompt builders", () => {
 
   test("usage summarizes the detected environment", () => {
     const usage = bookkeepUsage(detectBookkeepEnv(tempDir("bk-usage-")));
-    expect(usage).toContain("audit <epic|ticket>|sync");
+    expect(usage).toContain("audit <epic|ticket>");
+    expect(usage).toContain("audit (bare: .tmp cross-ref)");
+    expect(usage).toContain("scratch");
     expect(usage).toContain(".plan no");
   });
 });
@@ -209,11 +257,23 @@ describe("bookkeep handler", () => {
     expect(notified[0]?.[0]).toContain("bookkeep <audit");
   });
 
-  test("audit without target errors", async () => {
+  test("bare audit starts the scratchpad cross-ref turn", async () => {
     const { pi, notified } = setup(tempDir("bk-haudit0-"));
     await pi.commands.get("bookkeep")?.handler("audit", makeCtx(tempDir("bk-haudit0b-"), notified));
-    expect(notified[0]?.[1]).toBe("error");
+    expect(pi.sentUserMessages).toHaveLength(1);
+    expect(pi.sentUserMessages[0]).toContain("grep -rlF");
+    expect(notified).toHaveLength(0);
+  });
+
+  test("scratch notifies the pure-fs summary without spending a turn", async () => {
+    const root = tempDir("bk-hscratch-");
+    scaffoldScratchTree(root);
+    const { pi, notified } = setup(root);
+    await pi.commands.get("bookkeep")?.handler("scratch", makeCtx(root, notified));
     expect(pi.sentUserMessages).toHaveLength(0);
+    expect(notified[0]?.[1]).toBe("info");
+    expect(notified[0]?.[0]).toContain("orphan");
+    expect(notified[0]?.[0]).toContain("272 bytes");
   });
 
   test("audit starts the reconcile turn", async () => {
@@ -267,6 +327,102 @@ describe("bookkeep handler", () => {
     expect(notified[0]?.[0]).toContain("unknown subcommand");
     expect(notified[0]?.[1]).toBe("error");
     expect(pi.sentUserMessages).toHaveLength(0);
+  });
+});
+
+describe("scratchSummary / orphanTmpCount / formatScratchSummary", () => {
+  test("sums bytes, counts files, pins the oldest artifact, top-5 globs", () => {
+    const root = tempDir("bk-scr-");
+    scaffoldScratchTree(root);
+    const s = scratchSummary(root);
+    expect(s.totalBytes).toBe(272);
+    expect(s.fileCount).toBe(8);
+    expect(s.oldestPath).toBe(".tmp/root-a.txt");
+    expect(s.oldestMtime).toBe(new Date("2020-01-02T03:04:05.000Z").getTime());
+    expect(s.topGlobs).toEqual([
+      { glob: "alpha/*", bytes: 160 },
+      { glob: "beta/*", bytes: 50 },
+      { glob: "gamma/*", bytes: 30 },
+      { glob: "*", bytes: 12 },
+      { glob: "delta/*", bytes: 10 },
+    ]);
+  });
+
+  test("orphans count unreferenced basenames; referenced ones excluded", () => {
+    const root = tempDir("bk-scrorphan-");
+    scaffoldScratchTree(root);
+    expect(scratchSummary(root).orphanCount).toBe(6);
+    expect(orphanTmpCount(root)).toBe(6);
+  });
+
+  test("format renders humanized bytes, orphans, oldest, globs", () => {
+    const root = tempDir("bk-scrfmt-");
+    scaffoldScratchTree(root);
+    const text = formatScratchSummary(scratchSummary(root), orphanTmpCount(root));
+    expect(text).toContain("272 B");
+    expect(text).toContain("orphan");
+    expect(text).toContain(".tmp/root-a.txt");
+    expect(text).toContain("2020-01-02T03:04:05.000Z");
+    expect(text).toContain("alpha/*");
+    expect(formatScratchSummary({ ...scratchSummary(root), totalBytes: 2048 }, 0)).toContain(
+      "2.0 KiB",
+    );
+    expect(
+      formatScratchSummary({ ...scratchSummary(root), totalBytes: 3 * 1024 * 1024 }, 0),
+    ).toContain("3.0 MiB");
+  });
+
+  test("no .tmp dir fails open with the empty-summary note", () => {
+    const root = tempDir("bk-scrno-");
+    expect(scratchSummary(root)).toEqual({
+      totalBytes: 0,
+      fileCount: 0,
+      orphanCount: 0,
+      oldestPath: null,
+      oldestMtime: null,
+      topGlobs: [],
+    });
+    expect(orphanTmpCount(root)).toBe(0);
+    expect(formatScratchSummary(scratchSummary(root), 0)).toContain("(no .tmp dir)");
+  });
+});
+
+describe("resolveBookkeepAction scratch/bare-audit dispatch", () => {
+  test("bare audit returns the bidirectional cross-ref prompt", () => {
+    const root = tempDir("bk-rbare-");
+    scaffoldScratchTree(root);
+    const action = resolveBookkeepAction(detectBookkeepEnv(root), ["audit"]);
+    if (!("prompt" in action)) throw new Error("expected prompt action");
+    expect(action.prompt).toContain("grep -rlF");
+    expect(action.prompt).toContain("ls -l");
+    expect(action.prompt).toContain(".plan/");
+    expect(action.prompt).toContain("both directions");
+  });
+
+  test("audit with a target still builds the reconcile prompt", () => {
+    const root = tempDir("bk-rtarget-");
+    scaffoldPlanRepo(root);
+    const action = resolveBookkeepAction(detectBookkeepEnv(root), ["audit", "EPIC-2"]);
+    if (!("prompt" in action)) throw new Error("expected prompt action");
+    expect(action.prompt).toContain("EPIC-2");
+    expect(action.prompt).toContain("Audit planning artifact");
+  });
+
+  test("scratch returns an info message with byte count and orphans", () => {
+    const root = tempDir("bk-rscr-");
+    scaffoldScratchTree(root);
+    const action = resolveBookkeepAction(detectBookkeepEnv(root), ["scratch"]);
+    if (!("message" in action)) throw new Error("expected message action");
+    expect(action.level).toBe("info");
+    expect(action.message).toContain("orphan");
+    expect(action.message).toContain("272 bytes");
+  });
+
+  test("unknown subcommand still errors", () => {
+    const action = resolveBookkeepAction(detectBookkeepEnv(tempDir("bk-runk-")), ["frobnicate"]);
+    if (!("message" in action)) throw new Error("expected message action");
+    expect(action.level).toBe("error");
+    expect(action.message).toContain("unknown subcommand");
   });
 });
 
@@ -372,6 +528,7 @@ describe("bookkeepCompletions", () => {
     expect(items).toContain("issue");
     expect(items).toContain("list");
     expect(items).toContain("config");
+    expect(items).toContain("scratch");
   });
 
   test("partial prefix narrows subcommands", () => {
@@ -389,6 +546,12 @@ describe("bookkeepCompletions", () => {
     const env = detectBookkeepEnv(tempDir("bk-cmp3-"));
     expect(bookkeepCompletions(env, "sync -")).toEqual(["--fix"]);
     expect(bookkeepCompletions(env, "sync f")).toEqual([]);
+  });
+
+  test("scratch narrows by prefix and completes nothing further", () => {
+    const env = detectBookkeepEnv(tempDir("bk-cmp8-"));
+    expect(bookkeepCompletions(env, "sc")).toEqual(["scratch"]);
+    expect(bookkeepCompletions(env, "scratch ")).toEqual([]);
   });
 
   test("find <prefix> returns plan IDs and ignores done items", () => {

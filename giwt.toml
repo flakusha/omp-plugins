@@ -8,4 +8,5 @@ root = "master"
 # finalize gate. Ends in a chain of scripts (not a test-file consumer), so
 # the auto-appended `--diff-base <sha>` must be disabled.
 check = "bun run verify"
+test = "bun run test"
 diff_base = false
