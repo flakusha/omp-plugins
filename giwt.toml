@@ -1,0 +1,11 @@
+# giwt lifecycle config for omp-plugins (see giwt src/utils/settings.ts schema).
+
+[branches]
+# Single-branch repo: fork-base default for `giwt new-branch`.
+root = "master"
+
+[commands]
+# finalize gate. Ends in a chain of scripts (not a test-file consumer), so
+# the auto-appended `--diff-base <sha>` must be disabled.
+check = "bun run verify"
+diff_base = false

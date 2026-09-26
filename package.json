@@ -40,6 +40,7 @@
     "check:rules": "bun scripts/check-rules-sync.ts",
     "check:regex": "bun scripts/check-regex-safety.ts",
     "check:ship": "bun scripts/check-shipment.ts",
+    "hooks:install": "sh .githooks/.install.sh",
     "check:coverage": "bun scripts/check-coverage.ts",
     "check:knip": "knip --no-progress || true",
     "check:cpd": "jscpd",

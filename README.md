@@ -196,7 +196,14 @@ Requires [bun](https://bun.sh) — the omp runtime runs on bun and
 ```bash
 bun install        # install toolchain (@oh-my-pi/pi-coding-agent, biome, typescript)
 bun run verify     # lint + typecheck + test
+bun run hooks:install  # activate .githooks/pre-commit (core.hooksPath)
 ```
+
+The pre-commit hook runs the typecheck + lint + test gate when TS/config/shell
+files are staged (the gate is fast enough that the full run IS the fast path).
+[giwt](../giwt) manages the repo lifecycle: `giwt.toml` sets the finalize gate
+(`bun run verify`, no `--diff-base` append) and the fork-base branch; worktrees
+created via giwt inherit `.githooks/` automatically.
 
 | Script | What it runs |
 |---|---|

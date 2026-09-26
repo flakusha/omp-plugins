@@ -1,0 +1,80 @@
+#!/bin/sh
+# Pre-commit hook for omp-plugins — typecheck + lint + full test gate.
+#
+# The project gate pieces are all fast (tsc ~0.3s, bun test ~1s, biome ~0.1s),
+# so there is no staged-files-only fast path — the full gate IS the fast
+# path. Staged-file detection only decides whether the gate runs at all.
+#
+# Install: sh .githooks/.install.sh
+#          (git config core.hooksPath .githooks && chmod +x .githooks/*)
+
+set -u
+
+failures=0
+
+red() { printf '\033[31m%s\033[0m\n' "$*"; }
+green() { printf '\033[32m%s\033[0m\n' "$*"; }
+yellow() { printf '\033[33m%s\033[0m\n' "$*"; }
+
+REPO_TOP=$(git rev-parse --show-toplevel 2>/dev/null) || exit 1
+cd "$REPO_TOP" || exit 1
+
+echo ""
+echo "=== omp-plugins pre-commit ==="
+echo ""
+
+# ── Get staged files (decides IF the gate runs, not WHAT it checks) ──
+STAGED_TS=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.tsx?$' || true)
+STAGED_CFG=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(json|toml|md)$' || true)
+STAGED_SH=$(git diff --cached --name-only --diff-filter=ACM | grep -E '(\.sh$|(^|/)\.githooks/)' || true)
+
+if [ -z "$STAGED_TS" ] && [ -z "$STAGED_CFG" ] && [ -z "$STAGED_SH" ]; then
+  yellow "No staged TS/config/md/shell files to check — skipping"
+  exit 0
+fi
+
+echo "Staged files:"
+[ -n "$STAGED_TS" ] && echo "  TS: $(echo "$STAGED_TS" | wc -l | tr -d ' ')"
+[ -n "$STAGED_CFG" ] && echo "  config: $(echo "$STAGED_CFG" | wc -l | tr -d ' ')"
+echo ""
+
+# GIT_* context is hook-scoped; the test suite spawns fixture git repos in
+# /tmp that must not inherit it. Strip it for the toolchain only.
+GATE_ENV="env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES -u GIT_COMMON_DIR -u GIT_QUARANTINE_PATH"
+
+echo "--- Step 1: typecheck (tsc --noEmit) ---"
+if $GATE_ENV bun run typecheck; then
+  green "PASS: typecheck"
+else
+  red "FAIL: typecheck"
+  failures=$((failures + 1))
+fi
+
+echo ""
+echo "--- Step 2: lint (biome + oxlint + no-console) ---"
+if $GATE_ENV bun run lint; then
+  green "PASS: lint"
+else
+  red "FAIL: lint"
+  failures=$((failures + 1))
+fi
+
+echo ""
+echo "--- Step 3: tests (bun test) ---"
+if $GATE_ENV bun test; then
+  green "PASS: tests"
+else
+  red "FAIL: tests"
+  failures=$((failures + 1))
+fi
+
+echo ""
+if [ "$failures" -gt 0 ]; then
+  red "=== $failures check(s) failed — commit blocked ==="
+  red "To commit without checks: git commit --no-verify"
+  exit 1
+fi
+
+green "=== Staged files OK ==="
+echo ""
+exit 0
