@@ -35,3 +35,6 @@ required").
 - [x] Done-detection (STATUS_DONE_RE) still filters; labels never bypass
 - [x] Tests in `find-work.test.ts` (fixture matrix + readPlanLabels unit tests)
 - [x] Docs updated (README slash-command bullet, find-work.ts header comment)
+
+
+git issue: 8b3d955
