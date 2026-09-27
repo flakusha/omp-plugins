@@ -86,9 +86,8 @@ function appendStat(files: TmpFile[], full: string, rel: string): void {
 }
 
 /**
- * Walk `<root>/.tmp` recursively: symlinks skipped, file list capped at
- * MAX_TMP_FILES, entries visited in sorted order so the result is
- * deterministic. Fail-open: unreadable/vanished entries are skipped.
+ * Walk `<root>/.tmp` recursively: symlinks skipped, entries sorted,
+ * capped at MAX_TMP_FILES; fail-open on unreadable/vanished entries.
  */
 function collectTmpFiles(root: string): TmpFile[] {
   const tmpRoot = join(root, ".tmp");
@@ -118,10 +117,7 @@ function isReferenceText(name: string): boolean {
   return REFERENCE_EXTENSIONS.has(extname(name).toLowerCase());
 }
 
-/**
- * Read one corpus file (first MAX_TEXT_BYTES at most) and spend one unit
- * of the shared file budget.
- */
+/** Read one corpus file (first MAX_TEXT_BYTES at most); spends one budget unit. */
 function appendCapped(parts: string[], budget: { left: number }, full: string): void {
   try {
     const raw = readFileSync(full);
@@ -137,11 +133,9 @@ function appendCapped(parts: string[], budget: { left: number }, full: string): 
 }
 
 /**
- * Concatenated text of the trees that may legitimately reference a scratch
- * artifact: `.plan/`, `docs/`, `src/` directly under root (literal — the
- * bare-audit prompt probes the same three dirs). Only known text
- * extensions, capped at MAX_TEXT_FILES files shared across the trees and
- * MAX_TEXT_BYTES per file. Pure fs — no exec.
+ * Concatenated text of `.plan/`, `docs/`, `src/` directly under root
+ * (literal — the bare-audit prompt probes the same three dirs). Only known
+ * text extensions; MAX_TEXT_FILES budget shared across the trees. Pure fs.
  */
 function referenceCorpus(root: string): string {
   const parts: string[] = [];
@@ -170,11 +164,8 @@ function collectTextInto(parts: string[], budget: { left: number }, dir: string)
   }
 }
 
-/**
- * Count `.tmp` files whose basename appears in zero reference-corpus files
- * (case-sensitive substring). Shared by `scratchSummary` and
- * `orphanTmpCount` so both agree on the same walk.
- */
+/** Count `.tmp` files whose basename appears in no reference-corpus file
+ *  (case-sensitive substring); shared by scratchSummary and orphanTmpCount. */
 function countOrphans(files: TmpFile[], root: string): number {
   if (files.length === 0) return 0;
   const corpus = referenceCorpus(root);

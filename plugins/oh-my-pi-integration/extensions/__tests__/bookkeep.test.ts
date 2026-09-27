@@ -608,9 +608,12 @@ describe("bookkeep list handler", () => {
     expect(labels).toEqual(
       expect.arrayContaining(["audit", "sync", "find", "issue", "list", "config"]),
     );
-    // Done items are filtered even when the editor uses the real cwd.
+    // Delegation check: the handler's completions for the real cwd must
+    // equal bookkeepCompletions for that same env. (A live-data assertion
+    // like "no id contains 'done'" flakes on any open ticket whose id
+    // happens to contain the substring.)
     const items = (cmd.getArgumentCompletions?.("audit ") ?? []).map((item) => item.label);
-    for (const id of items) expect(id.toLowerCase()).not.toContain("done");
+    expect(items).toEqual(bookkeepCompletions(detectBookkeepEnv(process.cwd()), "audit "));
   });
 });
 

@@ -384,6 +384,10 @@ const AGENT_PAYLOADS: readonly [string, string][] = [
   ],
   ["extensions/commands/find-work/todo-scan.ts", "extensions/commands/find-work/todo-scan.ts"],
   [
+    "extensions/commands/find-work/todo-comment.ts",
+    "extensions/commands/find-work/todo-comment.ts",
+  ],
+  [
     "extensions/commands/find-work/handler-present.ts",
     "extensions/commands/find-work/handler-present.ts",
   ],

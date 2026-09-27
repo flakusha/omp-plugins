@@ -82,7 +82,17 @@ describe("detectFinalizeEnv", () => {
   });
 
   test("undefined cwd falls back to process cwd", () => {
-    expect(detectFinalizeEnv(undefined).root).toBe(process.cwd());
+    // Use a tempdir so the assertion is independent of the test runner's cwd.
+    // detectFinalizeEnv returns the worktree-managed repo root, not the cwd:
+    // when cwd is inside tree/<branch>, root is the parent repo, not cwd.
+    const plainCwd = tempDir("fin-undef-");
+    const prevCwd = process.cwd();
+    try {
+      process.chdir(plainCwd);
+      expect(detectFinalizeEnv(undefined).root).toBe(plainCwd);
+    } finally {
+      process.chdir(prevCwd);
+    }
   });
 
   test("cwd inside tree/ resolves root, cli and branch guess", () => {

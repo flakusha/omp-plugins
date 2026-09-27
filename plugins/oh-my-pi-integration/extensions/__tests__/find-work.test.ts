@@ -59,6 +59,7 @@ import {
   registerFindWork,
   renderList,
   renderTable,
+  STATUS_DONE_RE,
   todoCommentText,
   todoTickets,
 } from "../commands/find-work";
@@ -549,6 +550,37 @@ describe("receiptTickets", () => {
   });
 });
 
+describe("STATUS_DONE_RE giwt status vocabulary", () => {
+  // AC4: giwt's six-term status vocabulary (giwt src/plan/status-vocab.ts)
+  // and this regex must classify identically — a ticket parked as Wontfix
+  // or Postponed is terminal work in both tools, never open roster bait.
+  test("six canonical terms: terminal three excluded, open three included", () => {
+    const cases: Array<[string, boolean]> = [
+      ["Not Started", false],
+      ["In Progress", false],
+      ["Blocked", false],
+      ["Done", true],
+      ["Wontfix", true],
+      ["Postponed", true],
+    ];
+    for (const [status, done] of cases) {
+      expect(STATUS_DONE_RE.test(status)).toBe(done);
+    }
+  });
+
+  test("emoji-prefixed vocabulary terms classify the same", () => {
+    expect(STATUS_DONE_RE.test("✅ Wontfix")).toBe(true);
+    expect(STATUS_DONE_RE.test("❌ Postponed")).toBe(true);
+    expect(STATUS_DONE_RE.test("⬜ Not Started")).toBe(false);
+    expect(STATUS_DONE_RE.test("🔄 In Progress")).toBe(false);
+  });
+
+  test("legacy won't-fix spellings stay terminal after the wontfix change", () => {
+    expect(STATUS_DONE_RE.test("won't fix")).toBe(true);
+    expect(STATUS_DONE_RE.test("wont fix")).toBe(true);
+    expect(STATUS_DONE_RE.test("wont do")).toBe(true);
+  });
+});
 describe("planTickets", () => {
   test("headings become titles, done statuses are skipped, epics dir hints kind", () => {
     const dir = tempDir("fw-plan-");
@@ -1679,6 +1711,24 @@ describe("todoTickets", () => {
     const tickets = todoTickets(dir);
     expect(tickets).toHaveLength(1);
     expect(tickets[0]?.title).toContain("real work");
+  });
+
+  test("nested checkouts (worktrees, submodules) are never scanned", () => {
+    // Resource contract: mkdtemp dir owned by this test, removed in the
+    // shared afterEach; no fixed paths, no shared state.
+    const dir = tempDir("fw-todo-nested-");
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(join(dir, "src", "root.ts"), "// TODO: root work\n");
+    mkdirSync(join(dir, "tree", "wt-copy", "src"), { recursive: true });
+    // giwt worktree shape: `.git` is a FILE pointing at the main repo.
+    writeFileSync(join(dir, "tree", "wt-copy", ".git"), "gitdir: ../../.git/worktrees/wt-copy\n");
+    writeFileSync(join(dir, "tree", "wt-copy", "src", "copy.ts"), "// TODO: duplicate surface\n");
+    // Submodule/full-clone shape: `.git` is a directory.
+    mkdirSync(join(dir, "vendor-checkout", ".git"), { recursive: true });
+    writeFileSync(join(dir, "vendor-checkout", "v.ts"), "// TODO: vendored surface\n");
+    const tickets = todoTickets(dir);
+    expect(tickets).toHaveLength(1);
+    expect(tickets[0]?.title).toContain("root work");
   });
 });
 

@@ -90,7 +90,7 @@ export const HEADING_RE = /^#\s+(.+)$/;
 export const STATUS_LINE_RE =
   /^\s*(?:[-*>]\s*)?(?:\*\*)?\s*status\s*(?:\*\*)?\s*[:=]\s*(?:\*\*)?\s*(.+?)\s*(?:\*\*)?\s*$/i;
 export const STATUS_DONE_RE =
-  /^\s*(?:[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]+\s*|\[[^\]]*\]\s*|~~?\s*)*(done|fixed|complete[ds]?|closed|shipped|applied|finished|resolved|won'?t\s+(?:fix|do)|not-a-bug|duplicate(?:-of)?[\w.-]*)\b/iu;
+  /^\s*(?:[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]+\s*|\[[^\]]*\]\s*|~~?\s*)*(done|fixed|complete[ds]?|closed|shipped|applied|finished|resolved|postponed|won'?t\s*(?:fix|do)|not-a-bug|duplicate(?:-of)?[\w.-]*)\b/iu;
 export const KEY_VALUE_RE = /^\s*([A-Za-z][\w-]*)\s*=\s*(.+)$/;
 /**
  * `verified-at: <ISO-8601>` line — explicit freshness marker on evidence

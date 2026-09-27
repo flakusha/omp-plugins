@@ -1,20 +1,18 @@
 /**
- * `/find-work` TODO/FIXME comment scan: a bounded walk over source files that
- * maps comment markers to tickets (FIXME → bug/P2, TODO → task/P3).
+ * `/find-work` work-marker comment scan: a bounded walk over source files
+ * that maps defect markers to bug/P2 tickets and deferred markers to task/P3.
  */
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
+import { scanTodoFile, type TodoMatch } from "./todo-comment";
 import type { WorkTicket } from "./types";
 
 // ---------------------------------------------------------------------------
-// TODO/FIXME comment scan
+// work-marker comment scan
 // ---------------------------------------------------------------------------
 
-/** Comment markers that become work tickets (word-boundary, case-insensitive). */
-export const TODO_MARKER_RE = /\b(TODO|FIXME)\b/i;
-
-/** File extensions scanned for TODO/FIXME comments (code + scripts + styles). */
+/** File extensions scanned for work-marker comments (code + scripts + styles). */
 const TODO_EXTS: Record<string, true> = {
   ".ts": true,
   ".tsx": true,
@@ -75,12 +73,6 @@ function isTestFile(name: string): boolean {
   );
 }
 
-/** The marker must sit inside a comment (`//`, `#`, `/*`, `*`, …) —
- *  bare identifiers in string literals and ternaries are not work items.
- *  Descriptions shorter than 2 chars are not actionable — skip them. */
-const TODO_COMMENT_BEFORE_RE = /(^|\s)(?:\/\/|#|\/\*|\*|<!--|--|%|;)/;
-const TODO_MIN_TEXT = 2;
-
 /** Directories never descended into (deps, build output, VCS, scratch). */
 export const TODO_SKIP_DIRS: Record<string, true> = {
   node_modules: true,
@@ -105,32 +97,16 @@ export const TODO_SKIP_DIRS: Record<string, true> = {
   ".idea": true,
 };
 
-/** Guardrails: files scanned, bytes per file, tickets surfaced. */
+/** Guardrails: files scanned, tickets surfaced. */
 export const TODO_MAX_FILES = 600;
-export const TODO_MAX_FILE_BYTES = 200_000;
 export const TODO_MAX_TICKETS = 30;
 
-/** One matched TODO/FIXME line, before ticket mapping. */
-export interface TodoMatch {
-  file: string;
-  line: number;
-  marker: "TODO" | "FIXME";
-  text: string;
-}
+export type { TodoMatch } from "./todo-comment";
+export { TODO_MARKER_RE, TODO_MAX_FILE_BYTES, todoCommentText } from "./todo-comment";
 
 export function todoExt(name: string): boolean {
   const dot = name.lastIndexOf(".");
   return dot >= 0 && (TODO_EXTS[name.slice(dot).toLowerCase()] ?? false);
-}
-
-/** Comment text after the marker, with comment syntax and separators stripped. */
-export function todoCommentText(line: string, marker: string): string {
-  const at = line.search(new RegExp(`\\b${marker}\\b`, "i"));
-  const after = at >= 0 ? line.slice(at + marker.length) : line;
-  return after
-    .replace(/^[\s:([-]*/, "")
-    .replace(/(\*\/|-->)\s*$/, "")
-    .trim();
 }
 
 /** Collect candidate source files under root, honoring skip dirs and caps. */
@@ -158,6 +134,16 @@ function skipHiddenDir(entry: TodoEntry): boolean {
   return TODO_SKIP_DIRS[entry.name] ?? true;
 }
 
+/** True when a directory entry must not be descended into (skip lists,
+ *  test fixtures, nested checkouts). */
+function skipDirEntry(dir: string, entry: TodoEntry): boolean {
+  if (TODO_SKIP_DIRS[entry.name] || TODO_TEST_DIRS[entry.name]) return true;
+  // Nested checkouts (giwt worktrees carry a `.git` file pointing at the
+  // main repo; submodules and full clones carry a `.git` dir) are
+  // duplicate surfaces of the same sources — never scanned.
+  return existsSync(join(dir, entry.name, ".git"));
+}
+
 /** Scan one directory: queue subdirs, collect matching files (bounded). */
 function scanTodoDir(dir: string, out: string[], stack: string[]): void {
   let entries: TodoEntry[];
@@ -175,7 +161,7 @@ function scanTodoDir(dir: string, out: string[], stack: string[]): void {
     if (out.length >= TODO_MAX_FILES) return;
     if (skipHiddenDir(entry)) continue;
     if (entry.isDirectory) {
-      if (TODO_SKIP_DIRS[entry.name] || TODO_TEST_DIRS[entry.name]) continue;
+      if (skipDirEntry(dir, entry)) continue;
       stack.push(join(dir, entry.name));
     } else if (entry.isFile && !isTestFile(entry.name) && todoExt(entry.name)) {
       out.push(join(dir, entry.name));
@@ -183,35 +169,10 @@ function scanTodoDir(dir: string, out: string[], stack: string[]): void {
   }
 }
 
-/** Scan one file for TODO/FIXME lines; skips oversized/unreadable files. */
-function scanTodoFile(abs: string): TodoMatch[] {
-  let text: string;
-  try {
-    if (statSync(abs).size > TODO_MAX_FILE_BYTES) return [];
-    text = readFileSync(abs, "utf8");
-  } catch {
-    return [];
-  }
-  const matches: TodoMatch[] = [];
-  const lines = text.split("\n");
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? "";
-    if (line.length > 500) continue; // minified/blob line
-    const m = TODO_MARKER_RE.exec(line);
-    if (!m?.[1]) continue;
-    if (!TODO_COMMENT_BEFORE_RE.test(line.slice(0, m.index))) continue;
-    const marker = m[1].toUpperCase() === "FIXME" ? "FIXME" : "TODO";
-    const text = todoCommentText(line, marker);
-    if (text.length < TODO_MIN_TEXT) continue;
-    matches.push({ file: abs, line: i + 1, marker, text });
-  }
-  return matches;
-}
-
 /**
- * Scan code comments for TODO/FIXME markers. FIXME → bug/P2, TODO → task/P3.
- * Hidden dirs, vendored deps, build output, and markdown docs are excluded.
- * Bounded (file count, file size, ticket cap) — best-effort, never throws.
+ * Scan code comments for work markers (defect marker → bug/P2, deferred
+ * marker → task/P3). Hidden dirs, nested checkouts, vendored deps, build
+ * output, and markdown docs are excluded.
  */
 export function todoTickets(root: string): WorkTicket[] {
   let files: string[];
