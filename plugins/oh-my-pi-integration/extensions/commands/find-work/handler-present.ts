@@ -9,7 +9,7 @@ import type {
   ExtensionAskDialogResult,
   ExtensionCommandContext,
 } from "@oh-my-pi/pi-coding-agent";
-import { ASK_DIALOG_TIMEOUT_MS, MAX_TICKETS } from "./keywords";
+import { ASK_DIALOG_TIMEOUT_MS, DEFAULT_PAGE, MAX_TICKETS } from "./keywords";
 import {
   buildChatPrompt,
   buildFindWorkAgentPrompt,
@@ -46,8 +46,9 @@ export async function runAsk(
   args: FindWorkArgs,
 ): Promise<void> {
   if (typeof ctx.ui.askDialog === "function") {
-    const index = buildLabelIndex(labeled);
-    const result = await ctx.ui.askDialog(buildAskQuestions(labeled), {
+    const page = args.page ?? DEFAULT_PAGE;
+    const index = buildLabelIndex(labeled, page);
+    const result = await ctx.ui.askDialog(buildAskQuestions(labeled, page), {
       timeout: ASK_DIALOG_TIMEOUT_MS,
     });
     if (result === undefined) {
@@ -60,8 +61,7 @@ export async function runAsk(
     }
     const selected = result.results
       .flatMap((r) => r.selectedOptions)
-      .map((label) => index.get(label))
-      .filter((t): t is WorkTicket => t !== undefined);
+      .flatMap((label) => index.get(label) ?? []);
     if (selected.length === 0) {
       ctx.ui.notify("find-work: no tickets selected", "info");
       return;
@@ -89,10 +89,10 @@ function mergeSearchHits(
   return [...filtered, ...hits.map((h) => ({ ...h.ticket, matchedVia: h.via }))];
 }
 
-function capRoster(filtered: WorkTicket[], ctx: AskCapableContext): WorkTicket[] {
-  if (filtered.length <= MAX_TICKETS) return filtered;
-  ctx.ui.notify(`showing first ${MAX_TICKETS} of ${filtered.length} matching items`, "warning");
-  return filtered.slice(0, MAX_TICKETS);
+function capRoster(filtered: WorkTicket[], ctx: AskCapableContext, max: number): WorkTicket[] {
+  if (filtered.length <= max) return filtered;
+  ctx.ui.notify(`showing first ${max} of ${filtered.length} matching items`, "warning");
+  return filtered.slice(0, max);
 }
 
 function relaxForAsk(
@@ -140,7 +140,7 @@ export async function presentFindWork(
 ): Promise<void> {
   const sources = detectWorkSources(root);
   let filtered = relaxForAsk(tickets, parsed, filterTickets(tickets, parsed), ctx);
-  filtered = capRoster(filtered, ctx);
+  filtered = capRoster(filtered, ctx, parsed.max ?? MAX_TICKETS);
   const combined = mergeSearchHits(filtered, tickets, root, parsed.search);
   if (combined.length === 0) {
     if (parsed.mode === "ask") {

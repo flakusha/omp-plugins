@@ -43,6 +43,10 @@ export interface FindWorkArgs {
   directive?: string;
   /** `--fast` (implied by `-s`): skip live tool findings. */
   fast?: boolean;
+  /** `--max N` — cap the ticket pool (default MAX_TICKETS). */
+  max?: number;
+  /** `--page N` — tickets per ask-dialog page (default DEFAULT_PAGE). */
+  page?: number;
 }
 
 export interface WorkSources {

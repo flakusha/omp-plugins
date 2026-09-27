@@ -108,6 +108,12 @@ export const SEARCH_FLAG_RE = /^--?s(?:earch)?$/;
 export const DIRECTIVE_FLAG_RE = /^--?(?:m|d|directive)$/;
 /** `--fast` — skip the live tool cluster (full repo check) during search. */
 export const FAST_FLAG_RE = /^--?fast$/;
+/** `--max N` — cap the ticket pool fed to any mode (default MAX_TICKETS). */
+export const MAX_FLAG_RE = /^--?max$/;
+/** `--page N` — tickets per ask-dialog page (default DEFAULT_PAGE). */
+export const PAGE_FLAG_RE = /^--?page$/;
+/** Ask-dialog page size default: one page per tag/topic label. */
+export const DEFAULT_PAGE = 40;
 
 export const DEFAULT_PRIORITY = "P3";
 export const MAX_TICKETS = 40;

@@ -14,7 +14,9 @@ import {
   KIND_KEYWORDS,
   LIST_SUGAR_RE,
   LIST_SUGAR_SUFFIXES,
+  MAX_FLAG_RE,
   MODE_KEYWORDS,
+  PAGE_FLAG_RE,
   SCHEME_KEYWORDS,
   SEARCH_FLAG_RE,
 } from "./keywords";
@@ -70,14 +72,46 @@ const CANONICAL_LIST_SUGAR_HINT = LIST_SUGAR_SUFFIXES.map((s) => `list-${s}`).jo
  * are never applied).
  */
 /**
- * Handle one flag token (`-s`/`-m`/`-d`/`--search`/`--directive`/`--fast`).
- * Returns null when `token` is not a flag; otherwise the consumed token count
- * plus an optional error (value flags require a non-empty value). A value
- * flag consumes tokens until the next flag token, so multi-word values need
- * no quoting; flag values are raw text (keywords inside are never applied).
+ * Handle one flag token (`-s`/`-m`/`-d`/`--search`/`--directive`/`--fast`/
+ * `--max`/`--page`). Returns null when `token` is not a flag; otherwise the
+ * consumed token count plus an optional error (value flags require a
+ * non-empty value). A value flag consumes tokens until the next flag token,
+ * so multi-word values need no quoting; flag values are raw text (keywords
+ * inside are never applied).
  */
+
+/** `--max` / `--page`: positive-integer value flags. `null` when the token
+ *  is neither; `error` set on a missing/invalid value. */
+function applyCountFlag(
+  argv: string[],
+  index: number,
+  args: FindWorkArgs,
+): { consumed: number; error?: string } | null {
+  const token = argv[index] ?? "";
+  const isMax = MAX_FLAG_RE.test(token);
+  const isPage = !isMax && PAGE_FLAG_RE.test(token);
+  if (!isMax && !isPage) return null;
+  const raw = argv[index + 1] ?? "";
+  const n = /^\d+$/.test(raw) ? Number.parseInt(raw, 10) : 0;
+  if (n <= 0) {
+    return {
+      consumed: raw === "" || raw.startsWith("-") ? 1 : 2,
+      error: `'${token}' requires a positive integer — e.g. ${isMax ? "--max 100" : "--page 20"}`,
+    };
+  }
+  if (isMax) args.max = n;
+  else args.page = n;
+  return { consumed: 2 };
+}
+
 function isFlagToken(token: string): boolean {
-  return SEARCH_FLAG_RE.test(token) || DIRECTIVE_FLAG_RE.test(token) || FAST_FLAG_RE.test(token);
+  return (
+    SEARCH_FLAG_RE.test(token) ||
+    DIRECTIVE_FLAG_RE.test(token) ||
+    FAST_FLAG_RE.test(token) ||
+    MAX_FLAG_RE.test(token) ||
+    PAGE_FLAG_RE.test(token)
+  );
 }
 
 function applyFlagToken(
@@ -90,6 +124,8 @@ function applyFlagToken(
     args.fast = true;
     return { consumed: 1 };
   }
+  const count = applyCountFlag(argv, index, args);
+  if (count) return count;
   const isSearch = SEARCH_FLAG_RE.test(token);
   if (!isSearch && !DIRECTIVE_FLAG_RE.test(token)) return null;
   const value: string[] = [];

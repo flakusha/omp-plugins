@@ -293,6 +293,23 @@ describe("parseFindWorkArgs", () => {
     const { args } = parseFindWorkArgs(["ask", "list-priorities"]);
     expect(args).toMatchObject({ mode: "ask", scheme: "priorities" });
   });
+
+  test("--max and --page parse positive integers", () => {
+    expect(parseFindWorkArgs(["ask", "--max", "100"]).args).toMatchObject({ max: 100 });
+    expect(parseFindWorkArgs(["--page", "20"]).args).toMatchObject({ page: 20 });
+    expect(parseFindWorkArgs(["--max", "50", "--page", "10", "ship it"]).args).toMatchObject({
+      max: 50,
+      page: 10,
+      query: "ship it",
+    });
+  });
+
+  test("--max and --page reject missing or non-numeric values", () => {
+    expect(parseFindWorkArgs(["--max"]).error).toContain("'--max' requires a positive integer");
+    expect(parseFindWorkArgs(["--max", "abc"]).error).toContain("requires a positive integer");
+    expect(parseFindWorkArgs(["--page", "0"]).error).toContain("requires a positive integer");
+    expect(parseFindWorkArgs(["--max", "-3"]).error).toContain("requires a positive integer");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -462,21 +479,36 @@ describe("ask structures", () => {
     labeled({ domain: "receipt", id: "F-02", title: "improve db" }, "3"),
   ];
 
-  test("buildAskQuestions: one multi question per domain with labeled options", () => {
+  test("buildAskQuestions: one paged multi question, bare tag first page", () => {
     const questions = buildAskQuestions(items);
-    expect(questions.map((q) => q.header)).toEqual(["runtime", "receipt"]);
+    expect(questions).toHaveLength(1);
     expect(questions[0]?.multi).toBe(true);
-    expect(questions[0]?.options.map((o) => o.label)).toEqual([
-      "1 #12 — fix hook",
-      "2 #13 — fix loop",
-    ]);
-    expect(questions[0]?.options[0]?.description).toContain("bug, P1 (github)");
+    // Default page (40): every domain fits one page — bare tag labels only,
+    // no issue counts in the label.
+    expect(questions[0]?.options.map((o) => o.label)).toEqual(["runtime", "receipt"]);
+    expect(questions[0]?.options[0]?.description).toBe("tickets 1–2");
   });
 
-  test("buildLabelIndex round-trips selected option labels", () => {
+  test("buildAskQuestions pages large domains with 1-based suffixes", () => {
+    const big: LabeledTicket[] = Array.from({ length: 5 }, (_, i) =>
+      labeled({ domain: "assets", id: `A-${i}`, title: `t${i}` }, String(i + 1)),
+    );
+    const questions = buildAskQuestions(big, 2);
+    expect(questions[0]?.options.map((o) => o.label)).toEqual(["assets", "assets:1", "assets:2"]);
+    expect(questions[0]?.options[2]?.description).toBe("tickets 5–5");
+  });
+
+  test("buildLabelIndex maps page labels back to that page's tickets", () => {
     const index = buildLabelIndex(items);
-    expect(index.get("2 #13 — fix loop")?.id).toBe("#13");
+    expect(index.get("runtime")?.map((t) => t.id)).toEqual(["#12", "#13"]);
+    expect(index.get("receipt")?.map((t) => t.id)).toEqual(["F-02"]);
     expect(index.get("nope")).toBeUndefined();
+  });
+
+  test("buildLabelIndex with a small page splits each domain into page slices", () => {
+    const index = buildLabelIndex(items, 1);
+    expect(index.get("runtime")?.map((t) => t.id)).toEqual(["#12"]);
+    expect(index.get("runtime:1")?.map((t) => t.id)).toEqual(["#13"]);
   });
 });
 
@@ -1274,20 +1306,75 @@ describe("/find-work handler", () => {
       '[[job]]\nB-01 = "fix the crash"\n\n[[job]]\nC-01 = "characters page layout"\n',
     );
     let askedLabels: string[] = [];
+    let askedDescriptions: string[] = [];
     const askDialog: AskDialog = async (questions) => {
-      askedLabels = (questions as Array<{ options: Array<{ label: string }> }>).flatMap((q) =>
-        q.options.map((o) => o.label),
-      );
+      const opts = (
+        questions as Array<{ options: Array<{ label: string; description?: string }> }>
+      ).flatMap((q) => q.options);
+      askedLabels = opts.map((o) => o.label);
+      askedDescriptions = opts.map((o) => o.description ?? "");
       return undefined;
     };
     const notified: Array<[string, string | undefined]> = [];
     const pi = new FakePi();
     registerFindWork(pi as unknown as ExtensionAPI);
     await run(pi, "ask characters", makeCtx(dir, notified, askDialog));
-    expect(askedLabels).toHaveLength(1);
-    expect(askedLabels[0]).toContain("characters page layout");
-    expect(askedLabels[0]).not.toContain("fix the crash");
+    // Paging labels are tag/topic names; the query filter shows as a smaller
+    // page (1 ticket kept of 2 in the same domain).
+    expect(askedLabels).toEqual(["receipt"]);
+    expect(askedDescriptions).toEqual(["tickets 1–1"]);
     expect(notified[0]).toEqual(["find-work: cancelled", "info"]);
+  });
+
+  test("ask selects a specific page via the domain:N label", async () => {
+    const dir = tempDir("fw-h-askpage-");
+    const jobs = Array.from(
+      { length: 3 },
+      (_, i) => `[[job]]\nB-${String(i).padStart(2, "0")} = "fix thing ${i}"\n`,
+    ).join("");
+    mkdirSync(join(dir, ".omp"), { recursive: true });
+    writeFileSync(join(dir, ".omp", "receipt.toml"), jobs);
+    const askDialog: AskDialog = async (questions) => {
+      const labels = (questions as Array<{ options: Array<{ label: string }> }>)[0]?.options.map(
+        (o) => o.label,
+      );
+      expect(labels).toEqual(["receipt", "receipt:1"]);
+      return {
+        kind: "submit",
+        results: [
+          {
+            id: "tickets",
+            question: "q",
+            options: [],
+            multi: true,
+            selectedOptions: ["receipt:1"],
+          },
+        ],
+      };
+    };
+    const pi = new FakePi();
+    registerFindWork(pi as unknown as ExtensionAPI);
+    await run(pi, "ask --page 2 ship it", makeCtx(dir, [], askDialog));
+    expect(pi.sentUserMessages).toHaveLength(1);
+    // Only the second page's ticket (B-02) is in the selected-batch turn.
+    expect(pi.sentUserMessages[0]).toContain("B-02");
+    expect(pi.sentUserMessages[0]).not.toContain("B-01");
+    expect(pi.sentUserMessages[0]).not.toContain("B-00");
+  });
+
+  test("--max caps the pool with an accurate warning", async () => {
+    const dir = tempDir("fw-h-maxcap-");
+    const jobs = Array.from(
+      { length: 7 },
+      (_, i) => `[[job]]\nB-${String(i).padStart(2, "0")} = "fix thing ${i}"\n`,
+    ).join("");
+    mkdirSync(join(dir, ".omp"), { recursive: true });
+    writeFileSync(join(dir, ".omp", "receipt.toml"), jobs);
+    const notified: Array<[string, string | undefined]> = [];
+    const pi = new FakePi();
+    registerFindWork(pi as unknown as ExtensionAPI);
+    await run(pi, "list --max 5", makeCtx(dir, notified));
+    expect(notified[0]).toEqual(["showing first 5 of 7 matching items", "warning"]);
   });
 
   test("ask mode with a directive that matches nothing keeps the dialog, unfiltered", async () => {
@@ -1377,10 +1464,13 @@ describe("/find-work handler", () => {
     // so the bug filter emptied the list and ask mode fell back to the
     // agent-search turn instead of showing a dialog.
     expect(askedQuestions).toBeDefined();
-    const qs = askedQuestions as Array<{ options: Array<{ label: string }> }>;
+    const qs = askedQuestions as Array<{ options: Array<{ label: string; description?: string }> }>;
     const labels = qs.flatMap((q) => q.options.map((o) => o.label));
-    expect(labels).toHaveLength(2);
-    expect(labels.every((l) => l.includes("BUG-"))).toBe(true);
+    // Paged labels are tag/topic names: both BUG tickets share one domain,
+    // so a single bare-label page covering both is expected.
+    expect(labels).toEqual(["tickets"]);
+    const descriptions = qs.flatMap((q) => q.options.map((o) => o.description ?? ""));
+    expect(descriptions).toEqual(["tickets 1–2"]);
     expect(pi.sentUserMessages).toHaveLength(0);
   });
 

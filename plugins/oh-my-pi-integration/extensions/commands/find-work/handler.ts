@@ -73,6 +73,8 @@ const OPTION_KEYWORDS = [
   "-d",
   "--directive",
   "--fast",
+  "--max",
+  "--page",
 ];
 
 /**
@@ -104,7 +106,7 @@ export function registerFindWork(pi: ExtensionAPI): void {
     description:
       "Find actionable tickets across trackers: " +
       "/find-work [list|table|ask|orchestrate] [order|letters|priorities|types] [batches] [bugs|features|epics|tasks] " +
-      "[-s <search>] [-m|-d <directive>] [--fast] [directive...]",
+      "[-s <search>] [-m|-d <directive>] [--fast] [--max N] [--page N] [directive...]",
     getArgumentCompletions: (argumentPrefix: string) =>
       argumentItems(argumentPrefix, findWorkCompletions(argumentPrefix)),
     handler: async (args, ctx) => {
