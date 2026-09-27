@@ -107,6 +107,29 @@ export interface AskPageOption {
   tickets: WorkTicket[];
 }
 
+/** Char budget for one ask-page description before collapsing to `+N more`. */
+const PAGE_DESC_BUDGET = 220;
+
+/**
+ * Human-readable page summary: leading ticket ids + clipped titles so the
+ * ask dialog shows what is actually inside each selectable page, not just a
+ * count. Budget-capped; remaining tickets collapse into `+N more`.
+ */
+export function describePage(tickets: WorkTicket[]): string {
+  const parts: string[] = [];
+  let len = 0;
+  let shown = 0;
+  for (const t of tickets) {
+    const part = `${t.id} ${clip(t.title, 60)}`;
+    if (parts.length > 0 && len + part.length > PAGE_DESC_BUDGET) break;
+    parts.push(part);
+    len += part.length + 3;
+    shown++;
+  }
+  const rest = tickets.length - shown;
+  return parts.join(" · ") + (rest > 0 ? ` · +${rest} more` : "");
+}
+
 /**
  * Chunk each domain (tag/topic) into `page`-sized selectable slices. The
  * first page of a domain keeps the bare tag name; later pages get a 1-based
@@ -120,7 +143,7 @@ export function pageDomainOptions(labeled: LabeledTicket[], page: number): AskPa
       const slice = items.slice(i, i + size);
       out.push({
         label: i === 0 ? domain : `${domain}:${i / size}`,
-        description: `tickets ${i + 1}–${i + slice.length}`,
+        description: describePage(slice.map((item) => item.ticket)),
         tickets: slice.map((item) => item.ticket),
       });
     }

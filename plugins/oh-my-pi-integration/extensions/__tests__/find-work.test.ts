@@ -486,7 +486,7 @@ describe("ask structures", () => {
     // Default page (40): every domain fits one page — bare tag labels only,
     // no issue counts in the label.
     expect(questions[0]?.options.map((o) => o.label)).toEqual(["runtime", "receipt"]);
-    expect(questions[0]?.options[0]?.description).toBe("tickets 1–2");
+    expect(questions[0]?.options[0]?.description).toBe("#12 fix hook · #13 fix loop");
   });
 
   test("buildAskQuestions pages large domains with 1-based suffixes", () => {
@@ -495,7 +495,7 @@ describe("ask structures", () => {
     );
     const questions = buildAskQuestions(big, 2);
     expect(questions[0]?.options.map((o) => o.label)).toEqual(["assets", "assets:1", "assets:2"]);
-    expect(questions[0]?.options[2]?.description).toBe("tickets 5–5");
+    expect(questions[0]?.options[2]?.description).toBe("A-4 t4");
   });
 
   test("buildLabelIndex maps page labels back to that page's tickets", () => {
@@ -1322,7 +1322,8 @@ describe("/find-work handler", () => {
     // Paging labels are tag/topic names; the query filter shows as a smaller
     // page (1 ticket kept of 2 in the same domain).
     expect(askedLabels).toEqual(["receipt"]);
-    expect(askedDescriptions).toEqual(["tickets 1–1"]);
+    expect(askedDescriptions).toHaveLength(1);
+    expect(askedDescriptions[0]).toContain("characters page layout");
     expect(notified[0]).toEqual(["find-work: cancelled", "info"]);
   });
 
@@ -1470,7 +1471,9 @@ describe("/find-work handler", () => {
     // so a single bare-label page covering both is expected.
     expect(labels).toEqual(["tickets"]);
     const descriptions = qs.flatMap((q) => q.options.map((o) => o.description ?? ""));
-    expect(descriptions).toEqual(["tickets 1–2"]);
+    expect(descriptions).toHaveLength(1);
+    expect(descriptions[0]).toContain("real crash");
+    expect(descriptions[0]).toContain("other crash");
     expect(pi.sentUserMessages).toHaveLength(0);
   });
 
