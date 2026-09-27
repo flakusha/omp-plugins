@@ -47,7 +47,7 @@ export async function runAsk(
 ): Promise<void> {
   if (typeof ctx.ui.askDialog === "function") {
     const page = args.page ?? DEFAULT_PAGE;
-    const index = buildLabelIndex(labeled, page);
+    const index = buildLabelIndex(labeled);
     const result = await ctx.ui.askDialog(buildAskQuestions(labeled, page), {
       timeout: ASK_DIALOG_TIMEOUT_MS,
     });
@@ -61,7 +61,10 @@ export async function runAsk(
     }
     const selected = result.results
       .flatMap((r) => r.selectedOptions)
-      .flatMap((label) => index.get(label) ?? []);
+      .flatMap((label) => {
+        const ticket = index.get(label);
+        return ticket ? [ticket] : [];
+      });
     if (selected.length === 0) {
       ctx.ui.notify("find-work: no tickets selected", "info");
       return;

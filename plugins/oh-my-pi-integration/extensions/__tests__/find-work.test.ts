@@ -479,36 +479,32 @@ describe("ask structures", () => {
     labeled({ domain: "receipt", id: "F-02", title: "improve db" }, "3"),
   ];
 
-  test("buildAskQuestions: one paged multi question, bare tag first page", () => {
+  test("buildAskQuestions: one question per domain, per-ticket options", () => {
     const questions = buildAskQuestions(items);
-    expect(questions).toHaveLength(1);
+    expect(questions.map((q) => q.header)).toEqual(["runtime", "receipt"]);
     expect(questions[0]?.multi).toBe(true);
-    // Default page (40): every domain fits one page — bare tag labels only,
-    // no issue counts in the label.
-    expect(questions[0]?.options.map((o) => o.label)).toEqual(["runtime", "receipt"]);
-    expect(questions[0]?.options[0]?.description).toBe("#12 fix hook · #13 fix loop");
+    expect(questions[0]?.options.map((o) => o.label)).toEqual([
+      "1 #12 — fix hook",
+      "2 #13 — fix loop",
+    ]);
+    expect(questions[0]?.options[0]?.description).toBe("bug, P1 (github)");
   });
 
-  test("buildAskQuestions pages large domains with 1-based suffixes", () => {
+  test("buildAskQuestions pages large domains into tag:N tabs", () => {
     const big: LabeledTicket[] = Array.from({ length: 5 }, (_, i) =>
       labeled({ domain: "assets", id: `A-${i}`, title: `t${i}` }, String(i + 1)),
     );
     const questions = buildAskQuestions(big, 2);
-    expect(questions[0]?.options.map((o) => o.label)).toEqual(["assets", "assets:1", "assets:2"]);
-    expect(questions[0]?.options[2]?.description).toBe("A-4 t4");
+    expect(questions.map((q) => q.header)).toEqual(["assets", "assets:1", "assets:2"]);
+    expect(questions[0]?.options.map((o) => o.label)).toEqual(["1 A-0 — t0", "2 A-1 — t1"]);
+    expect(questions[2]?.options[0]?.label).toBe("5 A-4 — t4");
   });
 
-  test("buildLabelIndex maps page labels back to that page's tickets", () => {
+  test("buildLabelIndex maps option labels back to tickets", () => {
     const index = buildLabelIndex(items);
-    expect(index.get("runtime")?.map((t) => t.id)).toEqual(["#12", "#13"]);
-    expect(index.get("receipt")?.map((t) => t.id)).toEqual(["F-02"]);
+    expect(index.get("1 #12 — fix hook")?.id).toBe("#12");
+    expect(index.get("3 F-02 — improve db")?.id).toBe("F-02");
     expect(index.get("nope")).toBeUndefined();
-  });
-
-  test("buildLabelIndex with a small page splits each domain into page slices", () => {
-    const index = buildLabelIndex(items, 1);
-    expect(index.get("runtime")?.map((t) => t.id)).toEqual(["#12"]);
-    expect(index.get("runtime:1")?.map((t) => t.id)).toEqual(["#13"]);
   });
 });
 
@@ -1319,15 +1315,16 @@ describe("/find-work handler", () => {
     const pi = new FakePi();
     registerFindWork(pi as unknown as ExtensionAPI);
     await run(pi, "ask characters", makeCtx(dir, notified, askDialog));
-    // Paging labels are tag/topic names; the query filter shows as a smaller
-    // page (1 ticket kept of 2 in the same domain).
-    expect(askedLabels).toEqual(["receipt"]);
+    // Per-ticket options under the domain tab; the query filter keeps only
+    // the matching ticket of the two in the same domain.
+    expect(askedLabels).toHaveLength(1);
+    expect(askedLabels[0]).toContain("C-01");
+    expect(askedLabels[0]).toContain("characters page layout");
     expect(askedDescriptions).toHaveLength(1);
-    expect(askedDescriptions[0]).toContain("characters page layout");
     expect(notified[0]).toEqual(["find-work: cancelled", "info"]);
   });
 
-  test("ask selects a specific page via the domain:N label", async () => {
+  test("ask pages a large domain into tag:N tabs with per-ticket options", async () => {
     const dir = tempDir("fw-h-askpage-");
     const jobs = Array.from(
       { length: 3 },
@@ -1336,19 +1333,21 @@ describe("/find-work handler", () => {
     mkdirSync(join(dir, ".omp"), { recursive: true });
     writeFileSync(join(dir, ".omp", "receipt.toml"), jobs);
     const askDialog: AskDialog = async (questions) => {
-      const labels = (questions as Array<{ options: Array<{ label: string }> }>)[0]?.options.map(
-        (o) => o.label,
-      );
-      expect(labels).toEqual(["receipt", "receipt:1"]);
+      const qs = questions as Array<{
+        header: string;
+        options: Array<{ label: string }>;
+      }>;
+      expect(qs.map((q) => q.header)).toEqual(["receipt", "receipt:1"]);
+      expect(qs[1]?.options.map((o) => o.label)).toEqual(["3 B-02 — fix thing 2"]);
       return {
         kind: "submit",
         results: [
           {
-            id: "tickets",
+            id: "receipt:1",
             question: "q",
             options: [],
             multi: true,
-            selectedOptions: ["receipt:1"],
+            selectedOptions: ["3 B-02 — fix thing 2"],
           },
         ],
       };
@@ -1357,7 +1356,7 @@ describe("/find-work handler", () => {
     registerFindWork(pi as unknown as ExtensionAPI);
     await run(pi, "ask --page 2 ship it", makeCtx(dir, [], askDialog));
     expect(pi.sentUserMessages).toHaveLength(1);
-    // Only the second page's ticket (B-02) is in the selected-batch turn.
+    // Only the selected ticket (B-02) is in the selected-batch turn.
     expect(pi.sentUserMessages[0]).toContain("B-02");
     expect(pi.sentUserMessages[0]).not.toContain("B-01");
     expect(pi.sentUserMessages[0]).not.toContain("B-00");
@@ -1469,11 +1468,9 @@ describe("/find-work handler", () => {
     const labels = qs.flatMap((q) => q.options.map((o) => o.label));
     // Paged labels are tag/topic names: both BUG tickets share one domain,
     // so a single bare-label page covering both is expected.
-    expect(labels).toEqual(["tickets"]);
-    const descriptions = qs.flatMap((q) => q.options.map((o) => o.description ?? ""));
-    expect(descriptions).toHaveLength(1);
-    expect(descriptions[0]).toContain("real crash");
-    expect(descriptions[0]).toContain("other crash");
+    expect(labels).toHaveLength(2);
+    expect(labels[0]).toContain("other crash");
+    expect(labels[1]).toContain("real crash");
     expect(pi.sentUserMessages).toHaveLength(0);
   });
 

@@ -99,87 +99,45 @@ export function renderTable(labeled: LabeledTicket[], batches: boolean): string 
   return lines.join("\n");
 }
 
-/** One selectable ask-dialog page: a tag/topic slice of the ticket pool. */
-export interface AskPageOption {
-  /** `assets` for a tag's first page, `assets:1`, `assets:2` for later ones. */
-  label: string;
-  description: string;
-  tickets: WorkTicket[];
-}
-
-/** Char budget for one ask-page description before collapsing to `+N more`. */
-const PAGE_DESC_BUDGET = 220;
-
-/**
- * Human-readable page summary: leading ticket ids + clipped titles so the
- * ask dialog shows what is actually inside each selectable page, not just a
- * count. Budget-capped; remaining tickets collapse into `+N more`.
- */
-export function describePage(tickets: WorkTicket[]): string {
-  const parts: string[] = [];
-  let len = 0;
-  let shown = 0;
-  for (const t of tickets) {
-    const part = `${t.id} ${clip(t.title, 60)}`;
-    if (parts.length > 0 && len + part.length > PAGE_DESC_BUDGET) break;
-    parts.push(part);
-    len += part.length + 3;
-    shown++;
-  }
-  const rest = tickets.length - shown;
-  return parts.join(" · ") + (rest > 0 ? ` · +${rest} more` : "");
+/** Exact option-label string used by both the ask dialog and the index. */
+function askOptionLabel(item: LabeledTicket): string {
+  return `${item.label} ${item.ticket.id} — ${clip(item.ticket.title, TABLE_TITLE)}`;
 }
 
 /**
- * Chunk each domain (tag/topic) into `page`-sized selectable slices. The
- * first page of a domain keeps the bare tag name; later pages get a 1-based
- * suffix (`assets:1`). Labels deliberately carry no issue counts.
- */
-export function pageDomainOptions(labeled: LabeledTicket[], page: number): AskPageOption[] {
-  const size = Math.max(1, Math.floor(page));
-  const out: AskPageOption[] = [];
-  for (const [domain, items] of groupBatches(labeled)) {
-    for (let i = 0; i < items.length; i += size) {
-      const slice = items.slice(i, i + size);
-      out.push({
-        label: i === 0 ? domain : `${domain}:${i / size}`,
-        description: describePage(slice.map((item) => item.ticket)),
-        tickets: slice.map((item) => item.ticket),
-      });
-    }
-  }
-  return out;
-}
-
-/**
- * Ask dialog: one multi-select question whose options are the paged
- * tag/topic slices (`assets`, `assets:1`, …). The exact option label is
- * returned in `selectedOptions`, so `buildLabelIndex` maps it back to the
- * page's tickets.
+ * Ask dialog: one multi-select question per domain page — a tag/topic chunked
+ * into `page`-sized tabs (`assets`, `assets:1`, …). Every option is a single
+ * ticket labeled `<label> <id> — <title>`; the exact option label is returned
+ * in `selectedOptions`, so `buildLabelIndex` maps it back to the ticket.
  */
 export function buildAskQuestions(
   labeled: LabeledTicket[],
   page: number = DEFAULT_PAGE,
 ): ExtensionAskDialogQuestion[] {
-  const options = pageDomainOptions(labeled, page);
-  if (options.length === 0) return [];
-  return [
-    {
-      id: "tickets",
-      header: "tickets",
-      question: "Which group of tickets should this batch take on?",
-      multi: true,
-      options: options.map((opt) => ({ label: opt.label, description: opt.description })),
-    },
-  ];
+  const size = Math.max(1, Math.floor(page));
+  const questions: ExtensionAskDialogQuestion[] = [];
+  for (const [domain, items] of groupBatches(labeled)) {
+    const slug = domain.replace(/[^a-z0-9-]+/g, "-") || "domain";
+    for (let i = 0; i < items.length; i += size) {
+      const pageNo = i / size;
+      questions.push({
+        id: pageNo === 0 ? slug : `${slug}:${pageNo}`,
+        header: pageNo === 0 ? domain : `${domain}:${pageNo}`,
+        question: `Which ${domain} tickets should this batch take on?`,
+        multi: true,
+        options: items.slice(i, i + size).map((item) => ({
+          label: askOptionLabel(item),
+          description: `${item.ticket.kind}, ${item.ticket.priority} (${item.ticket.source})`,
+        })),
+      });
+    }
+  }
+  return questions;
 }
 
-/** Map ask-dialog option labels back to their page of tickets. */
-export function buildLabelIndex(
-  labeled: LabeledTicket[],
-  page: number = DEFAULT_PAGE,
-): Map<string, WorkTicket[]> {
-  const index = new Map<string, WorkTicket[]>();
-  for (const opt of pageDomainOptions(labeled, page)) index.set(opt.label, opt.tickets);
+/** Map ask-dialog option labels back to their tickets. */
+export function buildLabelIndex(labeled: LabeledTicket[]): Map<string, WorkTicket> {
+  const index = new Map<string, WorkTicket>();
+  for (const item of labeled) index.set(askOptionLabel(item), item.ticket);
   return index;
 }
