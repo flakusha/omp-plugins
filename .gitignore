@@ -84,10 +84,18 @@ dist
 .tmp
 .serena
 .omp
+# Planning tracker (global ~/.config/git/.gitignore ignores every dotdir)
+!.plan/
+.plan/*
+!.plan/tickets/
+.plan/tickets/*
+!.plan/tickets/*.md
+!.plan/tickets/index.json
 # Git hooks (global ~/.config/git/.gitignore ignores dotdirs)
 !.githooks/
 .githooks/*
 !.githooks/pre-commit
+!.githooks/gate-env.sh
 # Bundle (omp-plugins)
 bun.lockb
 pack/dist/

@@ -16,6 +16,10 @@ red() { printf '\033[31m%s\033[0m\n' "$*"; }
 green() { printf '\033[32m%s\033[0m\n' "$*"; }
 yellow() { printf '\033[33m%s\033[0m\n' "$*"; }
 
+# Resolved before the cd below: core.hooksPath may be relative to the cwd git
+# hands the hook, and $0 is the only handle on the hook's own location.
+HOOK_DIR=$(cd "$(dirname "$0")" && pwd) || exit 1
+
 REPO_TOP=$(git rev-parse --show-toplevel 2>/dev/null) || exit 1
 cd "$REPO_TOP" || exit 1
 
@@ -38,9 +42,10 @@ echo "Staged files:"
 [ -n "$STAGED_CFG" ] && echo "  config: $(echo "$STAGED_CFG" | wc -l | tr -d ' ')"
 echo ""
 
-# GIT_* context is hook-scoped; the test suite spawns fixture git repos in
-# /tmp that must not inherit it. Strip it for the toolchain only.
-GATE_ENV="env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES -u GIT_COMMON_DIR -u GIT_QUARANTINE_PATH"
+# Stripped set lives in gate-env.sh so the GIT_* half and the agent-harness
+# (OMP_/PI_/ENGRAM_/MNEMO_*) half are defined in exactly one place and cannot
+# drift apart. Sourced, not executed — it only defines GATE_ENV.
+. "$HOOK_DIR/gate-env.sh" || exit 1
 
 echo "--- Step 1: typecheck (tsc --noEmit) ---"
 if $GATE_ENV bun run typecheck; then

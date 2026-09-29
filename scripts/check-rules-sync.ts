@@ -23,6 +23,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { formatTimeoutMessage, spawnWithTimeout } from "./spawn-timeout";
 
 const REPO_ROOT = process.env.OMP_CHECKS_ROOT ?? join(import.meta.dir, "..");
 const VALID_SCOPES: ReadonlySet<string> = new Set(["text", "thinking"]);
@@ -151,21 +152,23 @@ export async function countLaidDownRules(): Promise<number | undefined> {
   const tmp = mkdtempSync(join(tmpdir(), "rules-check-"));
   try {
     bootstrapProfileFixture(tmp);
-    const proc = Bun.spawn([process.execPath, installer, "--dry-run", "--target", tmp], {
-      cwd: REPO_ROOT,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [out, err] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-    ]);
-    await proc.exited;
+    const run = await spawnWithTimeout(
+      [process.execPath, installer, "--dry-run", "--target", tmp],
+      {
+        cwd: REPO_ROOT,
+        stdout: "pipe",
+        stderr: "pipe",
+        gate: "check-rules-sync (installer --dry-run)",
+      },
+    );
+    // A timed-out installer laid down nothing worth counting, and the caller
+    // ignores the exit code — returning a count here would read as a pass.
+    if (!run.ok) throw new Error(formatTimeoutMessage(run.gate, run.timeoutMs));
     // The .sh pipes combined output through `grep -cE` (with `|| true`), so a
     // failed installer still has its partial output counted; the laid/expected
     // comparison below is what surfaces the failure.
     const laidLine = /\.omp\/(agent\/)?rules\//;
-    return `${out}\n${err}`.split("\n").filter((line) => laidLine.test(line)).length;
+    return `${run.stdout}\n${run.stderr}`.split("\n").filter((line) => laidLine.test(line)).length;
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
@@ -190,7 +193,13 @@ export async function main(argv: readonly string[]): Promise<number> {
   }
   if (!schemaOnly) {
     console.log("==> rules laydown sync (installer dry-run)");
-    const laid = await countLaidDownRules();
+    let laid: number | undefined;
+    try {
+      laid = await countLaidDownRules();
+    } catch (e) {
+      console.error(`ERROR: ${e instanceof Error ? e.message : String(e)}`);
+      return 1;
+    }
     if (laid === undefined) {
       console.log("    SKIP: scripts/install.ts not present yet — skipping laydown sync check");
     } else {

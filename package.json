@@ -45,7 +45,7 @@
     "check:knip": "knip --no-progress || true",
     "check:cpd": "jscpd",
     "check:size": "bun scripts/check-file-size.ts --strict",
-    "verify": "bun run lint && bun run typecheck && bun run test && bun run check:coverage && bun run check:knip && bun run check:cpd && bun run check:size && bun run check:rules && bun run check:regex && bun run check:ship",
+    "verify": "bun run lint && bun run typecheck && bun run check:coverage && bun run check:knip && bun run check:cpd && bun run check:size && bun run check:rules && bun run check:regex && bun run check:ship",
     "install:test": "bun scripts/install.ts --target /tmp/omp-test"
   }
 }

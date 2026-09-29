@@ -11,6 +11,7 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { formatTimeoutMessage, spawnWithTimeout } from "./spawn-timeout";
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
 
@@ -122,22 +123,23 @@ export async function main(argv: readonly string[]): Promise<number> {
 
   const dir = mkdtempSync(join(tmpdir(), "coverage-check-"));
   try {
-    const proc = Bun.spawn(
+    const run = await spawnWithTimeout(
       [process.execPath, "test", "--coverage", "--coverage-reporter=lcov", `--coverage-dir=${dir}`],
       {
         cwd: REPO_ROOT,
         stdout: "pipe",
         stderr: "pipe",
+        gate: "check-coverage (bun test --coverage)",
         // Marker for the spawned suite: checker-CLI tests skip themselves so
         // spawning the suite under this gate cannot recurse into it.
         env: { ...process.env, OMP_COVERAGE_CHILD: "1" },
       },
     );
-    const [out, err] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-    ]);
-    const code = await proc.exited;
+    if (!run.ok) {
+      process.stderr.write(`ERROR: ${formatTimeoutMessage(run.gate, run.timeoutMs)}\n`);
+      return 1;
+    }
+    const { code, stdout: out, stderr: err } = run;
     if (code !== 0) {
       process.stderr.write(
         `ERROR: test suite failed (exit ${code}); coverage gate not evaluated\n`,

@@ -30,6 +30,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
+import { formatTimeoutMessage, spawnWithTimeout } from "./spawn-timeout";
 
 const REPO_ROOT = process.env.OMP_CHECKS_ROOT ?? join(import.meta.dir, "..");
 
@@ -149,12 +150,14 @@ export async function main(): Promise<number> {
     if (!existsSync(installer)) {
       return fail("scripts/install.ts not found — cannot run the shipment check");
     }
-    const proc = Bun.spawn([process.execPath, installer, "--target", tmp], {
+    const run = await spawnWithTimeout([process.execPath, installer, "--target", tmp], {
       cwd: REPO_ROOT,
       stdout: "ignore",
       stderr: "inherit",
+      gate: "check-shipment (installer)",
     });
-    const installCode = await proc.exited;
+    if (!run.ok) return fail(formatTimeoutMessage(run.gate, run.timeoutMs));
+    const installCode = run.code;
     if (installCode !== 0) return installCode;
 
     const ompDir = join(tmp, ".omp");

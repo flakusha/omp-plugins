@@ -1,4 +1,47 @@
 {
+  "BUG-CHECK-RUNNER-SUBPROCESSES-HAVE-NO-TIMEOUT-AND-CAN-HANG-THE-G": {
+    "hash": "43f4ed1",
+    "git_issue": "43f4ed1",
+    "extid": "BUG-CHECK-RUNNER-SUBPROCESSES-HAVE-NO-TIMEOUT-AND-CAN-HANG-THE-G",
+    "type": "BUG",
+    "title": "check-runner subprocesses have no timeout and can hang the gate forever",
+    "label": "bug",
+    "priority": "high",
+    "epic": "",
+    "tags": [
+      "check-gate",
+      "reliability",
+      "timeout"
+    ],
+    "source": ".plan/tickets/BUG-check-runner-subprocesses-have-no-timeout-and-can-hang-the-g.md",
+    "status": "done"
+  },
+  "BUG-FIND-WORK-CLOSED-EPIC-RECONCILIATION-STUBS-LEAK-INTO-ROSTER": {
+    "hash": "pending",
+    "extid": "BUG-FIND-WORK-CLOSED-EPIC-RECONCILIATION-STUBS-LEAK-INTO-ROSTER",
+    "type": "BUG",
+    "title": "find-work: closed EPIC reconciliation stubs leak into roster",
+    "label": "bug",
+    "priority": "high",
+    "epic": "",
+    "tags": [],
+    "source": ".plan/tickets/BUG-find-work-closed-epic-reconciliation-stubs-leak-into-roster.md",
+    "status": "done"
+  },
+  "BUG-FIND-WORK-STATUS-DONE-RE-MISSES-VOCABULARY-WONTFIX-AND-POSTP": {
+    "hash": "pending",
+    "extid": "BUG-FIND-WORK-STATUS-DONE-RE-MISSES-VOCABULARY-WONTFIX-AND-POSTP",
+    "type": "BUG",
+    "title": "find-work STATUS_DONE_RE misses vocabulary Wontfix and Postponed, leaking them into the open roster",
+    "label": "bug",
+    "priority": "high",
+    "epic": "",
+    "tags": [
+      "roster"
+    ],
+    "source": ".plan/tickets/BUG-find-work-status-done-re-misses-vocabulary-wontfix-and-postp.md",
+    "status": "done"
+  },
   "FEAT-INTEGRATE-GIWT-CLI-INTO-OMP-PLUGIN-EXTENSION": {
     "hash": "50f4cac",
     "git_issue": "50f4cac",
@@ -10,10 +53,10 @@
     "epic": "",
     "tags": [],
     "source": ".plan/tickets/FEAT-integrate-giwt-cli-into-omp-plugin-extension.md",
-    "status": "⬜ Not Started"
+    "status": "done"
   },
   "FEAT-SURFACE-GIWT-RUN-RECORDS-IN-FIND-WORK-DISCOVERY": {
-    "hash": "pending",
+    "hash": "a3a2e3b",
     "extid": "FEAT-SURFACE-GIWT-RUN-RECORDS-IN-FIND-WORK-DISCOVERY",
     "type": "FEAT",
     "title": "surface giwt run records in find-work discovery",
@@ -22,6 +65,24 @@
     "epic": "",
     "tags": [],
     "source": ".plan/tickets/FEAT-surface-giwt-run-records-in-find-work-discovery.md",
+    "status": "done",
+    "git_issue": "a3a2e3b"
+  },
+  "FIX-VERIFY-RUNS-THE-FULL-TEST-SUITE-TWICE": {
+    "hash": "8079acd",
+    "git_issue": "8079acd",
+    "extid": "FIX-VERIFY-RUNS-THE-FULL-TEST-SUITE-TWICE",
+    "type": "FIX",
+    "title": "verify runs the full test suite twice",
+    "label": "fix",
+    "priority": "high",
+    "epic": "",
+    "tags": [
+      "check-gate",
+      "performance",
+      "redundant-work"
+    ],
+    "source": ".plan/tickets/FIX-verify-runs-the-full-test-suite-twice.md",
     "status": "done"
   },
   "INFRA-ADD-REPO-LOCAL-GIWT-TOML-FOR-OMP-PLUGINS": {
@@ -35,7 +96,7 @@
     "epic": "",
     "tags": [],
     "source": ".plan/tickets/INFRA-add-repo-local-giwt-toml-for-omp-plugins.md",
-    "status": "⬜ Not Started"
+    "status": "done"
   },
   "INFRA-FIND-WORK-READ-PLAN-FRONTMATTER-LABELS": {
     "hash": "8b3d955",
@@ -53,6 +114,39 @@
     "status": "done",
     "git_issue": "8b3d955"
   },
+  "INFRA-SERIALIZE-CONCURRENT-INSTALLS-WITH-AN-ADVISORY-LOCK": {
+    "hash": "c60ad38",
+    "git_issue": "c60ad38",
+    "extid": "INFRA-SERIALIZE-CONCURRENT-INSTALLS-WITH-AN-ADVISORY-LOCK",
+    "type": "INFRA",
+    "title": "serialize concurrent installs with an advisory lock",
+    "label": "infra",
+    "priority": "high",
+    "epic": "",
+    "tags": [
+      "install",
+      "concurrency",
+      "locking"
+    ],
+    "source": ".plan/tickets/INFRA-serialize-concurrent-installs-with-an-advisory-lock.md",
+    "status": "done"
+  },
+  "INFRA-STRIP-AGENT-HARNESS-SESSION-ENV-VARS-IN-THE-PRE-COMMIT-GATE": {
+    "hash": "6760f90",
+    "git_issue": "6760f90",
+    "extid": "INFRA-STRIP-AGENT-HARNESS-SESSION-ENV-VARS-IN-THE-PRE-COMMIT-GATE",
+    "type": "INFRA",
+    "title": "strip agent-harness session env vars in the pre-commit gate",
+    "label": "infra",
+    "priority": "medium",
+    "epic": "",
+    "tags": [
+      "hooks",
+      "isolation"
+    ],
+    "source": ".plan/tickets/INFRA-strip-agent-harness-session-env-vars-in-the-pre-commit-gate.md",
+    "status": "done"
+  },
   "TASK-OMP-SCRATCHPAD-AUDIT-AND-SESSION-ARTIFACTS": {
     "hash": "e39bd29",
     "extid": "TASK-OMP-SCRATCHPAD-AUDIT-AND-SESSION-ARTIFACTS",
@@ -63,7 +157,7 @@
     "epic": "",
     "tags": [],
     "source": ".plan/tickets/TASK-omp-scratchpad-audit-and-session-artifacts.md",
-    "status": "⬜ Not Started",
+    "status": "done",
     "git_issue": "e39bd29"
   },
   "TASK-OMP-TICKET-FINALIZE-FIND-WORK-HARDENING": {
@@ -76,7 +170,7 @@
     "epic": "",
     "tags": [],
     "source": ".plan/tickets/TASK-omp-ticket-finalize-find-work-hardening.md",
-    "status": "⬜ Not Started",
+    "status": "done",
     "git_issue": "dd159ba"
   }
 }

@@ -201,7 +201,7 @@ Requires [bun](https://bun.sh) — the omp runtime runs on bun and
 
 ```bash
 bun install        # install toolchain (@oh-my-pi/pi-coding-agent, biome, typescript)
-bun run verify     # lint + typecheck + test
+bun run verify     # lint + typecheck + gates; the suite runs once, inside check:coverage
 bun run hooks:install  # activate .githooks/pre-commit (core.hooksPath)
 ```
 
@@ -220,7 +220,7 @@ when a body `**Status:**` value falls outside the provisional vocabulary.
 
 | Script | What it runs |
 |---|---|
-| `verify` | `lint` → `typecheck` → `test` → `check:rules` → `check:ship` |
+| `verify` | `lint` → `typecheck` → `check:coverage` (the single test-suite run, under lcov) → `check:rules` → `check:ship` |
 | `lint` / `lint:fix` | Biome check, then the console-log gate (`scripts/check-no-console.ts`) — `lint:fix` also applies safe fixes + import sorting |
 | `typecheck` | `tsc --noEmit` over `plugins/**/*.ts` and `scripts/**/*.ts` |
 | `test` | `bun test` — guard/hook tests in `plugins/**/__tests__/` and installer/checker tests in `scripts/__tests__/` |

@@ -29,6 +29,17 @@ describe("checker main() flows (in-process coverage)", () => {
   }, 30000);
 });
 
+describe("check-coverage main() usage", () => {
+  // No spawn: arg parsing returns before the suite is launched, so this stays
+  // unguarded and still runs inside the coverage child's own suite run.
+  test("rejects unknown flags with usage", async () => {
+    expect(await checkCoverageMain(["--wat"])).toBe(2);
+  });
+});
+
+// verify's only test execution is the coverage gate's spawned run, so this
+// spawning gate test would never run anywhere if left unguarded. Keeping the
+// skip means the one suite execution verify performs is the one that runs it.
 const describeGate = describe.skipIf(process.env.OMP_COVERAGE_CHILD === "1");
 
 describeGate("check-coverage main() gate", () => {
@@ -36,8 +47,4 @@ describeGate("check-coverage main() gate", () => {
     expect(await checkCoverageMain(["--min=0"])).toBe(0);
     expect(await checkCoverageMain(["--min=100"])).toBe(1);
   }, 120000);
-
-  test("rejects unknown flags with usage", async () => {
-    expect(await checkCoverageMain(["--wat"])).toBe(2);
-  });
 });
