@@ -1,5 +1,11 @@
-// size-allow: 1500
-// (guard override: the AGENT_PAYLOADS manifest table is data, not logic to split)
+// size-allow: 1300
+// (guard override: the AGENT_PAYLOADS manifest table is data, not logic — but it
+// stays here because its only consumer, syncAgentPayloads, stays here. The
+// remaining core is the InstallCtx threading: sync, reconcile, and the runner
+// all mutate the same manifest/counts/shipped fields, so splitting them would
+// pass mutable state across a module boundary rather than separate concerns.
+// The ctx-free helpers have been extracted to install-fs / install-cache /
+// install-config / install-lock.)
 // install-lib.ts — TypeScript port of scripts/install.sh (pure, testable core).
 //
 // The CLI entry point is scripts/install.ts; everything behavioral lives here.
@@ -8,7 +14,6 @@
 // plugin source), same stdout line formats, manifest-driven update/reconcile,
 // profile runtime symlinks, plugin lock JSON, and config.yml pattern merging
 // (`.merged`-free: the merge result is written atomically via temp+rename).
-import { createHash } from "node:crypto";
 import type { Dirent } from "node:fs";
 import {
   chmodSync,
@@ -19,22 +24,27 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
-  readlinkSync,
   renameSync,
   rmSync,
-  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { readFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { basename, dirname, isAbsolute, join, resolve } from "node:path";
-import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { basename, dirname, join } from "node:path";
 import { mergeInterceptorPatterns } from "./install-bash-interceptor";
+import { checkDangerousTarget, invalidateExtensionCaches } from "./install-cache";
+import { assembleProfileConfig } from "./install-config";
+import {
+  fileSha,
+  isDirectory,
+  isFileFollow,
+  lstatKind,
+  type Manifest,
+  parseManifest,
+  realpathMissing,
+  serializeManifest,
+} from "./install-fs";
 import { acquireInstallLock, InstallerError, installLockPath } from "./install-lock";
-
-/** rel path -> sha256 for files we own, or the literal "dir" marker. */
-export type Manifest = Map<string, string | "dir">;
 
 export interface CliFlags {
   target: string;
@@ -123,113 +133,6 @@ export const HELP_TEXT = `# install.ts — Install the oh-my-pi integration bund
 #   path is realpath-checked to stay inside TARGET.
 `;
 
-// ---- small fs probes -------------------------------------------------------
-
-type LstatKind = "file" | "dir" | "symlink" | "other" | "missing";
-
-function lstatKind(p: string): LstatKind {
-  try {
-    const st = lstatSync(p);
-    if (st.isSymbolicLink()) return "symlink";
-    if (st.isFile()) return "file";
-    if (st.isDirectory()) return "dir";
-    return "other";
-  } catch {
-    return "missing";
-  }
-}
-
-function isDirectory(p: string): boolean {
-  try {
-    return statSync(p).isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-/** stat() that follows symlinks — mirrors bash `[[ -f ... ]]`. */
-function isFileFollow(p: string): boolean {
-  try {
-    return statSync(p).isFile();
-  } catch {
-    return false;
-  }
-}
-
-/**
- * `realpath -m` port: canonicalize a path that may contain not-yet-existing
- * components. Symlinks in the existing prefix are resolved component-wise;
- * `..` pops the canonical prefix, so it is resolved against symlink targets.
- */
-export function realpathMissing(target: string, depth = 0): string {
-  if (depth > 40) throw new Error(`too many symbolic links: ${target}`);
-  const abs = isAbsolute(target) ? target : resolve(target);
-  const parts = abs
-    .split("/")
-    .slice(1)
-    .filter((part) => part.length > 0);
-  let resolved = "";
-  for (const part of parts) {
-    if (part === ".") continue;
-    if (part === "..") {
-      resolved = resolved.slice(0, Math.max(resolved.lastIndexOf("/"), 0));
-      continue;
-    }
-    const cur = `${resolved}/${part}`;
-    if (lstatKind(cur) !== "symlink") {
-      resolved = cur;
-      continue;
-    }
-    const link = readlinkSync(cur);
-    const linkAbs = isAbsolute(link) ? link : `${resolved}/${link}`;
-    resolved = realpathMissing(linkAbs, depth + 1);
-    if (resolved === "/") resolved = "";
-  }
-  return resolved === "" ? "/" : resolved;
-}
-
-/** sha256 of a regular file; "" when missing, a symlink, or a directory. */
-export async function fileSha(p: string): Promise<string> {
-  if (lstatKind(p) !== "file") return "";
-  try {
-    const buf = await readFile(p);
-    return createHash("sha256").update(buf).digest("hex");
-  } catch {
-    return "";
-  }
-}
-
-// ---- ownership ledger (manifest) ------------------------------------------
-
-/**
- * Parse a manifest file body: `F <sha> <rel>` for files, `D - <rel>` for
- * directories. Malformed lines are skipped, matching `manifest_load`.
- */
-export function parseManifest(text: string): Manifest {
-  const manifest: Manifest = new Map();
-  for (const rawLine of text.split("\n")) {
-    const tokens = rawLine.trim().split(/\s+/);
-    if (tokens.length < 3) continue;
-    const kind = tokens[0] ?? "";
-    const value = tokens[1] ?? "";
-    const rel = tokens.slice(2).join(" ");
-    if (rel.length === 0) continue;
-    if (kind === "F") manifest.set(rel, value);
-    else if (kind === "D") manifest.set(rel, "dir");
-  }
-  return manifest;
-}
-
-/** Serialize sorted by rel path, same `F <sha> <rel>` / `D - <rel>` format. */
-export function serializeManifest(manifest: Manifest): string {
-  const lines: string[] = [];
-  for (const rel of [...manifest.keys()].sort()) {
-    const value = manifest.get(rel);
-    lines.push(value === "dir" ? `D - ${rel}` : `F ${value ?? ""} ${rel}`);
-  }
-  return lines.length === 0 ? "" : `${lines.join("\n")}\n`;
-}
-
 // ---- bashInterceptor pattern merge ----------------------------------------
 // (`normalizePatternLine`, `mergeInterceptorPatterns`, `MergeResult` live in
 // `./install-bash-interceptor.ts`; re-exported below for back-compat with
@@ -239,6 +142,35 @@ export {
   mergeInterceptorPatterns,
   normalizePatternLine,
 } from "./install-bash-interceptor";
+
+// ---- stale cache invalidation + --target screening --------------------------
+// (`extensionCacheFiles`, `findExtensionCacheDirs`, `invalidateExtensionCaches`,
+// `checkDangerousTarget` live in `./install-cache.ts`; re-exported below for
+// back-compat with `installer.test.ts` and any external callers.)
+export {
+  checkDangerousTarget,
+  extensionCacheFiles,
+  findExtensionCacheDirs,
+  invalidateExtensionCaches,
+} from "./install-cache";
+
+// ---- profile config assembly ----------------------------------------------
+// (`deepMergeConfig`, `assembleProfileConfig` live in `./install-config.ts`;
+// re-exported below for back-compat with `installer.test.ts`.)
+export { assembleProfileConfig, deepMergeConfig } from "./install-config";
+
+// ---- filesystem probes + ownership ledger (manifest) ----------------------
+// (`lstatKind`, `isDirectory`, `isFileFollow`, `realpathMissing`, `fileSha`,
+// `Manifest`, `parseManifest`, `serializeManifest` live in
+// `./install-fs.ts`; the public half is re-exported below for back-compat with
+// `installer.test.ts` and any external callers.)
+export {
+  fileSha,
+  type Manifest,
+  parseManifest,
+  realpathMissing,
+  serializeManifest,
+} from "./install-fs";
 
 // ---- CLI arg parsing ------------------------------------------------------
 
@@ -639,56 +571,8 @@ async function mergeConfigPatterns(
 }
 
 // ---- profile config fragments ----------------------------------------------
-
-function isPlainObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
-
-/**
- * Deep-merge a profile fragment over the base config: maps merge recursively
- * (fragment wins on conflicts), any other value — scalar or list — replaces
- * the base value wholesale.
- */
-export function deepMergeConfig(base: unknown, frag: unknown): unknown {
-  if (isPlainObject(base) && isPlainObject(frag)) {
-    const out: Record<string, unknown> = { ...base };
-    for (const [key, value] of Object.entries(frag)) {
-      out[key] = deepMergeConfig(base[key], value);
-    }
-    return out;
-  }
-  return frag;
-}
-
-/**
- * Assemble a complete profile config: parse base (`agent/config.yml`) and
- * fragment YAML, deep-merge (fragment wins), re-serialize deterministically
- * with line wrapping disabled so long interceptor regexes stay on one line.
- */
-export function assembleProfileConfig(baseText: string, fragmentText: string): string {
-  let base: unknown;
-  let frag: unknown;
-  try {
-    base = parseYaml(baseText);
-  } catch (error) {
-    throw new InstallerError(`agent/config.yml is not valid YAML: ${(error as Error).message}`, 1);
-  }
-  try {
-    frag = parseYaml(fragmentText);
-  } catch (error) {
-    throw new InstallerError(
-      `config.fragment.yml is not valid YAML: ${(error as Error).message}`,
-      1,
-    );
-  }
-  if (base === null) base = {};
-  if (frag === null) frag = {};
-  if (!isPlainObject(base) || !isPlainObject(frag)) {
-    throw new InstallerError("profile config base and fragment must be YAML mappings", 1);
-  }
-  return `${stringifyYaml(deepMergeConfig(base, frag), { lineWidth: 0 }).trimEnd()}\n`;
-}
-
+// (`isPlainObject`, `deepMergeConfig`, `assembleProfileConfig` live in
+// `./install-config.ts`; re-exported above for back-compat.)
 /**
  * Sync in-memory text (e.g. an assembled profile config) through the same
  * ownership ladder as `syncFile` by parking it in a temp file for the call.
@@ -1237,90 +1121,8 @@ function printSummary(ctx: InstallCtx): void {
 
 // ---- startup gates (order matches install.sh) -----------------------------
 
-// ---- stale extension transpile-cache invalidation ---------------------------
-
-/**
- * Cache artifacts of omp's legacy extension transpiler, kept per profile and
- * per agent root. A running omp process holds them open; the next process
- * rebuilds them from the shipped sources, so removal IS the invalidation.
- */
-export function extensionCacheFiles(cacheDir: string): string[] {
-  return ["", "-wal", "-shm"].map((suffix) =>
-    join(cacheDir, `legacy-pi-extension-cache.db${suffix}`),
-  );
-}
-
-/**
- * Existing transpile-cache directories under an omp root: the agent root's
- * cache plus every profile's own cache dir (when present).
- */
-export function findExtensionCacheDirs(ompRoot: string): string[] {
-  const dirs = [join(ompRoot, "agent", "cache")];
-  let profileEntries: Dirent[] = [];
-  try {
-    profileEntries = readdirSync(join(ompRoot, "profiles"), { withFileTypes: true });
-  } catch {
-    return dirs.filter(isDirectory);
-  }
-  for (const entry of profileEntries) {
-    if (entry.isDirectory()) dirs.push(join(ompRoot, "profiles", entry.name, "cache"));
-  }
-  return dirs.filter(isDirectory);
-}
-
-/**
- * Delete stale transpile-cache dbs so a freshly started omp process loads the
- * just-installed extension sources instead of a cached compile of older code.
- * Best-effort and fail-open: returns the paths actually removed.
- */
-export function invalidateExtensionCaches(ompRoot: string): string[] {
-  const removed: string[] = [];
-  for (const dir of findExtensionCacheDirs(ompRoot)) {
-    for (const file of extensionCacheFiles(dir)) {
-      try {
-        if (lstatKind(file) !== "file") continue;
-        rmSync(file, { force: true });
-        removed.push(file);
-      } catch {
-        // cache removal must never fail the install
-      }
-    }
-  }
-  return removed;
-}
-
-/** Refuse unsafe --target values. Returns null when safe, else a reason. */
-export function checkDangerousTarget(target: string, home: string): string | null {
-  if (target === "" || target === "/") return "target is the filesystem root or empty";
-  if (target === "/root" || target.startsWith("/root/"))
-    return "target is another user's home (/root)";
-  if (target === "/home" || target === "/home/") return "target is the /home directory";
-  if (target.startsWith("/home/")) {
-    const other = target.match(/^\/home\/([^/]+)(?:\/|$)/)?.[1];
-    if (other !== undefined && other !== basename(home))
-      return `target is another user's home (/home/${other}/)`;
-  }
-  // OS-managed read-only paths. User-writable trees are intentionally NOT
-  // denied because the installer may legitimately land in them; the
-  // existing symlink + realm guards already prevent cross-user escapes.
-  for (const prefix of [
-    "/etc",
-    "/sys",
-    "/proc",
-    "/dev",
-    "/boot",
-    "/bin",
-    "/sbin",
-    "/lib",
-    "/lib64",
-    "/snap",
-  ]) {
-    if (target === prefix || target.startsWith(`${prefix}/`))
-      return `target is under a system path (${prefix})`;
-  }
-  return null;
-}
-
+// (`extensionCacheFiles`, `findExtensionCacheDirs`, `invalidateExtensionCaches`
+// and `checkDangerousTarget` live in `./install-cache.ts`; re-exported above.)
 function runGates(ctx: InstallCtx): number | null {
   const { deps, flags, target } = ctx;
   const homeOmp = join(deps.home, ".omp");
