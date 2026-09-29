@@ -24,12 +24,8 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
-import {
-  acquireInstallLock,
-  INSTALL_LOCK_FILENAME,
-  installLockPath,
-  parseManifest,
-} from "../install-lib";
+import { parseManifest } from "../install-lib";
+import { acquireInstallLock, INSTALL_LOCK_FILENAME, installLockPath } from "../install-lock";
 
 const INSTALLER = join(import.meta.dir, "..", "install.ts");
 const REPO_ROOT = join(import.meta.dir, "..", "..");
