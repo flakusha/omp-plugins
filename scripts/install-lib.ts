@@ -53,6 +53,8 @@ export interface CliFlags {
   noPlugin: boolean;
   cleanBak: boolean;
   live: boolean;
+  /** `--target` given or PREFIX set: `--live` must not retarget. */
+  targetExplicit: boolean;
   help: boolean;
 }
 
@@ -88,8 +90,8 @@ export const HELP_TEXT = `# install.ts — Install the oh-my-pi integration bund
 #                  not own are user data and are never touched.
 #   --no-plugin    Skip registering the plugin package (agent-dir payloads
 #                  and rules only).
-#   --live         Allow updating a live omp profile under $HOME directly
-#                  (e.g. --target ~/.omp or --target "$HOME"). Refused by
+#   --live         Target the live omp profile under $HOME directly: with no
+#                  --target/PREFIX, installs to ~/.omp. Refused by
 # Laydown (relative to TARGET):
 #   TARGET/.omp/agent/AGENTS.md                      omp-specific global agent rules
 #   TARGET/.omp/agent/config.yml                       agent config scaffold
@@ -185,6 +187,7 @@ export function parseArgs(
     noPlugin: false,
     cleanBak: false,
     live: false,
+    targetExplicit: Boolean(env.PREFIX),
     help: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -196,6 +199,7 @@ export function parseArgs(
           throw new InstallerError("--target requires a path", 1);
         }
         flags.target = value;
+        flags.targetExplicit = true;
         i += 1;
         break;
       }
@@ -288,6 +292,7 @@ const AGENT_PAYLOADS: readonly [string, string][] = [
   ["extensions/plugin/post-edit-lint.ts", "extensions/plugin/post-edit-lint.ts"],
   ["extensions/plugin/memory-buffer.ts", "extensions/plugin/memory-buffer.ts"],
   ["extensions/plugin/retrieval.ts", "extensions/plugin/retrieval.ts"],
+  ["extensions/plugin/load-spread.ts", "extensions/plugin/load-spread.ts"],
   ["extensions/commands/commands/recall.ts", "extensions/commands/commands/recall.ts"],
   ["extensions/commands/commands/receipt-cmd.ts", "extensions/commands/commands/receipt-cmd.ts"],
   ["extensions/commands/bookkeep/env.ts", "extensions/commands/bookkeep/env.ts"],
@@ -701,8 +706,37 @@ function syncDir(ctx: InstallCtx, src: string, dst: string, rel: string): void {
 
 // ---- sections -------------------------------------------------------------
 
+/**
+ * Ship plugin-package agent definitions into the agents dir omp discovers
+ * (`<ompRoot>/agent/agents/` - task/discovery.ts user source). Profile runs
+ * resolve their own agent dir, so syncOneProfile mirrors the same files into
+ * `<ompRoot>/profiles/<name>/agent/agents/`.
+ */
+async function syncAgentDefinitions(
+  ctx: InstallCtx,
+  agentDir: string,
+  rlobPrefix: string,
+): Promise<void> {
+  const agentsSrcDir = join(ctx.pluginSrc, "agents");
+  let names: string[];
+  try {
+    names = readdirSync(agentsSrcDir).filter((n) => n.endsWith(".md"));
+  } catch {
+    return;
+  }
+  for (const name of names.sort()) {
+    await syncFile(
+      ctx,
+      join(agentsSrcDir, name),
+      join(agentDir, "agents", name),
+      `${rlobPrefix}agent/agents/${name}`,
+    );
+  }
+}
+
 async function syncAgentPayloads(ctx: InstallCtx): Promise<void> {
   ctx.deps.out("==> agent profile payloads");
+  await syncAgentDefinitions(ctx, ctx.agentDir, ctx.rlob);
   await syncFile(
     ctx,
     join(ctx.repoRoot, "AGENTS.md"),
@@ -761,6 +795,7 @@ async function syncOneProfile(ctx: InstallCtx, name: string): Promise<void> {
   }
   if (!bootstrapProfileAgentDir(ctx, profileAgentDir, srcNames)) return;
   ctx.deps.out(`    profile: ${name}`);
+  await syncAgentDefinitions(ctx, profileAgentDir, `.omp/profiles/${name}/`);
   // config.yml (full override) wins over config.fragment.yml (deep-merged
   // over the base agent/config.yml) when both ship.
   const hasFull = srcNames.includes("config.yml");
@@ -970,6 +1005,37 @@ function ensureRecord(doc: LockDoc, key: string): Record<string, unknown> {
   return created;
 }
 
+/**
+ * Ensure `<plugins>/package.json` declares the plugin in `dependencies`.
+ * The plugin loader keeps a discovered plugin only when it is declared there,
+ * is a symlink, or has no package manifest (`extensibility/plugins/loader.ts`
+ * skips "stale lockfile entry not declared in package.json"). Ours ships a
+ * manifest (`omp.extensions` entry), so the declaration is what makes sibling
+ * capability dirs — `agents/` — discoverable. User-owned keys are preserved;
+ * only our own entry is upserted.
+ */
+function ensurePluginDependency(ctx: InstallCtx): void {
+  if (ctx.flags.dryRun) {
+    ctx.deps.out(`  + ${join("plugins", "package.json")} dependencies.${ctx.pkgName} (declare)`);
+    return;
+  }
+  const pkgJsonPath = join(ctx.pluginDir, "package.json");
+  let doc: Record<string, unknown> = {};
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(pkgJsonPath, "utf-8"));
+    if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+      doc = parsed as Record<string, unknown>;
+    }
+  } catch {
+    // absent or unparsable: start from a fresh document
+  }
+  const deps = ensureRecord(doc, "dependencies");
+  if (deps[ctx.pkgName] === "*") return;
+  deps[ctx.pkgName] = "*";
+  writeFileSync(pkgJsonPath, `${JSON.stringify(doc, null, 2)}\n`);
+  ctx.deps.out(`  + ${join("plugins", "package.json")}  (dependencies.${ctx.pkgName} declared)`);
+}
+
 function syncPluginPackage(ctx: InstallCtx): void {
   if (ctx.flags.noPlugin) return;
   const { flags, deps, lockPath, pkgName, pluginDir } = ctx;
@@ -980,6 +1046,7 @@ function syncPluginPackage(ctx: InstallCtx): void {
     join(pluginDir, "node_modules", pkgName),
     `${ctx.rlob}plugins/node_modules/${pkgName}`,
   );
+  ensurePluginDependency(ctx);
   if (existsSync(lockPath) && !flags.force) {
     warn(ctx, `existing plugin lockfile kept: ${lockPath} (use --force to re-enable)`);
     return;
@@ -1185,6 +1252,11 @@ export async function runInstall(argv: string[], deps: RunDeps = defaultDeps()):
   if (flags.help) {
     deps.out(HELP_TEXT);
     return 0;
+  }
+  // Bare --live means the live profile: without an explicit target it must
+  // retarget to ~/.omp, not silently fall back to the /tmp/omp-test default.
+  if (flags.live && !flags.targetExplicit) {
+    flags.target = join(deps.home, ".omp");
   }
   const target = realpathMissing(flags.target);
   const repoRoot = realpathMissing(join(import.meta.dir, ".."));

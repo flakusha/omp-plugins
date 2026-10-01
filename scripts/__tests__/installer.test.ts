@@ -370,6 +370,7 @@ describe("parseArgs", () => {
       noPlugin: false,
       cleanBak: false,
       live: false,
+      targetExplicit: false,
       help: false,
     });
   });
@@ -392,8 +393,16 @@ describe("parseArgs", () => {
       noPlugin: true,
       cleanBak: true,
       live: true,
+      targetExplicit: true,
       help: false,
     });
+  });
+
+  test("targetExplicit tracks --target and PREFIX, so bare --live can retarget", () => {
+    expect(parseArgs(["--live"], {}).targetExplicit).toBe(false);
+    expect(parseArgs(["--live", "--target", "/tmp/x"], {}).targetExplicit).toBe(true);
+    expect(parseArgs(["--live"], { PREFIX: "/opt/omp" }).targetExplicit).toBe(true);
+    expect(parseArgs(["--live"], { PREFIX: "" }).targetExplicit).toBe(false);
   });
 
   test("-h and --help set the help flag", () => {
