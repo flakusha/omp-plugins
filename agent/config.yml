@@ -135,7 +135,9 @@ tools:
   xdevDocs: builtins
 task:
   agentAdvisor:
-    task: "on"
+    task: "off"
+  # Subagents run UNADVISED: the advisor's token spend is not justified by its
+  # effect on one-shot subtask execution. Do not re-enable per agent here.
 composer:
   shape: field
 theme:

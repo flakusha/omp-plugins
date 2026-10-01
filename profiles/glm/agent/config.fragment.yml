@@ -12,6 +12,23 @@ modelRoles:
   smol: zai/glm-5.3-flash:low
   slow: zai/glm-5.3:high
   advisor: zai/glm-5.3:off
+  plan: zai/glm-5.3:high
+  commit: opencode-go/mimo-v2.6-flash:off
+  memory: zai/glm-5.3-flash:off
+  judge: zai/glm-5.3-flash:off
+  vision: zai/glm-4.6v-flash
+# Unpinned on purpose:
+#   task — role-derived patterns feed the load-spread classifier; pinning would
+#     freeze every subagent spawn to one model and defeat the rerouting.
+#   web — no roster model declares webSearch capability; pinning would resolve
+#     to nothing. image/speech/dictation — no roster models of those kinds.
+# Vibe worker tiers: `vibe good` -> bundled `task` agent (inherits the strong
+# session model), `vibe fast` -> bundled `sonic` agent. Pin sonic to the
+# mechanical tier of the approved roster (budget flash via opencode-go) so
+# mechanical work leaves the primary zai quota alone.
+task:
+  agentModelOverrides:
+    sonic: opencode-go/mimo-v2.6-flash:low
 providers:
   maxInFlightRequests:
     zai: 20

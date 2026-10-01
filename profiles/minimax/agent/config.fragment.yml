@@ -13,6 +13,22 @@ modelRoles:
   advisor: minimax-code/MiniMax-M2.5-lightning:low
   smol: minimax-code/MiniMax-M2.7-highspeed:low
   slow: minimax-code/MiniMax-M3:high
+  plan: minimax-code/MiniMax-M3:high
+  commit: minimax-code/MiniMax-M2.5-lightning:off
+  memory: minimax-code/MiniMax-M2.5-lightning:off
+  judge: minimax-code/MiniMax-M2.7-highspeed:low
+  vision: opencode-go/glm-5.3-flash
+# Unpinned on purpose:
+#   task — role-derived patterns feed the load-spread classifier; pinning would
+#     freeze every subagent spawn to one model and defeat the rerouting.
+#   web — no roster model declares webSearch capability. image/speech/dictation
+#     — no roster models of those kinds.
+# Vibe worker tiers: `vibe good` -> bundled `task` agent (inherits the strong
+# M3 session model), `vibe fast` -> bundled `sonic` agent. Pin sonic to the
+# mechanical tier (provider-free lightning variant).
+task:
+  agentModelOverrides:
+    sonic: minimax-code/MiniMax-M2.5-lightning:low
 ttsr:
   contextMode: discard
   interruptMode: tool-only
