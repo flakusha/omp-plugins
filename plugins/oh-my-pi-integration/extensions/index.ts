@@ -31,6 +31,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 import { registerCommands } from "./commands/commands";
 import { registerDestructiveGitNotice, registerGpgGuard, registerSshGuard } from "./plugin/guards";
+import { registerLoadSpread } from "./plugin/load-spread";
 import { registerMemoryBuffer } from "./plugin/memory-buffer";
 import { registerPostEditLint } from "./plugin/post-edit-lint";
 import { registerTurnStartRetrieval } from "./plugin/retrieval";
@@ -49,6 +50,7 @@ export default function integrationPlugin(pi: ExtensionAPI): void {
   registerPostEditLint(pi);
   registerMemoryBuffer(pi);
   registerTurnStartRetrieval(pi);
+  registerLoadSpread(pi);
 
   // ---- 9) receipt carriage: carry <cwd>/.omp/receipt.toml each turn -------
   // Injects the project's job ledger as an invisible footer message and runs

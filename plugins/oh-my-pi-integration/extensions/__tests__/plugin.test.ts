@@ -190,7 +190,7 @@ describe("integrationPlugin — registration", () => {
   test("registers every handler and the plugin label", () => {
     const pi = new FakePi();
     integrationPlugin(pi as unknown as ExtensionAPI);
-    expect(pi.handlers.get("tool_call")).toHaveLength(2);
+    expect(pi.handlers.get("tool_call")).toHaveLength(3);
     expect(pi.handlers.get("tool_result")).toHaveLength(5);
     for (const event of [
       "turn_start",
