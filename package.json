@@ -16,13 +16,13 @@
     "giwt": "file:../giwt"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.14",
-    "@oh-my-pi/pi-coding-agent": "18.2.1",
+    "@biomejs/biome": "^2.5.15",
+    "@oh-my-pi/pi-coding-agent": "18.4.8",
     "@types/bun": "^1.4.2",
-    "@types/node": "^26.2.0",
-    "jscpd": "^4.0.5",
-    "knip": "^6.36.0",
-    "oxlint": "^1.0.0",
+    "@types/node": "^26.6.3",
+    "jscpd": "^4.3.0",
+    "knip": "^6.39.0",
+    "oxlint": "^1.86.0",
     "typescript": "^7.0.2",
     "yaml": "^2.9.1"
   },
