@@ -87,6 +87,51 @@ plugin can be installed directly with `omp plugin install`.
   in-flight mutation buffer into the compaction summary so no uncommitted work
   is lost across a compaction (`harness-evasion-guard` pre-hook additionally
   blocks agent attempts to bypass the read-only harness tools in the shell).
+- **git → giwt reroute pre-hook** (`hooks/pre/git-giwt-reroute.ts`) —
+  rewrites exact-argv `git` shapes to their `giwt` equivalents so the ledger,
+  finalize gates, and GPG signing enforce the worktree lifecycle:
+  `git worktree list|remove <path>|prune` → `giwt list|remove|cleanup` (bare
+  forms only), `git merge <src>` / `git rebase <target>` → `giwt merge|rebase`
+  (only when the session cwd sits inside `tree/`), and a non-blocking nudge
+  toward `giwt new` / `giwt create` for `git worktree add` (the harness's own
+  `rewriteGitWorktreeAdd` still handles clone-first materialization).
+  `rtk git <op>` is classified too. **Never rewritten:** push, stash, config,
+  reset, clean, `branch -D`, commit (incl. `--amend`), and all
+  recovery/interactive forms — the `bashInterceptor` ask-gates and
+  `harness-evasion-guard` stay authoritative. `git -C`/`git -c key=val`,
+  wrapper tokens (sudo/env/nohup/…), `$()`/backticks, unquoted pipes, and
+  repos without a resolvable giwt root all pass through untouched; the hook
+  fails open.
+
+#### rtk + lean-ctx bash surface
+
+rtk integrates natively for bash — nothing to configure per repo:
+`~/.omp/agent/extensions/rtk.ts` (installed by rtk itself, not this plugin)
+rewrites bash commands pre-execution by delegating to `rtk rewrite` (exit 0/3
+→ mutate the command, 1 → pass through; requires rtk ≥ 0.23), so
+`cat`/`head`/`tail`/`ls`/`grep`/`find`/`git status`/test-runner-class commands
+run rtk-compressed without any pattern maintenance here. `RTK_DISABLED=1`
+opts a session out; an absent or too-old rtk binary disables the extension
+and commands run raw. One known interaction: rtk rewrites `git push` →
+`rtk git push` before the line-anchored ask-gates see it, so those ops hit
+the (stricter, non-line-anchored) `harness-evasion-guard` block instead of an
+ask prompt.
+
+lean-ctx already covers `eval`/`edit`/`write`/`glob` natively via the
+`lean-ctx-native-reroute` pre-hook, so the residual bash→lean-ctx gap is
+currently empty. If a genuinely noisy command class ever needs lean-ctx's
+compressed shell, the bashInterceptor can redirect to an MCP tool with no
+code — `tool:` accepts any available tool name, MCP included. Documented
+template, **not** instantiated (the redirected model call re-issues the
+original command through lean-ctx's compressed shell):
+
+```yaml
+bashInterceptor:
+  patterns:
+    - pattern: '^\s*<noisy-command>\s+'
+      tool: mcp__lean_ctx_ctx_shell
+      message: "Compressed output — re-issue via mcp__lean_ctx_ctx_shell with the original command as its command argument."
+```
 
 All guards live as pure, unit-tested logic in `extensions/guards/`: they take
 command/output strings and return decisions, so behavior is auditable without a

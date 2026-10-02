@@ -203,7 +203,7 @@ describe("worktree handler", () => {
     writeFileSync(join(root, "giwt.toml"), '[paths]\ntree = "tree"\n');
     await pi.commands.get("worktree")?.handler("feat-x implement feature X", makeCtx(root));
     // giwt is tried first (not git worktree add)
-    expect(pi.execCalls.some((c) => c.command === "giwt")).toBe(true);
+    expect(pi.execCalls).toEqual([{ command: "giwt", args: ["new", "feat-x"] }]);
     expect(pi.execCalls.some((c) => c.command === "git")).toBe(false);
     expect(pi.sentUserMessages[0]).toContain("feat-x");
   });

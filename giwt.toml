@@ -1,7 +1,7 @@
 # giwt lifecycle config for omp-plugins (see giwt src/utils/settings.ts schema).
 
 [branches]
-# Single-branch repo: fork-base default for `giwt new-branch`.
+# Single-branch repo: fork-base default for `giwt new`.
 root = "master"
 
 [commands]

@@ -7,7 +7,7 @@
  * convention (`tree/` or `.worktrees/`), defaulting to `tree/`.
  *
  * giwt integration: when giwt is available, creation delegates to
- * `giwt new-branch <name>` which adds branch protection checks, GPG signing
+ * `giwt new <name>` which adds branch protection checks, GPG signing
  * config, `.credentials.env` symlink, and `node_modules` linking. Falls back
  * to `git worktree add -b` when giwt is unavailable.
  *
@@ -65,7 +65,7 @@ export function buildWorktreePrompt(
 }
 
 /**
- * Create a worktree. Tries giwt's `new-branch` command first (adds branch
+ * Create a worktree. Tries giwt's `new` command first (adds branch
  * protection, GPG config, credentials symlink, node_modules link), falls
  * back to `git worktree add -b` when giwt is unavailable.
  *
@@ -76,7 +76,7 @@ export function buildWorktreePrompt(
 async function createWorktree(pi: ExtensionAPI, target: WorktreeTarget): Promise<string | null> {
   const giwtConfig = resolveGiwtConfig(target.root);
 
-  // Try giwt new-branch when available
+  // Try giwt new when available
   if (giwtConfig.available) {
     try {
       // Align TREE_DIR with OMP_WORKTREE_DIR when set
@@ -85,7 +85,7 @@ async function createWorktree(pi: ExtensionAPI, target: WorktreeTarget): Promise
       if (process.env.OMP_WORKTREE_DIR) process.env.TREE_DIR = process.env.OMP_WORKTREE_DIR;
       process.env.REPO_ROOT = target.root;
       try {
-        await pi.exec("giwt", ["new-branch", target.name], { timeout: 60000 });
+        await pi.exec("giwt", ["new", target.name], { timeout: 60000 });
         return null; // giwt succeeded
       } finally {
         // Restore env
