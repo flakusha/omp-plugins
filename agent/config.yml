@@ -125,6 +125,9 @@ bashInterceptor:
     - pattern: git\s+push\b(?!\s+--dry-run)(?!\s+(-h|--help)\b)
       tool: ask
       message: "Hard ban on `git push` in agent flows — wrong-branch and force-push mistakes are not recoverable on a shared remote, and secrets can land in remote history without pre-push scanning. Do NOT push. Stage the local commit (`git add` + `git commit -m \"...\"`), output the commit hash + one-line summary, and wait for explicit user authorization. The user's authorization is per-session, not per-agent; if the user is not present in this turn, surface the prepared commit and stop. Safe shapes are `git push --dry-run` and `git push -h`/`--help` (information only)."
+    - pattern: "git\\s+config\\s+(?!(?:get|list)\\b)(?:(?:-{1,2}(?:f|file|blob|type|fixed-value)\\b(?:\"[^\"]*\"|'[^']*'|\\s+(?:\"[^\"]*\"|'[^']*'|[^\\s]+))?|-(?![eE]\\b)[a-zA-Z][\\w-]*|--[\\w-]+(?:=[^\\s]+)?)\\s+)*(?:(?:set|unset|edit|rename-section|remove-section)\\b|--add\\b|--replace-all\\b|--unset\\b|--unset-all\\b|--remove-section\\b|--rename-section\\b|--edit\\b|-e\\b|(?!(?:get|list)\\b)[^\\s-][^\\s]*\\s+(?!-)(?:[^\\s\"']+|\"[^\"]*\"|'[^']*'))"
+      tool: ask
+      message: "Persistent `git config` mutation is prohibited for all agents and subagents. Reads stay allowed: `git config --get <key>`, `git config --list`, `git config get <key>`, `git config --get-regexp <re>`, single-positional `git config <key>`. One-shot override: `git -c key=value <command>` (not persisted). Persistent config changes need the user (ask): state the exact key/value and stop. Do not retry or evade — see rule `git-config-blocklist`."
 astGrep:
   enabled: true
 checkpoint:

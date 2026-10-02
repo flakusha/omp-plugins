@@ -8,7 +8,7 @@ scope: ["text", "thinking"]
 The bash/ctx_shell tool refuses inline `KEY=value cmd` for variables that can redirect which binary runs. Blocked (verified): `PATH` (shadows binaries), `GIT_EDITOR`/`GIT_EXTERNAL_DIFF` (intercept git editor/diff), `GIT_ASKPASS`/`SSH_ASKPASS`/`GIT_SSH`/`GIT_SSH_COMMAND` (intercept credential/ssh prompting; can steal creds), `LD_PRELOAD`/`DYLD_INSERT_LIBRARIES` (library injection). Fires on read and write paths — even `GIT_EDITOR=true git log` is refused. **Deliberate upstream policy** (see `harness-tooling-discipline`).
 
 SANCTIONED:
-- Persist: `git config --local core.editor true` (or `--global` → `~/.gitconfig`).
+- Persist: needs the user (ask) — persistent `git config` writes are prohibited for all agents and subagents (see `git-config-blocklist`); one-shot `git -c` below covers the runtime need.
 - One-shot via git's flag: `git -c core.editor=true …` — git's own flag, allowed, not inline env.
 - One-shot via env: the tool's `env: {"KEY": "value"}` parameter, not inline.
 - Complex sequence: re-executable `./.tmp/<name>.{sh,js,py}` invoked via `env:`.

@@ -609,4 +609,67 @@ describe("block reason evidence contract", () => {
     const reason = evasionReason(`cd /repo && cat ${long}.txt`);
     expect(reason?.length ?? 0).toBeLessThan(700);
   });
+
+  // === git config mutation coverage (persistent config writes) ==========
+  test("blocks config subcommand writes on evasion reaches", () => {
+    expect(evasionReason("command git config set user.probe x")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason("builtin git config --unset user.probe")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason('bash -c "git config --global core.editor true"')).toContain(
+      GIT_MUTATING_REASON,
+    );
+    expect(evasionReason("/usr/bin/git config rename-section a b")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason("cd /tmp && git config --remove-section a")).toContain(
+      GIT_MUTATING_REASON,
+    );
+  });
+
+  test("blocks legacy two-positional config writes on disguise reaches", () => {
+    expect(evasionReason("cd /tmp && git config user.probe value")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason("git -C /repo config user.probe value")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason("git --git-dir=/x/.git config core.editor vim")).toContain(
+      GIT_MUTATING_REASON,
+    );
+    expect(evasionReason('cd /tmp && git config user.name "Flak McFlak"')).toContain(
+      GIT_MUTATING_REASON,
+    );
+    expect(evasionReason("git -c alias.x=1 config user.probe x")).toContain(GIT_MUTATING_REASON);
+  });
+
+  test("blocks -e/--edit and file-scoped config writes", () => {
+    expect(evasionReason("cd /tmp & git config --edit")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason("cd /tmp & git config -e")).toContain(GIT_MUTATING_REASON);
+    expect(evasionReason("git -C /tmp config --file alt.cfg probe.key x")).toContain(
+      GIT_MUTATING_REASON,
+    );
+    expect(evasionReason('bash -c "cd /tmp && git config set a.b c"')).toContain(
+      GIT_MUTATING_REASON,
+    );
+  });
+
+  test("allows config reads on all reaches", () => {
+    expect(evasionReason("git config --get user.name")).toBeUndefined();
+    expect(evasionReason("git config --list")).toBeUndefined();
+    expect(evasionReason("git config -l --show-origin")).toBeUndefined();
+    expect(evasionReason("git config get user.name")).toBeUndefined();
+    expect(evasionReason("git config list")).toBeUndefined();
+    expect(evasionReason("git config --get-regexp '^alias'")).toBeUndefined();
+    expect(evasionReason("git config user.name")).toBeUndefined();
+    expect(evasionReason("cd /a && git config --list")).toBeUndefined();
+    expect(evasionReason('bash -c "git config --get user.name"')).toBeUndefined();
+    expect(
+      evasionReason("git --git-dir=/x/.git config --get core.repositoryformatversion"),
+    ).toBeUndefined();
+  });
+
+  test("one-shot git -c override with non-config command stays allowed", () => {
+    expect(evasionReason("git -c core.editor=true commit --allow-empty -m x")).toBeUndefined();
+    expect(evasionReason("git -c protocol.version=2 fetch origin")).toBeUndefined();
+  });
+
+  test("config fix names git -c override and user ask", () => {
+    const reason = evasionReason("cd /repo && git config set a.b c");
+    expect(reason).toContain("matched: `git config set`");
+    expect(reason).toContain("git -c");
+    expect(reason).toContain("(ask)");
+  });
 });

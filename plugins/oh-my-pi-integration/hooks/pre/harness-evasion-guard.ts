@@ -12,7 +12,8 @@
 // only command EXECUTION through evasion forms is blocked.
 //
 // Git mutating subcommands are command-grained (push/stash/reset --hard/
-// clean -fd/branch -D/commit --amend), not binary-grained — adding `git`
+// clean -fd/branch -D/commit --amend/persistent `config` writes), not
+// binary-grained — adding `git`
 // to INTERCEPTED would over-block `git status`/`git log`/`git diff`. The
 // `*_GIT` patterns close the evasion-form holes that the bashInterceptor
 // line-anchored regex misses (`bash -c "git push …"`, `command git stash …`,
@@ -90,6 +91,24 @@ const FULL_PATH = new RegExp(`/(?:usr/)?(?:bin|sbin)/(${BIN_ALT})\\b`);
 
 const GIT_BRANCH_BLOCK =
   "branch\\s+(?:-[a-zA-Z]*D[a-zA-Z]*\\b|-[a-z]*d[a-z]*f[a-z]*\\b|-[a-z]*f[a-z]*d[a-z]*\\b|-[a-z]*d[a-z]*\\s+(?:-[a-z]*f\\b|--force\\b))";
+// `git config` mutation shapes (persistent config writes):
+//   - subcommand forms: set / unset / edit / rename-section / remove-section
+//   - mutation flags: --add --replace-all --unset --unset-all --remove-section
+//     --rename-section --edit -e
+//   - legacy two-positional write: `git config <key> <value>`
+// Reads stay allowed: --get, --list, -l, get, list, --get-regexp, and the
+// single-positional legacy get. `git -c key=val` one-shot overrides are NOT
+// touched — `-c <k>=<v>` is stripped as a git global option before this matches.
+// Flag tokens after `config`: value-taking flags (-f/--file/--blob/--type/
+// --fixed-value) optionally consume a value; bare short/long flags otherwise.
+// `-e`/`-E` are reserved for the mutation branch, never consumed as flags.
+// Accepted tradeoffs (errs closed): `git config --get <name> <value-pattern>`
+// (read with two positionals) matches the legacy-write shape; a key literally
+// starting `get`/`list` is excluded from the legacy-write branch.
+const GIT_CONFIG_FLAGS =
+  "(?:(?:-{1,2}(?:f|file|blob|type|fixed-value)\\b(?:\"[^\"]*\"|'[^']*'|\\s+(?:\"[^\"]*\"|'[^']*'|[^\\s]+))?|-(?![eE]\\b)[a-zA-Z][\\w-]*|--[\\w-]+(?:=[^\\s]+)?)\\s+)*";
+const GIT_CONFIG_MUTATION =
+  "(?:(?:set|unset|edit|rename-section|remove-section)\\b|--add\\b|--replace-all\\b|--unset\\b|--unset-all\\b|--remove-section\\b|--rename-section\\b|--edit\\b|-e\\b|(?!(?:get|list)\\b)[^\\s-][^\\s]*\\s+(?!-)(?:[^\\s\"']+|\"[^\"]*\"|'[^']*'))";
 const GIT_MUTATING_SUB =
   "push\\b" +
   "|stash\\b(?!\\s+(?:push\\b(?:\\s+--\\s+\\S|\\s+--include-untracked\\b)|list\\b|show\\b))" +
@@ -97,7 +116,11 @@ const GIT_MUTATING_SUB =
   "|clean\\s+-f?d\\b" +
   "|" +
   GIT_BRANCH_BLOCK +
-  "|commit\\s+--amend\\b";
+  "|commit\\s+--amend\\b" +
+  // Persistent config writes (see GIT_CONFIG_MUTATION above); `git config get|list` reads excluded.
+  "|config\\s+(?!(?:get|list)\\b)" +
+  GIT_CONFIG_FLAGS +
+  GIT_CONFIG_MUTATION;
 
 // `git status`/`git log`/`git diff` are read-only and stay allowed; mutating
 // forms are blocked on evasion-form reaches. `git stash push -- <pathspec>`
@@ -324,9 +347,15 @@ export const CHAIN_REASON =
 
 export const GIT_MUTATING_REASON =
   "git mutating subcommand (`push`/`stash`/`reset --hard`/`clean -fd`/`branch -D`/" +
-  "`commit --amend`) reached via an evasion or chain form the line-anchored " +
+  "`commit --amend`/persistent `config` write) reached via an evasion or chain form the line-anchored " +
   "bashInterceptor misses. Read-only inspection (`git status`/`git log`/`git diff`) " +
   "stays allowed; mutating operations need the user.";
+
+/** Sanctioned path for persistent git config changes. */
+const GIT_CONFIG_FIX =
+  "persistent `git config` mutation is prohibited for all agents and subagents — reads stay allowed " +
+  "(`git config --get <key>`, `--list`, `get <key>`, `--get-regexp`); one-shot override `git -c key=value <cmd>` " +
+  "is allowed (not persisted); persistent changes need the user (ask): state the exact key/value and stop.";
 
 /** Per-subcommand fix for git mutating blocks. */
 const GIT_BRANCH_FIX =
@@ -406,7 +435,8 @@ function withEvidence(base: string, matched: string, seg: string, fix: string): 
 /** Full git-mutating block message for one matched subcommand. */
 function gitReason(sub: string, seg: string): string {
   const label = sub.startsWith("-") ? `branch ${sub}` : `git ${sub}`;
-  return withEvidence(GIT_MUTATING_REASON, label, seg, GIT_FIX[sub] ?? GIT_BRANCH_FIX);
+  const fix = GIT_FIX[sub] ?? (sub.startsWith("config") ? GIT_CONFIG_FIX : GIT_BRANCH_FIX);
+  return withEvidence(GIT_MUTATING_REASON, label, seg, fix);
 }
 
 /**
