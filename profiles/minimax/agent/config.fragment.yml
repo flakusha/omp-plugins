@@ -8,8 +8,8 @@ theme:
   dark: dark-tundra
   light: light
 modelRoles:
-  default: minimax-code/MiniMax-M3
-  tiny: minimax-code/MiniMax-M2.5-lightning:off
+  default: minimax-code/MiniMax-M3.1-Flash-Preview
+  tiny: minimax-code/MiniMax-M2.7-highspeed:off
   advisor: minimax-code/MiniMax-M2.5-lightning:low
   smol: minimax-code/MiniMax-M2.7-highspeed:low
   slow: minimax-code/MiniMax-M3:high
@@ -17,7 +17,7 @@ modelRoles:
   commit: minimax-code/MiniMax-M2.5-lightning:off
   memory: minimax-code/MiniMax-M2.5-lightning:off
   judge: minimax-code/MiniMax-M2.7-highspeed:low
-  vision: opencode-go/glm-5.3-flash
+  # vision: opencode-go/glm-5.3-flash
 # Unpinned on purpose:
 #   task — role-derived patterns feed the load-spread classifier; pinning would
 #     freeze every subagent spawn to one model and defeat the rerouting.
@@ -28,7 +28,7 @@ modelRoles:
 # mechanical tier (provider-free lightning variant).
 task:
   agentModelOverrides:
-    sonic: minimax-code/MiniMax-M2.5-lightning:low
+    sonic: minimax-code/MiniMax-M2.7-highspeed:low
 ttsr:
   contextMode: discard
   interruptMode: tool-only
